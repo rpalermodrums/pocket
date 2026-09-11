@@ -104,7 +104,7 @@ python -m pytest
 
 Tests generate small signals and saved-project fixtures. Full recordings, renders, model weights and real listener notes stay outside the repository. [Architecture](docs/architecture.md) describes the shared contracts and extraction from earlier production work. [Evaluation](docs/evaluation.md) records the production field checks and what still needs listening tests. The [implementation plan](docs/implementation-plan.md) records scope, ownership and acceptance gates.
 
-The [selection plan](docs/selection-plan.md) defines this cycle. Reproducible proposals, validated recording identity and successful model execution are different from a good set. Use listening feedback to decide what to keep; optional embeddings remain an experiment, with their observed limitations documented beside the provider.
+The [selection plan](docs/selection-plan.md) defines this cycle, and the [0.3 field notes](docs/selection-field-notes.md) record what actual library, model, acquisition and shared-session tests changed. Reproducible proposals, validated recording identity and successful model execution are different from a good set. Use listening feedback to decide what to keep; optional embeddings remain an experiment, with their observed limitations documented beside the provider.
 
 ## Meet Pip
 

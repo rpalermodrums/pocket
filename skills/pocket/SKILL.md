@@ -1,11 +1,23 @@
 ---
 name: pocket
-description: Inspect exact recordings and Ableton projects, then make bounded transition experiments with scoped listening feedback.
+description: Explore record bags, plan set routes, share live next-track decisions, and inspect exact recordings and Ableton transitions with scoped feedback.
 ---
 
 # Pocket workflow
 
-Use this skill for Track Map, Set Map and Transition Lab. Read the provider documentation when an operation is unfamiliar.
+Use this skill for Track Map, Set Map, Transition Lab, Set Workshop and On Deck. Read the provider documentation when an operation is unfamiliar. The [selection interfaces](../../docs/selection-interfaces.md) document matching CLI/MCP calls; the [workspace](../../docs/workspace.md) gives a local human interface.
+
+## Selection and improvisation
+
+1. Establish the record bag from exact catalog identities or local assets. Preserve editions, duplicate appearances, unavailable entries and user changes. Spotify import is deterministic metadata transfer; independently identify acquired local audio before treating it as the same recording. Keep unknown musical fields absent or null, and attribute subjective profiles as `agent_hypothesis` or `user`.
+2. Write a setting, duration and musical intent. Use `plan_set_routes` to retain a deterministic annotation baseline and creative alternatives. Relative-order anchors do not pin an opener, closer or timestamp. Positional energy contours are planning targets. Check duration shortfalls and actual phrase possibilities before calling a route viable.
+3. Try alternatives. `record_plan_feedback` binds an exact route or adjacent directed pair to its bag/brief; `replan_set` preserves the previous attempt. Do not call a mechanical test or your own inference listener feedback. Compare passages using the existing transition workflow below.
+4. For improvisation, prepare a session before performance. Read bounded `session_options`; preserve hold, lift and left-turn choices and their unknowns. Use `update_session` with the observed revision and SHA. Refresh after a stale-view error rather than silently overwriting the human's newer choice. Manual choices update history; a new session is an explicit reset.
+5. Optional local embeddings add coarse similarity, not beat-one, key, cue or compatibility proof. Verify the pinned model/cache and exact source frames, audio hashes and provenance. Build vectors before the live loop. Keep imported Spotify content out of the model path. The model pilot and its limitations are in [music embeddings](../../docs/music-embeddings.md).
+6. When Spotify export is authorized, prepare a new playlist plan and verify actual order/privacy through the API or an honestly labeled UI observation. A planned export is not a created playlist. Reconcile uncertain writes before retrying. Tokens stay in the process environment.
+7. When acquisition is authorized, inspect candidates and choose a source explicitly. Retain original codecs and strict decode receipts. `inspect_source_formats` plus a newly sealed `format_id` plan supports a reviewed retry; a decoder error with exit zero still fails. No automatic normalization, fades or claim that a float WAV is a fidelity upgrade.
+
+## Exact passages and transitions
 
 1. Identify the exact saved project and recording version. Preserve the baseline. Start with MCP `inspect_set` or CLI `set-map`; retain the summary's immutable handle. The library's `inspect_set` still returns a full map. Keep caches and full exports outside Git.
 2. Use `find_clips` and `query_set_region` for a timestamp and bounded duration. Inspect relevant controls, supported source mappings, omissions and pagination. Reinspect when a handle is stale; never silently reuse the old map. Export heavy raw state explicitly when needed. Source frames, source seconds, arrangement seconds and arrangement beats are distinct clocks.
@@ -20,4 +32,4 @@ The native trial adapter prepares only its declared limited edit in a new destin
 
 Read artifact validity, signal disposition, native loading, export observation and `ready_to_compare` separately. Silent or near-silent expected music, non-finite samples and sample overload cannot become ready through a successful export alone. Intentional silence requires an explicit expectation and note at preparation. Readiness still carries no listening judgment. Do not overwrite an immutable candidate when Live wants to normalize it—save a separate file and preserve the chain of evidence. Re-preparing from a relocated source with stale absolute references currently requires deliberate relinking; old v1 native trials must remain preserved and be freshly prepared as v2.
 
-Prefer existing local recordings. Model downloads, new acquisition, general project editing and public sharing are outside the initial three-tool workflow. Keep generated outputs, recordings, personal notes, credentials and machine paths outside Git. Publishing the repository remains a separate owner decision.
+Prefer existing local recordings. Follow the current task's authorization for optional model preparation, acquisition and playlist writes; these are not implicit in a read-only map request. General project editing and public sharing remain separate scopes. Keep generated outputs, recordings, personal notes, credentials and machine paths outside Git. Publishing the repository remains a separate owner decision.
