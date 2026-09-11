@@ -80,6 +80,17 @@ def test_cli_set_handle_workflow_full_export_and_stale_rejection(tmp_path):
     assert stale.returncode == 2 and "message" in json.loads(stale.stderr)
 
 
+def test_cli_exact_frame_analysis_and_mixed_address_rejection(tmp_path):
+    path = _audio(tmp_path)
+    result = _cli("track-map", path, "--start-frame", 11, "--frames", 8003)
+    assert result.returncode == 0, result.stderr
+    region = json.loads(result.stdout)["region"]
+    assert region["start_frame"] == 11 and region["end_frame_exclusive"] == 8014
+    assert region["addressing"] == "source_frames"
+    invalid = _cli("track-map", path, "--start-frame", 11, "--frames", 8003, "--duration", 2)
+    assert invalid.returncode == 2 and "mixed" in json.loads(invalid.stderr)["message"]
+
+
 @pytest.mark.skipif(importlib.util.find_spec("mcp") is None, reason="Optional agent extra is not installed")
 def test_mcp_stdio_lists_tools_and_returns_same_identity(tmp_path):
     from mcp import ClientSession, StdioServerParameters
@@ -161,6 +172,13 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                 region = await call("query_set_region", {"handle": handle, "start_seconds": "0:00",
                                                          "duration_seconds": 3})
                 assert len(region["clips"]) == 1
+                interval = region["clips"][0]["source_interval"]
+                exact = await call("analyze_region", {"path": str(source),
+                                                       **interval["analyze_region_frame_args"]})
+                assert exact["region"]["start_frame"] == interval["start_frame"]
+                assert exact["region"]["end_frame_exclusive"] == interval["end_frame_exclusive"]
+                assert exact["region"]["addressing"] == "source_frames"
+                assert exact["rhythm"]["bar_phase_status"] == "unresolved"
                 found = await call("find_clips", {"handle": handle, "query": "track:100/clip:0"})
                 assert found
                 exported = await call("export_set_map", {"handle": handle,

@@ -41,6 +41,8 @@ def parser() -> argparse.ArgumentParser:
     track.add_argument("path")
     track.add_argument("--start", type=float, default=0.0, help="Original-source seconds")
     track.add_argument("--duration", type=float, default=30.0)
+    track.add_argument("--start-frame", type=int, help="Exact source start; pair with --frames")
+    track.add_argument("--frames", type=int, help="Exact source frame count; do not mix with seconds flags")
     track.add_argument("--bpm-hint", type=float)
     track.add_argument("--beats-per-bar", type=int, default=4)
     track.add_argument("--output")
@@ -98,7 +100,8 @@ def _dispatch(args: argparse.Namespace) -> dict:
         return identify_audio(args.path)
     if args.command == "track-map":
         from .track_map import analyze_region
-        return analyze_region(args.path, args.start, args.duration, args.bpm_hint, args.beats_per_bar)
+        return analyze_region(args.path, args.start, args.duration, args.bpm_hint, args.beats_per_bar,
+                              start_frame=args.start_frame, frames=args.frames)
     if args.command == "set-map":
         from .set_map import inspect_set
         from .set_queries import inspect_set_summary
