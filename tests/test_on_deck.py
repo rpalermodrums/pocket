@@ -86,6 +86,23 @@ def test_unattributed_fields_abstain_and_nulls_stay_unknown():
     assert result["evidence"]["profile_provenance"] is None
 
 
+@pytest.mark.parametrize("current_density,candidate_density", [
+    (None, None), (.8, None), (None, .8), (.8, .8), (.8, .2),
+])
+def test_vocal_density_null_is_unknown_and_inputs_unchanged(current_density, candidate_density):
+    records = [track("current", .5), track("candidate", .5)]
+    records[0]["profile"]["vocal_density"] = current_density
+    records[1]["profile"]["vocal_density"] = candidate_density
+    before = copy.deepcopy(records)
+    result = deck.rank_next_tracks(records, "current", limit=1)[0]
+    both_dense = current_density == .8 and candidate_density == .8
+    assert result["proposed_transition"]["treatment"] == (
+        "short foreground exchange; avoid prolonged vocal overlap" if both_dense else
+        "test an intro/body overlap with one bass owner at a time"
+    )
+    assert records == before
+
+
 def update(snapshot, action, **kwargs):
     return deck.update_session(snapshot["session_dir"], expected_revision=snapshot["revision"],
                                expected_sha256=snapshot["sha256"], action=action, **kwargs)

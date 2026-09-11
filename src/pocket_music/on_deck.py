@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .errors import PocketError
 
-ON_DECK_VERSION = "1.0.1"
+ON_DECK_VERSION = "1.0.2"
 _SESSION = "pocket.on-deck-session/v1"
 _INTENT_FIELDS = {"setting", "direction", "target_energy", "tags", "creativity", "max_stretch_percent",
                   "require_local_audio", "avoid_track_ids", "avoid_pairs"}
@@ -236,7 +236,10 @@ def rank_next_tracks(tracks, current_track_id=None, *, played_ids=(), intent=Non
         score = 0.1 + 0.85 * raw / max(1, known_weight)
         if direction == lane:
             score += 0.03
-        dense = profile.get("vocal_density", 0) > 0.6 and current.get("vocal_density", 0) > 0.6
+        candidate_vocals = profile.get("vocal_density")
+        current_vocals = current.get("vocal_density")
+        dense = (candidate_vocals is not None and current_vocals is not None
+                 and candidate_vocals > 0.6 and current_vocals > 0.6)
         reset = bool(tempo_options and tempo_options[0]["status"] == "natural_tempo_reset_proposal")
         treatment = ("short foreground exchange; avoid prolonged vocal overlap" if dense else
                      "natural-tempo reset or short texture bridge" if reset else
