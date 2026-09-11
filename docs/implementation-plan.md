@@ -14,9 +14,9 @@ The review player, broader MIDI/tempo editing, native Save As lineage, transcrip
 
 | Workstream | Owns | Does not edit |
 |---|---|---|
-| Native trials | `transition_lab.py`, native input types, native tests, Transition Lab docs | CLI/MCP adapters, package metadata, set or rhythm providers |
-| Bounded queries | Set Map/query/frame helpers, related tests, Set Map docs | CLI/MCP adapters, native/rhythm providers, package metadata |
-| Rhythm continuity | Track Map/rhythm helpers, related tests, Track Map docs | Native/set providers, adapters, package metadata |
+| Native trials | `stitch.py`, native input types, native tests, Stitch docs | CLI/MCP adapters, package metadata, set or rhythm providers |
+| Bounded queries | Thread/query/frame helpers, related tests, Thread docs | CLI/MCP adapters, native/rhythm providers, package metadata |
+| Rhythm continuity | Peek/rhythm helpers, related tests, Peek docs | Native/set providers, adapters, package metadata |
 | Integrator | CLI/MCP adapters, end-to-end interface tests, feedback lookup, package metadata, README/skill/evaluation/release docs | Other owned files while their workstream is active |
 
 Each workstream runs in its own branch/worktree. Contributors make focused local commits and report their hashes and checks. Only the integrator merges into and pushes `main`, after reviewing staged content and running relevant tests. Completed tested slices may ship independently; integration follows the order above. No force-pushes, broad staging, destructive cleanup or concurrent edits on a shared branch. Private media, full maps, local paths and listening notes stay outside Git.
@@ -44,6 +44,6 @@ All three planned milestones are implemented and integrated. [Evaluation](evalua
 
 Contributors used separate worktrees and focused local commits. One integrator reviewed and merged exact commits into `main`; no force pushes or concurrent branch edits were used. Public generated tests and private source evidence remain separate. The native workspace/export state and original media were preserved.
 
-This cycle stops here. The next step is a bounded listening comparison on an unfamiliar transition, using the saved correction scopes to judge whether the richer evidence improves the musical choice. A compact Track Map view and phase checks across the full crop are candidates for the next usability/analysis cycle. Review-player UI, broad MIDI/tempo editing, native Save As lineage, transcription/stems and provider/model evaluation remain deferred.
+This cycle stops here. The next step is a bounded listening comparison on an unfamiliar transition, using the saved correction scopes to judge whether the richer evidence improves the musical choice. A compact Peek view and phase checks across the full crop are candidates for the next usability/analysis cycle. Review-player UI, broad MIDI/tempo editing, native Save As lineage, transcription/stems and provider/model evaluation remain deferred.
 
 A successful technical diagnostic is not a musical audition.

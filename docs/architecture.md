@@ -4,23 +4,23 @@ Pocket begins with a local Python package. The CLI and optional MCP server invok
 
 ## Records and clocks
 
-An **asset** identifies exact file bytes and decoded sample metadata. An analysis **region** keeps its original-source frame bounds. A **Set Map** describes saved clip and control intent, with separate arrangement beats and source positions. A **handle** identifies an immutable compressed snapshot and the saved project/dependency versions that make it applicable. A **trial** binds its sources, explicit variation, generated output bytes and scoped listener feedback.
+An **asset** identifies exact file bytes and decoded sample metadata. An analysis **region** keeps its original-source frame bounds. A **Thread** describes saved clip and control intent, with separate arrangement beats and source positions. A **handle** identifies an immutable compressed snapshot and the saved project/dependency versions that make it applicable. A **trial** binds its sources, explicit variation, generated output bytes and scoped listener feedback.
 
 Source seconds are not arrangement seconds. A clip's physical start is not necessarily its musical cue. Warped source mappings use the saved markers; natural passages use the supported tempo map. Unsupported mapping cases return an explicit unknown instead of an approximate answer disguised as exact.
 
-JSON schema identifiers mark the record family/version. The package uses validated provider functions and generated-fixture regression tests rather than a separate schema compiler. Changes to output contracts need tests and a version decision. Native trial manifests are now v2; query/summary/handle records introduce their own v1 families, while Track Map's additive evidence retains its v1 family and records analysis version 1.1.2.
+JSON schema identifiers mark the record family/version. The package uses validated provider functions and generated-fixture regression tests rather than a separate schema compiler. Changes to output contracts need tests and a version decision. Native trial manifests are now v2; query/summary/handle records introduce their own v1 families, while Peek's additive evidence retains its v1 family and records analysis version 1.1.2.
 
 ## Provider boundaries
 
 - `assets.py`: stable file hashing and decoded metadata. Identical bytes retain identity after renaming; clean/explicit versions cannot collapse by title.
-- `track_map.py` and `rhythm_continuity.py`: bounded signal evidence, independent band-phase modes, crop refits, local phase/count warnings and tonal content. Scores are heuristic; no automatic edit follows them.
-- `set_map.py` and `timing.py`: read saved Live XML, resolve active source references and supported source/arrangement mappings. Stock control inspection does not evaluate device DSP.
-- `set_queries.py` and `source_frames.py`: immutable snapshot handles, bounded timestamp queries, explicit omission budgets and inward conversion to complete source frames. Queries verify the snapshot, ALS and dependency versions; unsupported mappings remain unknown.
-- `transition_lab.py`: exact comparisons, collected native candidates, relocation validation, signal/readiness checks and feedback recording. Native observation fields are supplied reports; the provider does not operate Live or independently certify an export.
+- `peek.py` and `rhythm_continuity.py`: bounded signal evidence, independent band-phase modes, crop refits, local phase/count warnings and tonal content. Scores are heuristic; no automatic edit follows them.
+- `thread.py` and `timing.py`: read saved Live XML, resolve active source references and supported source/arrangement mappings. Stock control inspection does not evaluate device DSP.
+- `thread_queries.py` and `source_frames.py`: immutable snapshot handles, bounded timestamp queries, explicit omission budgets and inward conversion to complete source frames. Queries verify the snapshot, ALS and dependency versions; unsupported mappings remain unknown.
+- `stitch.py`: exact comparisons, collected native candidates, relocation validation, signal/readiness checks and feedback recording. Native observation fields are supplied reports; the provider does not operate Live or independently certify an export.
 - `feedback.py`: sealed output/interval/scope retrieval with pagination and no synthesized verdict.
 - `cli.py` and `mcp_server.py`: the common tool surface. MCP inputs have explicit nested types. Four summary/query tools emit one compact JSON text record to avoid duplicate transport expansion; their parsed records match the providers.
 
-The integer source-frame pair is the preferred boundary from a set query to Track Map. The conversion snaps at most 0.1 sample of floating-point overshoot at a file endpoint, and otherwise rounds inward. It records every adjustment and never interprets mapping precision as certainty about a musical downbeat.
+The integer source-frame pair is the preferred boundary from a set query to Peek. The conversion snaps at most 0.1 sample of floating-point overshoot at a file endpoint, and otherwise rounds inward. It records every adjustment and never interprets mapping precision as certainty about a musical downbeat.
 
 Native v2 preparation first collects supported active dependencies and proves the declared reference rewrites and media shift through XML rollback/readback. Validation after moving the project uses collected relative files and hashes. Render attachment preserves independent artifact, signal, loading and export labels. `ready_to_compare` requires usable expected signal and appropriate reported native observations; it never becomes a perceptual verdict.
 
@@ -36,6 +36,6 @@ NumPy, SciPy and soundfile provide numerical and audio-file primitives. The opti
 
 ## Next review
 
-Use the maps and lab on unfamiliar transitions. Record where the tool's representation was useful, ambiguous or wrong. Then choose between better beat/downbeat providers, selective note transcription, MuseTok, broader editing or improved native integration.
+Use Peek, Thread and Stitch on unfamiliar transitions. Record where the tool's representation was useful, ambiguous or wrong. Then choose between better beat/downbeat providers, selective note transcription, MuseTok, broader editing or improved native integration.
 
 The decision criterion is whether a tool improves a musical choice or removes repeated work. A plausible MIDI file, more model confidence or more infrastructure is not sufficient on its own.

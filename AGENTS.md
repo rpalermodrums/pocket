@@ -2,7 +2,9 @@
 
 Pocket is private during its initial testing period. Do not change repository visibility without the owner's explicit instruction.
 
-The current scope includes Track Map, Set Map, Transition Lab, Set Workshop and On Deck. Selection has optional Spotify catalog/playlist, source-acquisition and local-embedding adapters plus a loopback browser workspace. Transcription models, a general audio editor and full-set bounce automation remain follow-up decisions, not implied dependencies.
+The current scope includes Peek, Thread, Stitch, Set Workshop and On Deck. Selection has optional Spotify catalog/playlist, source-acquisition and local-embedding adapters plus a loopback browser workspace. Transcription models, a general audio editor and full-set bounce automation remain follow-up decisions, not implied dependencies.
+
+Pipette is a reserved future name, not an implemented tool or a request to add a stub. Prefer the canonical Peek, Thread and Stitch names in new docs and calls. Preserve compatibility aliases and existing serialized identifiers; [name compatibility](docs/compatibility.md) distinguishes interface names from stable provider functions and data formats.
 
 Preserve these distinctions:
 

@@ -96,7 +96,7 @@ performance duration remains separate from full-record duration. See
 
 ## MCP and public Python
 
-`pocket-mcp` exposes 35 tools. The 21 new provider tools return one compact JSON
+`pocket-mcp` exposes canonical tools alongside compatibility aliases. The 21 selection provider tools return one compact JSON
 text record without a duplicated structured copy. Inputs expose nested bag/plan
 handles, attributed profiles, brief constraints, integer revision/frame fields,
 choice enums and cached embedding receipt fields. Standard option limits apply:
@@ -113,7 +113,7 @@ from pocket_music import create_record_bag, plan_set_routes, prepare_session, se
 These resolve to the actual provider functions; importing Pocket neither loads
 model weights nor starts a server. Existing module imports and the three original
 tools remain supported. `inspect_set` is still the full Python library function;
-the MCP tool named `inspect_set` returns the summary-first interface.
+the MCP tool `thread` returns the summary-first interface. See [name compatibility](compatibility.md) for the retained old tool aliases.
 
 Optional unknown numeric profile values may be null; omitting an unknown field
 is always the most portable choice. In particular, omit unavailable/explicit flags

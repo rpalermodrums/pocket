@@ -2,15 +2,17 @@
 
 **The musical toolkit for agents.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
 
-Private, early development. Version 0.3 adds **Set Workshop** and **On Deck** to Track Map, Set Map and Transition Lab. Plan several routes from one record bag, then keep a small, editable set of next-record options. Musical proposals stay separate from listening judgments.
+Private, early development. Version 0.3 adds **Set Workshop** and **On Deck** to Peek, Thread and Stitch. Plan several routes from one record bag, then keep a small, editable set of next-record options. Musical proposals stay separate from listening judgments.
 
 | Tool | What it does |
 |---|---|
 | **Set Workshop** | Explore reproducible routes with anchors, exclusions, explicit transition ideas and feedback scoped to a route or pair. |
 | **On Deck** | Suggest next records for holding, lifting or changing direction; preserve manual choices in a shared session. |
-| **Track Map** | Analyze exact source frames, attacks, competing pulse phases, crop sensitivity, local count uncertainty and tonal evidence. Keep musical beat one unresolved. |
-| **Set Map** | Start with a compact project summary, then query a timestamp for clips, source frames and relevant controls. Reject stale saved maps. |
-| **Transition Lab** | Collect a native trial's media, validate after relocation, separate render identity from signal readiness, and retrieve feedback about the exact audio heard. |
+| **Peek** | Analyze exact source frames, attacks, competing pulse phases, crop sensitivity, local count uncertainty and tonal evidence. Keep musical beat one unresolved. |
+| **Thread** | Start with a compact project summary, then query a timestamp for clips, source frames and relevant controls. Reject stale saved maps. |
+| **Stitch** | Collect a native trial's media, validate after relocation, separate render identity from signal readiness, and retrieve feedback about the exact audio heard. |
+
+**Pipette** is reserved for a future tool. It has no implementation, command or MCP endpoint yet.
 
 ## Install
 
@@ -55,26 +57,26 @@ The generated demo contains only synthetic signals:
 
 ```sh
 python examples/make_demo.py /tmp/pocket-demo
-pocket track-map /tmp/pocket-demo/pulse.wav --duration 16 --bpm-hint 120
-pocket lab create --spec /tmp/pocket-demo/comparison.json --output /tmp/pocket-demo/trial
+pocket peek /tmp/pocket-demo/pulse.wav --duration 16 --bpm-hint 120
+pocket stitch create --spec /tmp/pocket-demo/comparison.json --output /tmp/pocket-demo/trial
 ```
 
 For a saved Ableton project:
 
 ```sh
-pocket set-map '/path/to/Your Set.als' --output /tmp/set-summary.json
-pocket set-region /tmp/set-summary.json 2:22 --duration 32 --output /tmp/region.json
-pocket find-clips /tmp/set-summary.json 'Clip name'
-pocket map-export /tmp/set-summary.json --output /tmp/full-set-map.json
+pocket thread '/path/to/Your Set.als' --output /tmp/set-summary.json
+pocket thread-region /tmp/set-summary.json 2:22 --duration 32 --output /tmp/region.json
+pocket thread-find-clips /tmp/set-summary.json 'Clip name'
+pocket thread-export /tmp/set-summary.json --output /tmp/full-set-map.json
 ```
 
-The summary contains an identity-bound handle for later calls. A valid region supplies `analyze_region_frame_args`; pass that exact pair to Track Map. In the CLI, use `--start-frame` and `--frames` without seconds flags. `set-map --full` remains available for an explicit raw inventory.
+The summary contains an identity-bound handle for later calls. A valid region supplies `analyze_region_frame_args`; pass that exact pair to Peek. In the CLI, use `--start-frame` and `--frames` without seconds flags. `thread --full` remains available for an explicit raw inventory.
 
-See [Track Map](docs/track-map.md), [Set Map](docs/set-map.md), [Transition Lab](docs/transition-lab.md), [feedback retrieval](docs/feedback.md) and the [agent workflow](skills/pocket/SKILL.md). Output records may contain local paths: keep them in your local working area, outside Git. The [0.2 release notes](docs/releases/0.2.0.md) describe compatibility changes and limits.
+See [Peek](docs/peek.md), [Thread](docs/thread.md), [Stitch](docs/stitch.md), [feedback retrieval](docs/feedback.md) and the [agent workflow](skills/pocket/SKILL.md). Output records may contain local paths: keep them in your local working area, outside Git. The [0.2 release notes](docs/releases/0.2.0.md) describe compatibility changes and limits.
 
 ## Work with an agent
 
-`pocket-mcp` serves the same provider records over standard input/output. Its `inspect_set` tool returns a summary and handle; `query_set_region`, `find_clips` and `export_set_map` reuse that handle. These four tools return one compact JSON text record, without a second expanded copy. A local MCP configuration can point to the executable in your virtual environment:
+`pocket-mcp` serves the same provider records over standard input/output. Its `thread` tool returns a summary and handle; `thread_region`, `thread_find_clips` and `thread_export` reuse that handle. These four tools return one compact JSON text record, without a second expanded copy. `peek` analyzes a source region, and `stitch` creates a comparison trial. A local MCP configuration can point to the executable in your virtual environment:
 
 ```json
 {
@@ -87,6 +89,8 @@ See [Track Map](docs/track-map.md), [Set Map](docs/set-map.md), [Transition Lab]
 ```
 
 Configure that local process only for agents you trust with your audio and project files. Pocket does not upload recordings to a model service or change an open Live session on its own. Spotify execution and source discovery/acquisition contact external services only when explicitly invoked. Tokens remain in the local process environment, never tool arguments. Selection/model preparation stays outside the performance decision loop.
+
+The [name compatibility guide](docs/compatibility.md) maps the previous names to these tools. Old commands and imports remain accepted; serialized formats, field keys, flags, caches and output artifacts are unchanged.
 
 ## The musical rules
 

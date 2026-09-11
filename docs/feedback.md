@@ -19,10 +19,10 @@ Coordinates are frames in the selected output file, not source-recording or arra
 
 The query verifies the sealed trial and feedback records and current selected output hashes. A changed output or tampered note fails explicitly. `output_sha256` can constrain the exact recording in addition to `variant_id`; an identity outside the trial is an error. Empty notes means no stored matching feedback, not a favorable musical verdict.
 
-The result includes explicit pagination (`total`, `offset`, `limit`, `next_offset`), the applied filter, and `musical_verdict: null`. `limit` defaults to 20 and is capped at 100. The same public function is exposed as the MCP tool `query_feedback` and through a JSON argument file:
+The result includes explicit pagination (`total`, `offset`, `limit`, `next_offset`), the applied filter, and `musical_verdict: null`. `limit` defaults to 20 and is capped at 100. The same public function is exposed as the MCP tool `stitch_feedback_list` and through a JSON argument file:
 
 ```sh
-pocket lab feedback-list --spec /path/to/feedback-query.json
+pocket stitch feedback-list --spec /path/to/feedback-query.json
 ```
 
 Keep real listener words and trial audio outside Git. Generated test claims exercise this contract without claiming a person auditioned the fixture.
