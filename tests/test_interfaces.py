@@ -5,6 +5,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -43,6 +44,40 @@ def test_cli_bad_source_and_nonfinite_region_are_structured_errors(tmp_path):
     assert missing.returncode == 2 and "message" in json.loads(missing.stderr)
     result = _cli("track-map", _audio(tmp_path), "--duration", "nan")
     assert result.returncode == 2 and "message" in json.loads(result.stderr)
+
+
+def test_cli_set_handle_workflow_full_export_and_stale_rejection(tmp_path):
+    from test_transition_lab import als_fixture
+
+    source_set, _ = als_fixture(tmp_path)
+    overview = tmp_path / "overview.json"
+    result = _cli("set-map", source_set, "--cache-dir", tmp_path / "cache", "--output", overview)
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(overview.read_text())
+    assert summary["schema"] == "pocket.set-summary/v1"
+    assert "tracks" not in summary and "clips" not in summary
+    region = _cli("set-region", overview, "0:00", "--duration", 3)
+    assert region.returncode == 0, region.stderr
+    assert len(json.loads(region.stdout)["clips"]) == 1
+    bare = tmp_path / "handle.json"
+    bare.write_text(json.dumps(summary["handle"]))
+    found = _cli("find-clips", bare, "track:100/clip:0")
+    assert found.returncode == 0, found.stderr
+    assert json.loads(found.stdout)["total_matches"] == 1
+    full = tmp_path / "full.json"
+    exported = _cli("map-export", bare, "--output", full)
+    assert exported.returncode == 0, exported.stderr
+    assert json.loads(full.read_text())["schema"] == "pocket.set-map/v1"
+    legacy = _cli("set-map", source_set, "--full")
+    assert legacy.returncode == 0, legacy.stderr
+    assert json.loads(legacy.stdout)["clips"] == json.loads(full.read_text())["clips"]
+    before = full.read_bytes()
+    assert _cli("map-export", bare, "--output", full).returncode == 2
+    assert full.read_bytes() == before
+    # Even changing an active dependency invalidates the cross-process handle.
+    (tmp_path / "source.wav").touch()
+    stale = _cli("set-region", overview, "0:00", "--duration", 3)
+    assert stale.returncode == 2 and "message" in json.loads(stale.stderr)
 
 
 @pytest.mark.skipif(importlib.util.find_spec("mcp") is None, reason="Optional agent extra is not installed")
@@ -101,18 +136,36 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                 assert schemas["record_feedback"]["properties"]["start_frame"]["type"] == "integer"
                 assert schemas["prepare_native_trial"]["properties"]["shift_beats"]["type"] == "number"
                 assert schemas["attach_completed_render"]["properties"]["expected_frames"]["type"] == "integer"
+                handle_schema = schemas["query_set_region"]
+                handle_ref = handle_schema["properties"]["handle"]["$ref"].rsplit("/", 1)[1]
+                assert {"cache_sha256", "set_sha256", "cache_path"} <= set(
+                    handle_schema["$defs"][handle_ref]["required"])
 
                 async def call(name, args):
                     result = await session.call_tool(name, args)
                     assert not result.isError, result.content
+                    if name in {"inspect_set", "query_set_region", "find_clips", "export_set_map"}:
+                        assert result.structuredContent is None
+                        assert len(result.content) == 1
+                        # One compact JSON record; no duplicated/pretty-printed transport copy.
+                        assert len(result.content[0].text.splitlines()) == 1
                     return result.structuredContent or json.loads(next(b.text for b in result.content
                                                                        if b.type == "text"))
 
                 identity = await call("identify_audio", {"path": str(source)})
                 await call("analyze_region", {"path": str(source), "duration_seconds": 3})
-                mapped = await call("inspect_set", {"path": str(source_set)})
-                # This explicit full-record compatibility path will become opt-in
-                # when the compact Set Map interface is integrated.
+                summary = await call("inspect_set", {"path": str(source_set),
+                                                     "cache_dir": str(tmp_path / "cache")})
+                assert summary["schema"] == "pocket.set-summary/v1" and "clips" not in summary
+                handle = summary["handle"]
+                region = await call("query_set_region", {"handle": handle, "start_seconds": "0:00",
+                                                         "duration_seconds": 3})
+                assert len(region["clips"]) == 1
+                found = await call("find_clips", {"handle": handle, "query": "track:100/clip:0"})
+                assert found
+                exported = await call("export_set_map", {"handle": handle,
+                                                          "output_path": str(tmp_path / "raw-map.json")})
+                mapped = json.loads(Path(exported["path"]).read_text())
                 position = await call("source_position", {"set_map": mapped, "clip_id": "track:100/clip:0",
                                                           "arrangement_beat": 2})
                 await call("arrangement_position", {"set_map": mapped, "clip_id": "track:100/clip:0",

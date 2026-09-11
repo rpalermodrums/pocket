@@ -47,7 +47,27 @@ def parser() -> argparse.ArgumentParser:
     project = commands.add_parser("set-map", help="Inspect saved Ableton control and source intent")
     project.add_argument("path")
     project.add_argument("--hash-sources", action="store_true", help="Also hash active source files")
+    project.add_argument("--full", action="store_true", help="Explicit full raw inventory instead of a handle")
+    project.add_argument("--cache-dir", help="Directory for immutable handle snapshots")
     project.add_argument("--output")
+    region = commands.add_parser("set-region", help="Query a saved handle at arrangement seconds or mm:ss")
+    region.add_argument("handle", help="JSON file containing a summary or bare handle")
+    region.add_argument("start", help="Seconds, mm:ss or hh:mm:ss")
+    region.add_argument("--duration", type=float, default=32)
+    region.add_argument("--max-clips", type=int, default=16)
+    region.add_argument("--clip-offset", type=int, default=0)
+    region.add_argument("--max-events-per-lane", type=int, default=12)
+    region.add_argument("--max-bytes", type=int, default=16000)
+    region.add_argument("--output")
+    search = commands.add_parser("find-clips", help="Find clip names or IDs in a saved handle")
+    search.add_argument("handle")
+    search.add_argument("query", nargs="?", default="")
+    search.add_argument("--limit", type=int, default=20)
+    search.add_argument("--offset", type=int, default=0)
+    search.add_argument("--output")
+    raw = commands.add_parser("map-export", help="Export the full raw inventory from a verified handle")
+    raw.add_argument("handle")
+    raw.add_argument("--output", required=True)
     position = commands.add_parser("source-position", help="Map an arrangement beat to original-source time")
     position.add_argument("map", help="Saved Set Map JSON")
     position.add_argument("clip_id")
@@ -81,7 +101,21 @@ def _dispatch(args: argparse.Namespace) -> dict:
         return analyze_region(args.path, args.start, args.duration, args.bpm_hint, args.beats_per_bar)
     if args.command == "set-map":
         from .set_map import inspect_set
-        return inspect_set(args.path, hash_sources=args.hash_sources)
+        from .set_queries import inspect_set_summary
+        if args.full:
+            return inspect_set(args.path, hash_sources=args.hash_sources)
+        return inspect_set_summary(args.path, cache_dir=args.cache_dir, hash_sources=args.hash_sources)
+    if args.command in {"set-region", "find-clips", "map-export"}:
+        from .set_queries import export_set_map, find_clips, query_set_region
+        stored = _read_object(args.handle)
+        handle = stored.get("handle", stored)
+        if args.command == "set-region":
+            return query_set_region(handle, args.start, args.duration, max_clips=args.max_clips,
+                                    clip_offset=args.clip_offset, max_events_per_lane=args.max_events_per_lane,
+                                    max_bytes=args.max_bytes)
+        if args.command == "find-clips":
+            return find_clips(handle, args.query, limit=args.limit, offset=args.offset)
+        return export_set_map(handle, args.output)
     if args.command == "source-position":
         from .set_map import source_position
         return source_position(_read_object(args.map), args.clip_id, args.beat)
@@ -107,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         result = _dispatch(args)
-        _emit(result, getattr(args, "output", None) if args.command != "lab" else None)
+        _emit(result, getattr(args, "output", None) if args.command not in {"lab", "map-export"} else None)
         return 0
     except (PocketError, OSError, ValueError, TypeError) as exc:
         sys.stderr.write(json.dumps({"error": type(exc).__name__, "message": str(exc)}) + "\n")
