@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
   <title id="title">Pocket</title>
-  <desc id="desc">Pip, a field mouse tucked into a record sleeve, beside the Pocket wordmark. A small audio waveform accompanies the descriptor: A music toolbox for agents.</desc>
+  <desc id="desc">Pip, a field mouse tucked into a record sleeve, beside the Pocket wordmark. A small audio waveform accompanies the descriptor: The musical toolkit for agents.</desc>
 
   <rect width="1200" height="400" rx="28" fill="#F5F1E8"/>
 
@@ -30,9 +30,9 @@
   <path d="M88 318H1112" stroke="#D8D4CA" stroke-width="1.5"/>
 
   <g id="footer" transform="translate(600 359)">
-    <g id="waveform" fill="none" stroke="#C7795C" stroke-width="2.8" stroke-linecap="round" aria-hidden="true">
+    <g id="waveform" transform="translate(-10.6 0)" fill="none" stroke="#C7795C" stroke-width="2.8" stroke-linecap="round" aria-hidden="true">
       <path d="M-144-1.5v3 M-139.5-3.5v7 M-135-6.5v13 M-130.5-10v20 M-126-5.5v11 M-121.5-2.5v5 M-117-5v10 M-112.5-8v16 M-108-4v8 M-103.5-1.5v3"/>
     </g>
-    <text x="30" y="6" text-anchor="middle" fill="#526F82" font-family="Avenir Next, Trebuchet MS, sans-serif" font-size="18" font-weight="500" letter-spacing=".35">A music toolbox for agents</text>
+    <text x="30" y="6" text-anchor="middle" fill="#526F82" font-family="Avenir Next, Trebuchet MS, sans-serif" font-size="18" font-weight="500" letter-spacing=".35">The musical toolkit for agents</text>
   </g>
 </svg>
