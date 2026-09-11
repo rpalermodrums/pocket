@@ -746,3 +746,8 @@ def test_candidate_mutation_during_attachment_is_not_published(tmp_path, monkeyp
     with pytest.raises(PocketError, match="changed during attachment"):
         attach(result, rendered, native_observation=observed(result))
     assert not list((Path(result["trial_dir"]) / "renders").glob("render-*"))
+
+
+def test_native_range_label_survives_clip_field_readback(tmp_path):
+    result, _, _ = prepare(tmp_path, range_name="Named opening diagnostic")
+    assert result["export_range"]["name"] == "Named opening diagnostic"
