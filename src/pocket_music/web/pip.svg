@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360" role="img" aria-labelledby="title desc">
+  <title id="title">Pip, the Pocket mouse</title>
+  <desc id="desc">A curious field mouse tucked into a terracotta record sleeve, with a curled tail.</desc>
+  <rect width="360" height="360" rx="48" fill="#F5F1E8"/>
+  <g id="pip" transform="translate(6 0)">
+    <path d="M225 272c84 26 104-35 65-42-30-6-36 27-11 25" fill="none" stroke="#C7795C" stroke-width="11" stroke-linecap="round"/>
+    <circle cx="98" cy="99" r="49" fill="#DFD6C3" stroke="#254F70" stroke-width="6"/>
+    <circle cx="219" cy="99" r="49" fill="#DFD6C3" stroke="#254F70" stroke-width="6"/>
+    <circle cx="98" cy="99" r="29" fill="#E2B59C"/>
+    <circle cx="219" cy="99" r="29" fill="#E2B59C"/>
+    <path d="M87 141c0-72 143-72 143 0v35c0 54-39 76-72 76-35 0-71-24-71-76z" fill="#EBE2D0" stroke="#254F70" stroke-width="6"/>
+    <path d="M107 154q12-12 24 0m56 0q12-12 24 0" fill="none" stroke="#254F70" stroke-width="6" stroke-linecap="round"/>
+    <path d="m147 174 11 10 11-10q-11-10-22 0" fill="#254F70"/>
+    <path d="M158 185v8m0 0q-10 9-19 0m19 0q10 9 19 0" fill="none" stroke="#254F70" stroke-width="4" stroke-linecap="round"/>
+    <path d="m113 176-39-7m37 20-36 7m128-20 39-7m-37 20 36 7" stroke="#254F70" stroke-width="3" stroke-linecap="round"/>
+    <path d="M66 211h184v73q0 26-27 26H93q-27 0-27-26z" fill="#C7795C" stroke="#254F70" stroke-width="6"/>
+    <path d="M78 229h160v52q0 15-15 15H93q-15 0-15-15z" fill="none" stroke="#874D3F" stroke-width="2" stroke-dasharray="4 6"/>
+    <circle cx="158" cy="254" r="38" fill="#254F70"/>
+    <circle cx="158" cy="254" r="28" fill="none" stroke="#91A4AD" stroke-width="1.5"/>
+    <circle cx="158" cy="254" r="19" fill="none" stroke="#91A4AD" stroke-width="1.5"/>
+    <circle cx="158" cy="254" r="10" fill="#D3A13A"/>
+    <circle cx="158" cy="254" r="2.5" fill="#254F70"/>
+    <path d="M89 207v15m13-15v15m113-15v15m13-15v15" stroke="#EBE2D0" stroke-width="10" stroke-linecap="round"/>
+  </g>
+</svg>

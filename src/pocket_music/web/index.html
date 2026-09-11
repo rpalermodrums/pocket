@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pocket — Workshop & On Deck</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<header class="masthead"><a class="brand" href="/" aria-label="Pocket home"><img src="/pip.svg" alt="" width="52" height="52"><span>Pocket</span></a>
+<nav aria-label="Workspace"><button id="tab-workshop" class="tab selected" aria-pressed="true">Workshop</button><button id="tab-deck" class="tab" aria-pressed="false">On Deck</button></nav>
+<button id="refresh" class="quiet">Refresh</button></header>
+<div id="message" role="status" aria-live="polite" hidden></div>
+<main>
+<aside class="bag-panel"><div class="section-title"><h2>Your record bag</h2><label class="file-button" for="import-file">Import JSON</label><input id="import-file" type="file" accept=".json,application/json" class="file-input"></div>
+<p id="bag-name" class="muted">Bring a few records. Find a direction.</p>
+<label for="search" class="sr-only">Search records</label><input id="search" type="search" placeholder="Search title, artist or tag…" autocomplete="off">
+<p id="track-count" class="small muted"></p><div id="track-list" class="track-list"></div><button id="more-tracks" class="quiet" hidden>More records</button>
+<div id="empty-bag" class="empty"><p>Import a JSON record bag or start with a small generated example.</p><button id="demo" class="secondary">Try a generated bag</button><details><summary>JSON format</summary><pre>{"title":"My bag","tracks":[
+  {"track_id":"record-1",
+   "title":"Record title",
+   "artists":["Artist"]}
+]}</pre><p class="small">Musical annotations are optional. Unknowns stay unknown. Local audio bags can be initialized from the command line.</p></details></div>
+<p class="bag-footnote">A catalog entry is a recording choice, not proof of the audio edition.</p></aside>
+<section id="workshop" class="workspace-pane"><div class="intro"><h1>Make room for<br><em>another direction.</em></h1><p>Try a few routes through your records. Keep the turns that interest you, and leave room to change your mind.</p></div>
+<form id="route-form" class="brief"><label>Set direction<select id="setting"><option value="warm_up">Warm-up</option><option value="peak_time">Peak time</option><option value="after_hours">After-hours</option><option value="open">Open</option></select></label>
+<label>Target minutes<input id="minutes" type="number" min="5" max="360" value="60"></label><label>Records<input id="records" type="number" min="1" max="100" value="6"></label><label>Variation<input id="seed" type="number" min="0" value="1"></label>
+<button class="primary" type="submit">Make three routes</button></form>
+<div class="route-toolbar"><p class="muted small">Routes are proposals. Durations are planning estimates.</p><button id="replan" class="quiet" hidden>Try again with feedback</button></div>
+<div id="routes" class="routes"><div class="empty-route"><span class="route-line"></span><p>Your first routes will appear here.</p><span class="route-line"></span></div></div>
+</section>
+<section id="deck" class="workspace-pane" hidden><div class="deck-heading"><div><h1>Stay in the moment.</h1><p class="muted">A few possibilities. The choice stays yours.</p></div><button id="prepare" class="primary">Prepare session</button></div>
+<div class="current-record"><p class="muted">Current selection</p><h2 id="current-title">Choose your starting record</h2><p id="current-artist" class="muted">Use “Start here” in your record bag.</p></div>
+<div class="intent-controls" role="group" aria-label="Next-track intent"><button data-intent="hold" class="intent selected" aria-pressed="true">Hold the feeling</button><button data-intent="lift" class="intent" aria-pressed="false">Lift it</button><button data-intent="left_turn" class="intent" aria-pressed="false">Take a left turn</button><button data-intent="explore" class="intent" aria-pressed="false">Explore</button></div>
+<div id="options" class="options"><p class="muted">Prepare a session to see your next options.</p></div>
+<details class="session-details"><summary>Session history & shared controls</summary><p id="session-info" class="small muted">No session yet.</p><ol id="history"></ol><form id="attach-form"><label>Existing session inside this workspace<input id="session-path" placeholder="sessions/session-folder"></label><button class="secondary" type="submit">Use session</button></form><p class="small muted">CLI and browser can share this session. A stale change is refused until you refresh.</p></details>
+</section></main>
+<footer>Local workspace · No audio playback or deck control · Source files remain unchanged</footer>
+</body></html>
