@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from functools import wraps
 import inspect
 import json
-from typing import get_type_hints
+from functools import wraps
+from typing import Literal, NotRequired, get_type_hints
+
+from typing_extensions import TypedDict
+
+from .selection_types import BagHandle, SelectionIntent
 
 
-def _compact_response(function):
+def _compact_response(function, input_types=None):
     """Serialize the same provider record without expanding bounded JSON to prose.
 
     Resolved signatures preserve input schemas, including nested handle types.
@@ -19,7 +23,7 @@ def _compact_response(function):
         return json.dumps(function(*args, **kwargs), ensure_ascii=False,
                           allow_nan=False, separators=(",", ":"))
 
-    hints = get_type_hints(function, include_extras=True)
+    hints = {**get_type_hints(function, include_extras=True), **(input_types or {})}
     signature = inspect.signature(function)
     compact.__signature__ = signature.replace(
         parameters=[p.replace(annotation=hints.get(p.name, p.annotation))
@@ -29,16 +33,93 @@ def _compact_response(function):
     return compact
 
 
+class EmbeddingIndexHandle(TypedDict):
+    schema: Literal["pocket.embedding-index-handle/v1"]
+    path: str
+    sha256: str
+
+
+class EmbeddingAsset(TypedDict):
+    # Preserve the complete provider receipt, including header/provenance fields.
+    __pydantic_config__ = {"extra": "allow"}  # noqa: RUF012 - TypedDict schema metadata
+    sha256: str
+
+
+class EmbeddingSourceRegion(TypedDict):
+    __pydantic_config__ = {"extra": "allow"}  # noqa: RUF012 - TypedDict schema metadata
+    source_origin: Literal["independently_acquired", "user_recording"]
+    source_start_frame: int
+    source_frames: int
+
+
+class EmbeddingReceipt(TypedDict):
+    """Already-computed receipt; submitting one does not run model inference."""
+    __pydantic_config__ = {"extra": "allow"}  # noqa: RUF012 - TypedDict schema metadata
+    schema: Literal["pocket.music-embedding/v1"]
+    model_id: str
+    model_revision: str
+    checkpoint_sha256: str
+    dimension: int
+    vector: list[float]
+    modality: Literal["audio", "text"]
+    asset: NotRequired[EmbeddingAsset]
+    source_region: NotRequired[EmbeddingSourceRegion]
+    text_origin: NotRequired[Literal["user_authored"]]
+
+
+# Untyped provider internals still receive a discoverable, strict transport
+# contract. Keep the public argument names; provider validation is authoritative.
+_SELECTION_INPUTS = {
+    "prepare_session": {"bag_handle": BagHandle, "output_dir": str,
+                        "current_track_id": str | None, "intent": SelectionIntent | None,
+                        "embedding_index": EmbeddingIndexHandle | None},
+    "session_snapshot": {"session_dir": str},
+    "session_options": {"session_dir": str, "limit": int, "expected_revision": int | None,
+                        "expected_sha256": str | None},
+    "update_session": {"session_dir": str, "expected_revision": int, "expected_sha256": str,
+                       "action": Literal["choose", "skip", "intent"], "track_id": str | None,
+                       "intent": SelectionIntent | None, "note": str | None},
+    "model_preflight": {"model_dir": str},
+    "build_embedding_index": {"receipts": list[EmbeddingReceipt], "output_path": str},
+    "rank_embedding_query": {"query_receipt": EmbeddingReceipt, "index_handle": EmbeddingIndexHandle,
+                             "limit": int},
+}
+
+
+_TOOL_DESCRIPTIONS = {
+    "query_record_bag": "Search a sealed record bag by ID/title/artist/tag; default20 records, explicit paging. Validates local source stamps.",
+    "replan_set": "Create new seeded alternatives from a saved plan. Feedback stays bound to the same bag and brief; originals remain unchanged.",
+    "prepare_session": "Create an offline On Deck session from a sealed bag. Optional cached embedding index is copied; no inference or deck control.",
+    "session_options": "Read up to limit next-track proposals (default6, maximum128) from the current sealed session. Excludes current/played/skipped records; no inference.",
+    "session_snapshot": "Read the current session revision, SHA and exact decision history. Use revision+SHA for subsequent updates.",
+    "update_session": "Record an explicit manual choose/skip/intent action. Requires current revision+SHA; stale writes fail. Never controls a deck.",
+    "model_preflight": "Check the prepared optional model cache against pinned hashes. Does not download, import torch or claim successful inference.",
+    "build_embedding_index": "Build a new sealed local index from already-computed eligible audio receipts. Preserves provenance; no model inference.",
+    "rank_embedding_query": "Retrieve bounded semantic matches from a prepared index and user-text receipt; no inference or musical approval.",
+}
+
+
 def build_server():
     try:
         from mcp.server.fastmcp import FastMCP
         from mcp.types import ToolAnnotations
     except ImportError as exc:
         raise SystemExit("Install Pocket's agent extra: python -m pip install -e '.[agent]'") from exc
+    from .acquisition import acquire_source, discover_sources, inspect_source_formats, plan_acquisition
     from .assets import identify_audio
     from .feedback import query_feedback
+    from .music_embeddings import build_embedding_index, model_preflight, rank_embedding_query
+    from .on_deck import prepare_session, session_options, session_snapshot, update_session
+    from .record_bag import create_record_bag, query_record_bag, revise_record_bag
     from .set_map import arrangement_position, source_position
     from .set_queries import export_set_map, find_clips, inspect_set_summary, query_set_region
+    from .set_workshop import plan_set_routes, record_plan_feedback, replan_set
+    from .spotify_bridge import (
+        execute_spotify_playlist,
+        import_spotify_items,
+        plan_spotify_playlist,
+        verify_spotify_playlist_ui,
+    )
     from .track_map import analyze_region
     from .transition_lab import (
         attach_completed_render,
@@ -51,7 +132,14 @@ def build_server():
     server = FastMCP("Pocket", instructions=(
         "Analyze bounded passages and keep evidence separate from musical approval. "
         "Never infer bar one solely from tempo. Native export remains supervised. "
-        "Trial functions write only new local outputs; preserve baseline recordings and projects."
+        "Trial functions write only new local outputs; preserve baseline recordings and projects. "
+        "Record bags distinguish catalog metadata, attributed hypotheses and exact local audio identity. "
+        "Selection routes and next-track choices are proposals, not auditions or deck control. "
+        "Use query_record_bag for bounded discovery. Prepare a session once; use options and explicit "
+        "revision-bound updates. Spotify execution creates a fresh private playlist only from a reviewed "
+        "plan; credentials must remain in the process environment, never tool arguments. "
+        "Acquisition requires a selected source plan; model retrieval uses prepared independent local "
+        "audio/user-text receipts, never Spotify content. No inference runs in the live suggestion path."
     ))
     for function in (
         identify_audio, analyze_region, inspect_set_summary, source_position, arrangement_position,
@@ -72,6 +160,22 @@ def build_server():
             readOnlyHint=read_only, destructiveHint=False,
             idempotentHint=read_only, openWorldHint=False,
         ))
+    readonly = {query_record_bag, session_options, session_snapshot, model_preflight, rank_embedding_query,
+                discover_sources, inspect_source_formats}
+    external = {discover_sources, inspect_source_formats, acquire_source, execute_spotify_playlist}
+    for function in (
+        create_record_bag, query_record_bag, revise_record_bag,
+        plan_set_routes, record_plan_feedback, replan_set,
+        prepare_session, session_snapshot, session_options, update_session,
+        import_spotify_items, plan_spotify_playlist, execute_spotify_playlist, verify_spotify_playlist_ui,
+        discover_sources, inspect_source_formats, plan_acquisition, acquire_source,
+        model_preflight, build_embedding_index, rank_embedding_query,
+    ):
+        server.add_tool(_compact_response(function, _SELECTION_INPUTS.get(function.__name__)),
+                        description=_TOOL_DESCRIPTIONS.get(function.__name__), structured_output=False, annotations=ToolAnnotations(
+                            readOnlyHint=function in readonly, destructiveHint=False,
+                            idempotentHint=function in readonly, openWorldHint=function in external,
+                        ))
     return server
 
 

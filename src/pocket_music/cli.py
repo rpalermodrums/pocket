@@ -3,13 +3,54 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
+import os
 import sys
 from pathlib import Path
 
 from . import __version__
 from .assets import identify_audio
 from .errors import PocketError
+
+# (module, public function, provider destination argument or None).
+# With a destination, --output creates that artifact; otherwise it saves the
+# response JSON. The parsed record printed to stdout is the library result.
+_SPEC_OPERATIONS = {
+    "bag": {
+        "create": ("record_bag", "create_record_bag", "output_dir"),
+        "query": ("record_bag", "query_record_bag", None),
+        "revise": ("record_bag", "revise_record_bag", "output_dir"),
+    },
+    "workshop": {
+        "plan": ("set_workshop", "plan_set_routes", "output_dir"),
+        "feedback": ("set_workshop", "record_plan_feedback", "output_dir"),
+        "replan": ("set_workshop", "replan_set", "output_dir"),
+    },
+    "on-deck": {
+        "prepare": ("on_deck", "prepare_session", "output_dir"),
+        "snapshot": ("on_deck", "session_snapshot", None),
+        "options": ("on_deck", "session_options", None),
+        "update": ("on_deck", "update_session", None),
+    },
+    "spotify": {
+        "import": ("spotify_bridge", "import_spotify_items", "output_dir"),
+        "plan": ("spotify_bridge", "plan_spotify_playlist", "output_dir"),
+        "execute": ("spotify_bridge", "execute_spotify_playlist", None),
+        "verify-ui": ("spotify_bridge", "verify_spotify_playlist_ui", None),
+    },
+    "acquire": {
+        "discover": ("acquisition", "discover_sources", None),
+        "formats": ("acquisition", "inspect_source_formats", None),
+        "plan": ("acquisition", "plan_acquisition", "output_dir"),
+        "run": ("acquisition", "acquire_source", "output_dir"),
+    },
+    "embeddings": {
+        "preflight": ("music_embeddings", "model_preflight", None),
+        "build": ("music_embeddings", "build_embedding_index", "output_path"),
+        "query": ("music_embeddings", "rank_embedding_query", None),
+    },
+}
 
 
 def _read_object(path: str) -> dict:
@@ -92,10 +133,45 @@ def parser() -> argparse.ArgumentParser:
     ]:
         command = actions.add_parser(name, help=help_text)
         command.add_argument("--spec", required=True, help="JSON arguments for this operation")
+    for group, operations in _SPEC_OPERATIONS.items():
+        command = commands.add_parser(group, help={
+            "bag": "Create or navigate a sealed record catalogue",
+            "workshop": "Explore constrained routes and scoped feedback",
+            "on-deck": "Prepare a session and record manual next-track choices",
+            "spotify": "Import a catalogue or execute a reviewed fresh-playlist plan",
+            "acquire": "Discover candidates or acquire an explicitly selected recording",
+            "embeddings": "Inspect an optional model cache or use prepared local receipts",
+        }[group])
+        actions = command.add_subparsers(dest="action", required=True)
+        for name, (_, function, destination) in operations.items():
+            action = actions.add_parser(name, help=function.replace("_", " "))
+            action.add_argument("--spec", required=True, help="JSON object of public function arguments")
+            output_help = ("New index JSON path (never overwrite)" if destination == "output_path" else
+                           "New artifact directory (never overwrite)") if destination else "New response JSON file; otherwise stdout"
+            action.add_argument("--output", required=destination is not None, help=output_help)
+    workspace = commands.add_parser("workspace", help="Serve the local human workspace; Ctrl-C stops it")
+    workspace.add_argument("--workspace-dir", required=True)
+    workspace.add_argument("--bag-handle", help="JSON file containing a bag handle or create result")
+    workspace.add_argument("--port", type=int, default=0, help="Loopback port; 0 chooses a free port")
     return root
 
 
-def _dispatch(args: argparse.Namespace) -> dict:
+def _dispatch(args: argparse.Namespace):
+    if args.command in _SPEC_OPERATIONS:
+        module, function, destination = _SPEC_OPERATIONS[args.command][args.action]
+        spec = _read_object(args.spec)
+        if destination:
+            if destination in spec:
+                raise PocketError(f"Use --output for the destination; omit {destination} from the specification")
+            spec[destination] = args.output
+        provider = getattr(importlib.import_module(f".{module}", __package__), function)
+        return provider(**spec)
+    if args.command == "workspace":
+        from .workspace import start_workspace
+        stored = _read_object(args.bag_handle) if args.bag_handle else None
+        handle = stored.get("handle", stored) if stored else None
+        start_workspace(args.workspace_dir, bag_handle=handle, port=args.port)
+        return None
     if args.command == "identify":
         return identify_audio(args.path)
     if args.command == "track-map":
@@ -143,8 +219,20 @@ def _dispatch(args: argparse.Namespace) -> dict:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        artifact_output = (args.command in {"lab", "map-export", "workspace"} or
+                           (args.command in _SPEC_OPERATIONS and
+                            _SPEC_OPERATIONS[args.command][args.action][2] is not None))
+        response_path = None if artifact_output else getattr(args, "output", None)
+        # Detect an existing response destination before a state-changing call.
+        if response_path:
+            destination = Path(response_path).expanduser()
+            if os.path.lexists(destination):
+                raise PocketError("Response output already exists; choose a new JSON path")
+            if not destination.parent.is_dir():
+                raise PocketError("Response output parent must already be a directory")
         result = _dispatch(args)
-        _emit(result, getattr(args, "output", None) if args.command not in {"lab", "map-export"} else None)
+        if result is not None:
+            _emit(result, response_path)
         return 0
     except (PocketError, OSError, ValueError, TypeError) as exc:
         sys.stderr.write(json.dumps({"error": type(exc).__name__, "message": str(exc)}) + "\n")

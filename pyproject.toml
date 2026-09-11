@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pocket-music"
-version = "0.2.0"
-description = "The musical toolkit for agents: evidence-linked maps and transition experiments."
+version = "0.3.0"
+description = "The musical toolkit for agents: record selection, evidence-linked maps and transition experiments."
 requires-python = ">=3.11"
 readme = "README.md"
 dependencies = ["numpy>=1.26,<3", "scipy>=1.12,<2", "soundfile>=0.12,<1", "typing_extensions>=4.9,<5"]
@@ -28,3 +28,6 @@ pythonpath = ["src"]
 [tool.ruff]
 target-version = "py311"
 line-length = 110
+
+[tool.setuptools.package-data]
+pocket_music = ["web/*.html", "web/*.css", "web/*.js", "web/*.svg"]

@@ -99,7 +99,8 @@ def test_mcp_stdio_lists_tools_and_returns_same_identity(tmp_path):
     path = _audio(tmp_path)
 
     async def exchange():
-        params = StdioServerParameters(command=sys.executable, args=["-m", "pocket_music.mcp_server"])
+        params = StdioServerParameters(command=sys.executable, args=["-m", "pocket_music.mcp_server"],
+                                       env={"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -132,7 +133,8 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
     source = tmp_path / "source.wav"
 
     async def exchange():
-        params = StdioServerParameters(command=sys.executable, args=["-m", "pocket_music.mcp_server"])
+        params = StdioServerParameters(command=sys.executable, args=["-m", "pocket_music.mcp_server"],
+                                       env={"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
