@@ -1,6 +1,6 @@
 # Optional local music embeddings
 
-This adapter is an experiment in semantic record/passages retrieval. It does not establish a downbeat, key, phrase boundary, isolated instrument, or a good mix. On Deck and Set Workshop remain usable without it.
+This adapter is an experiment in semantic record/passages retrieval. It does not establish a downbeat, key, phrase boundary, isolated instrument, or a good mix. Whisker and Weave remain usable without it.
 
 ## Provider and preparation
 
@@ -34,7 +34,7 @@ A `pocket.music-embedding/v1` receipt records source identity/region or query ha
 
 `build_embedding_index(audio_receipts, new_output_path)` verifies provider identity and seals a new index. Multiple designated regions of one exact audio SHA use an explicitly labeled mean of their normalized vectors followed by L2 normalization. This is a selected-passage aggregate, not a verified whole-track characterization. Keep the individual receipts.
 
-`rank_embedding_query(text_receipt, index_handle, limit=10)` searches cached vectors locally. It returns audio hashes, cosine scores, source regions and a qualification, never a musical probability. `apply_embedding_index` joins a bag only on exact identified audio SHA and model revision. A changed recording never inherits its prior embedding by title. On Deck may use current-record/candidate cached similarity as one small, separately visible score component; annotation evidence and unknowns remain separate.
+`rank_embedding_query(text_receipt, index_handle, limit=10)` searches cached vectors locally. It returns audio hashes, cosine scores, source regions and a qualification, never a musical probability. `apply_embedding_index` joins a bag only on exact identified audio SHA and model revision. A changed recording never inherits its prior embedding by title. Whisker may use current-record/candidate cached similarity as one small, separately visible score component; annotation evidence and unknowns remain separate.
 
 For an isolated process, `python -m pocket_music.embedding_worker --model-dir ... --request request.json --output-dir new-directory` accepts 1–100 audio/text requests and writes receipts/index. Request audio entries use the method arguments above (`path`, `start_frame`, `frames`, `source_origin`, optional expected hash). Text entries use `query` and `text_origin`. Existing outputs are not overwritten. The worker does not download or upload anything.
 

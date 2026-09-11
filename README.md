@@ -2,15 +2,17 @@
 
 **The musical toolkit for agents.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
 
-Private, early development. Version 0.3 adds **Set Workshop** and **On Deck** to Peek, Thread and Stitch. Plan several routes from one record bag, then keep a small, editable set of next-record options. Musical proposals stay separate from listening judgments.
+Private, early development. Version 0.3 adds **Weave** and **Whisker** to Peek, Thread and Stitch. Plan several routes from one record bag, then keep a small, editable set of next-record options. Musical proposals stay separate from listening judgments.
 
 | Tool | What it does |
 |---|---|
-| **Set Workshop** | Explore reproducible routes with anchors, exclusions, explicit transition ideas and feedback scoped to a route or pair. |
-| **On Deck** | Suggest next records for holding, lifting or changing direction; preserve manual choices in a shared session. |
+| **Weave** | Explore reproducible routes with anchors, exclusions, explicit transition ideas and feedback scoped to a route or pair. |
+| **Whisker** | Suggest next records for holding, lifting or changing direction; preserve manual choices in a shared session. |
 | **Peek** | Analyze exact source frames, attacks, competing pulse phases, crop sensitivity, local count uncertainty and tonal evidence. Keep musical beat one unresolved. |
 | **Thread** | Start with a compact project summary, then query a timestamp for clips, source frames and relevant controls. Reject stale saved maps. |
 | **Stitch** | Collect a native trial's media, validate after relocation, separate render identity from signal readiness, and retrieve feedback about the exact audio heard. |
+
+Weave shapes a route through records. Whisker is Pip feeling out what comes next. These complete the five-tool suite alongside Peek, Thread and Stitch; record bags and the descriptive Spotify, acquisition and embedding adapters support their work.
 
 **Pipette** is reserved for a future tool. It has no implementation, command or MCP endpoint yet.
 
@@ -44,8 +46,8 @@ briefs—warm-up, peak time and after-hours—then respond to specific routes or
 
 See the [selection interface guide](docs/selection-interfaces.md) for a complete
 specification example, command/output meanings and MCP inputs, or read
-[record bags](docs/record-bag.md), [Set Workshop](docs/set-workshop.md),
-[On Deck](docs/on-deck.md) and the [workspace](docs/workspace.md).
+[record bags](docs/record-bag.md), [Weave](docs/weave.md),
+[Whisker](docs/whisker.md) and the [workspace](docs/workspace.md).
 [Spotify](docs/spotify-bridge.md) transfers deterministic catalogues and reviewed
 fresh-playlist plans. [Acquisition](docs/acquisition.md) retains an explicitly
 selected source's original codec and provenance. [Optional local embeddings](docs/music-embeddings.md)

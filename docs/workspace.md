@@ -1,6 +1,6 @@
 # Pocket workspace
 
-A small, local browser interface for Set Workshop and On Deck. Browse a record bag, make three proposed routes, save route or directed-pair feedback, and keep a shared next-record session. Nothing here plays audio, operates decks, authenticates Spotify, downloads recordings or establishes a musical verdict.
+A small, local browser interface for Weave and Whisker. Browse a record bag, make three proposed routes, save route or directed-pair feedback, and keep a shared next-record session. Nothing here plays audio, operates decks, authenticates Spotify, downloads recordings or establishes a musical verdict.
 
 Run `pocket workspace --workspace-dir /path/to/new-workspace`. The command prints a JSON object containing the local URL, then serves until Ctrl-C. `--port 0` chooses an available port. An optional `--bag-handle /path/to/handle.json` initializes a verified existing bag; importing another bag later preserves the old artifacts. The Python entry point is:
 
@@ -28,9 +28,9 @@ Import a JSON array of catalog tracks, or an object with `title` and `tracks`. T
 
 Search title, artist or attributed tags. Tempo, energy and edition remain unknown unless supplied through the underlying bag contract. The optional generated practice bag contains fictional records and no audio. Browser imports reject local file references: prepare a bag through the regular provider and pass its handle when verified local audio is required. JSON uploads are limited to 2 MB.
 
-Workshop saves immutable plans through the same provider as the CLI. Choose a setting, target duration, record count and reproducible variation. Route feedback and pair feedback remain bound to their exact plan, bag and brief. “Try again with feedback” produces another plan; it does not overwrite the prior one. Duration is an estimate, and transition treatments remain proposals.
+Weave saves immutable plans through the same provider as the CLI. Choose a setting, target duration, record count and reproducible variation. Route feedback and pair feedback remain bound to their exact plan, bag and brief. “Try again with feedback” produces another plan; it does not overwrite the prior one. Duration is an estimate, and transition treatments remain proposals.
 
-On Deck starts from a chosen record, or an empty current selection. Choose next, skip, or change intent. Choosing updates session state only. History, reasons and unknowns stay available without crowding the main options. Warm Workshop and lowlight On Deck share one bag.
+Whisker starts from a chosen record, or an empty current selection. Choose next, skip, or change intent. Choosing updates session state only. History, reasons and unknowns stay available without crowding the main options. Warm Weave and lowlight Whisker share one bag.
 
 ## Shared state and local protection
 

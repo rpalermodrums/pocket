@@ -76,7 +76,7 @@ def test_bag_routes_feedback_and_replan(server):
 
 
 def test_session_shared_cas_choose_skip_intent_and_reattach(server):
-    from pocket_music.on_deck import update_session
+    from pocket_music.whisker import update_session
     state = mutate(server, "/api/session", imported(server), track_id="r0", intent={"direction": "hold"})
     stale = state["session"].copy()
     status, options, _ = call(server, "/api/options")
@@ -160,6 +160,11 @@ def test_static_assets_csp_and_untrusted_titles(server):
     script = call(server, "/app.js")[1].decode()
     assert "innerHTML" not in script and ".textContent" in script
     assert "https://" not in script
+    page = call(server, "/")[1].decode()
+    assert "<title>Pocket — Weave & Whisker</title>" in page
+    # Stable selectors keep existing browser links/automation usable after rebranding.
+    assert 'id="tab-workshop"' in page and '>Weave</button>' in page
+    assert 'id="tab-deck"' in page and '>Whisker</button>' in page
 
 
 def test_only_loopback_and_single_server(tmp_path):
@@ -186,7 +191,7 @@ def test_initialized_bag(server, tmp_path):
 
 
 def test_snapshot_resolves_bounded_history_without_changing_session(server):
-    from pocket_music.on_deck import session_snapshot, update_session
+    from pocket_music.whisker import session_snapshot, update_session
     state = mutate(server, "/api/session", imported(server), track_id="r0")
     session = state["session"]
     for index in range(17):

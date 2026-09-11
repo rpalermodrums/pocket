@@ -1,6 +1,6 @@
 # Shared record bags
 
-A record bag is a sealed, immutable catalogue used by Set Workshop and On Deck.
+A record bag is a sealed, immutable catalogue used by Weave and Whisker.
 Titles, Spotify URIs and musical annotations remain catalogue evidence. Only a
 verified local `audio.identity` identifies recording bytes.
 
