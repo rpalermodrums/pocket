@@ -21,7 +21,7 @@ from .record_bag import (
 )
 from .selection_types import BagHandle, PlanHandle, SetBrief
 
-WORKSHOP_VERSION = '1.0.0'
+WORKSHOP_VERSION = '1.1.0'
 SETTINGS = frozenset({'warm_up', 'peak_time', 'after_hours', 'open'})
 DIRECTIONS = frozenset({'hold', 'lift', 'left_turn', 'explore'})
 INTENT_KEYS = frozenset({'setting', 'direction', 'target_energy', 'tags', 'creativity',
@@ -123,6 +123,33 @@ def _brief(brief, tracks):
     return result, eligible
 
 
+# Editorial planning targets, never measurements assigned to a recording.
+_ENERGY_CONTOURS = {
+    'warm_up': ((0.0, .22), (.5, .35), (1.0, .50)),
+    'peak_time': ((0.0, .62), (.25, .85), (.75, .85), (1.0, .72)),
+    'after_hours': ((0.0, .55), (.5, .40), (1.0, .25)),
+}
+
+
+def _position_intent(intent, brief, position):
+    resolved = deepcopy(intent)
+    progress = position / (brief['track_count'] - 1) if brief['track_count'] > 1 else .5
+    target = intent.get('target_energy')
+    basis = 'caller_explicit_target' if target is not None else 'unspecified'
+    if target is None and brief['setting'] in _ENERGY_CONTOURS:
+        knots = _ENERGY_CONTOURS[brief['setting']]
+        for (left, a), (right, b) in pairwise(knots):
+            if left <= progress <= right:
+                target = round(a + (b - a) * (progress - left) / (right - left), 6)
+                break
+        basis = 'pocket_slot_planning_preset'
+    if target is not None:
+        resolved['target_energy'] = target
+    return resolved, {'position': position + 1, 'route_progress': progress,
+                      'target_energy': target, 'basis': basis, 'setting': brief['setting'],
+                      'status': 'planning_intent_not_recording_measurement'}
+
+
 def _ranking_provider():
     try:
         from .on_deck import ON_DECK_VERSION, rank_next_tracks
@@ -221,13 +248,14 @@ def _search(tracks, brief, intent, rng, forbidden, preferred_pairs, blocked_rout
         if not allowed:
             return None
         ranking_tracks = [t for t in tracks if t['track_id'] in allowed or t['track_id'] == current]
-        options = rank(ranking_tracks, current, played_ids=prefix, intent=intent, limit=min(128, len(allowed)))
+        position_intent, _ = _position_intent(intent, brief, len(prefix))
+        options = rank(ranking_tracks, current, played_ids=prefix, intent=position_intent, limit=min(128, len(allowed)))
         options = [o for o in options if o['track_id'] in allowed]
         # Keep a mandatory next anchor in the frontier even if the normal top-K
         # list omitted it. The provider still supplies its reasons and unknowns.
         if remaining_anchors and remaining_anchors[0] in allowed and not any(o['track_id'] == remaining_anchors[0] for o in options):
             anchor_tracks = [t for t in ranking_tracks if t['track_id'] in {current, remaining_anchors[0]}]
-            options += rank(anchor_tracks, current, played_ids=prefix, intent=intent, limit=1)
+            options += rank(anchor_tracks, current, played_ids=prefix, intent=position_intent, limit=1)
         # Weighted sampling without replacement; seed and provider version are
         # preserved. Score is a heuristic annotation fit, never a probability.
         temperature = .15 + .55 * (intent.get('creativity') if intent.get('creativity') is not None else .5)
@@ -254,14 +282,16 @@ def _search(tracks, brief, intent, rng, forbidden, preferred_pairs, blocked_rout
 
 def _route(sequence, lookup, bag_handle, brief, intent, rank, index, seed, from_preference):
     transitions, played = [], []
-    for a, b in pairwise(sequence):
+    for position, (a, b) in enumerate(pairwise(sequence), 1):
         played.append(a)
-        options = rank([lookup[a], lookup[b]], a, played_ids=played, intent=intent, limit=1)
+        position_intent, target_evidence = _position_intent(intent, brief, position)
+        options = rank([lookup[a], lookup[b]], a, played_ids=played, intent=position_intent, limit=1)
         option = next((o for o in options if o['track_id'] == b), None)
         if option is None:
             raise PocketError('Provider rejected a planned transition; no plan was published')
         transitions.append({'from_track_id': a, 'to_track_id': b, 'from_identity': _binding(lookup[a]),
                             'to_identity': _binding(lookup[b]), 'lane': option.get('lane'),
+                            'planning_target': target_evidence, 'selection_intent': position_intent,
                             'reasons': deepcopy(option.get('reasons', [])), 'unknowns': deepcopy(option.get('unknowns', [])),
                             'tempo_options': deepcopy(option.get('tempo_options', [])),
                             'proposal': deepcopy(option.get('proposed_transition')),
@@ -270,11 +300,13 @@ def _route(sequence, lookup, bag_handle, brief, intent, rank, index, seed, from_
              'tracks': [{'track_id': key, 'title': lookup[key]['title'], 'artists': lookup[key]['artists'],
                          'spotify_uri': lookup[key].get('spotify_uri')} for key in sequence],
              'transitions': transitions, 'duration': _durations(sequence, lookup, brief),
+             'position_targets': [dict(_position_intent(intent, brief, p)[1], track_id=key)
+                                  for p, key in enumerate(sequence)],
              'origin': 'preferred_ordering_retained' if from_preference else 'seeded_exploration',
              'seed': seed, 'status': 'musical_hypothesis_not_performance',
              'anchor_semantics': 'Must appear in the given relative order; no fixed time or position is implied.'}
     route['route_id'] = 'route-' + _digest_json({'bag': bag_handle['sha256'], 'brief': brief,
-                                               'track_ids': sequence, 'intent': intent})[1][:20]
+                                               'track_ids': sequence, 'intent': intent, 'workshop_version': WORKSHOP_VERSION})[1][:20]
     route['route_sha256'] = _digest_json(route)[1]
     return route
 
