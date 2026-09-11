@@ -135,3 +135,20 @@ def test_session_prepares_sealed_index_and_stale_audio_falls_back(tmp_path, monk
     index_path.write_text(json.dumps({}))
     with pytest.raises(PocketError, match="index"):
         on_deck.session_options(session["session_dir"])
+
+
+def test_failed_music_specific_checkpoint_receipts_are_not_reused(tmp_path):
+    row = receipt()
+    row.update(model_id="laion/larger_clap_music", model_revision="a0b4534a14f58e20944452dff00a22a06ce629d1",
+               checkpoint_sha256="5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1")
+    with pytest.raises(PocketError, match="model identity"):
+        embeddings.build_embedding_index([row], tmp_path / "index.json")
+
+
+def test_changed_runtime_output_cannot_be_mistaken_for_embedding():
+    from types import SimpleNamespace
+    adapter = object.__new__(embeddings.LocalClapAdapter)
+    adapter.torch = SimpleNamespace(Tensor=np.ndarray)
+    for unsupported in ({"pooler_output": np.ones((1, 512))}, np.ones((1, 77, 512)), np.ones(512)):
+        with pytest.raises(PocketError, match="output contract"):
+            adapter._single_vector(unsupported)
