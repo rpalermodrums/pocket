@@ -39,6 +39,7 @@ class BagTrackInput(TypedDict):
     album: NotRequired[str]
     duration_seconds: NotRequired[float]
     explicit: NotRequired[bool]
+    available: NotRequired[bool]
     catalog_source: NotRequired[Literal["spotify_ui", "spotify_api", "user_list", "local_manifest"]]
     local_path: NotRequired[str]
     expected_audio_sha256: NotRequired[str]
