@@ -17,7 +17,7 @@ from pocket_music.errors import PocketError
 from pocket_music.rhythm_continuity import analyze_phase_continuity, compare_grids
 
 SCHEMA = "pocket.track-map/v1"
-ANALYSIS_VERSION = "1.1.0"
+ANALYSIS_VERSION = "1.1.1"
 MAX_REGION_SECONDS = 600.0
 _RATE = 12000
 _HOP = 120
@@ -349,6 +349,20 @@ def _harmony(audio: np.ndarray, rate: int, source_start: float,
     duration = source_duration
     for beginning in np.arange(0, duration, 4.):
         end = min(duration, float(beginning + 4))
+        first = int(beginning * rate)
+        last = min(len(audio), int(end * rate))
+        if last <= first:
+            # An exact source crop can end a fraction of one downsampled frame
+            # after a window boundary. Keep that source interval explicit, but
+            # do not take mean(empty) or infer pitch from adjacent STFT padding.
+            windows.append({"source_start_seconds": source_start + float(beginning),
+                            "source_end_seconds": source_start + end,
+                            "status": "insufficient_tonal_evidence",
+                            "reason": "fewer_than_one_complete_analysis_frame",
+                            "pitch_class_energy": None, "prominent_pitch_classes": [],
+                            "spectral_flatness": None, "pitch_class_entropy": None,
+                            "rms_dbfs": None, "key_verdict": None})
+            continue
         mask = (times >= beginning) & (times < end)
         if not mask.any():
             continue
@@ -357,8 +371,6 @@ def _harmony(audio: np.ndarray, rate: int, source_start: float,
         spectrum = power[:, mask].mean(axis=1)
         flatness = float(np.exp(np.mean(np.log(spectrum + 1e-20))) / max(float(spectrum.mean()), 1e-20))
         entropy = float(-np.sum(distribution * np.log(distribution + 1e-30)) / np.log(12))
-        first = int(beginning * rate)
-        last = min(len(audio), int(end * rate))
         rms = float(np.sqrt(np.mean(audio[first:last] ** 2)))
         tonal = rms > 10 ** (-65 / 20) and float(energy.sum()) > 1e-12 and flatness < .20 and entropy < .91
         ranking = np.argsort(distribution)[::-1][:3]
