@@ -1,6 +1,6 @@
 # Selection interfaces
 
-Set Workshop and On Deck share the same sealed record bags across Python, the
+Weave and Whisker share the same sealed record bags across Python, the
 command line, the local [workspace](workspace.md) and MCP. They propose routes
 and next records; they neither mix audio nor certify a handoff. Unknown properties
 remain unknown. A catalogue URI is distinct from exact local recording identity.
@@ -35,13 +35,13 @@ plan or bag. Provider errors become a JSON error on stderr with exit code 2.
 | `bag create` | `create_record_bag` | New bag directory |
 | `bag query` | `query_record_bag` | Optional response JSON |
 | `bag revise` | `revise_record_bag` | New bag revision directory |
-| `workshop plan` | `plan_set_routes` | New plan directory |
-| `workshop feedback` | `record_plan_feedback` | New feedback revision directory |
-| `workshop replan` | `replan_set` | New plan directory |
-| `on-deck prepare` | `prepare_session` | New session directory |
-| `on-deck snapshot` | `session_snapshot` | Optional response JSON |
-| `on-deck options` | `session_options` | Optional response JSON |
-| `on-deck update` | `update_session` | Optional response JSON |
+| `weave plan` | `plan_set_routes` | New plan directory |
+| `weave feedback` | `record_plan_feedback` | New feedback revision directory |
+| `weave replan` | `replan_set` | New plan directory |
+| `whisker prepare` | `prepare_session` | New session directory |
+| `whisker snapshot` | `session_snapshot` | Optional response JSON |
+| `whisker options` | `session_options` | Optional response JSON |
+| `whisker update` | `update_session` | Optional response JSON |
 | `spotify import` | `import_spotify_items` | New import directory |
 | `spotify plan` | `plan_spotify_playlist` | New playlist plan directory |
 | `spotify execute` | `execute_spotify_playlist` | Optional response JSON |
@@ -73,7 +73,7 @@ Then create the bag:
 pocket bag create --spec bag-spec.json --output new-bag-directory
 ```
 
-Use the returned `handle` object as `bag_handle` in a Workshop specification:
+Use the returned `handle` object as `bag_handle` in a Weave specification:
 
 ```json
 {
@@ -85,22 +85,24 @@ Use the returned `handle` object as `bag_handle` in a Workshop specification:
 ```
 
 ```sh
-pocket workshop plan --spec workshop-spec.json --output new-plan-directory
+pocket weave plan --spec workshop-spec.json --output new-plan-directory
 ```
 
 Use actual returned handles; the illustrative path and SHA are not valid inputs.
 `warm_up`, `peak_time` and `after_hours` are the initial exploratory settings.
 Anchors retain relative order, not fixed opening/closing positions. Estimated
 performance duration remains separate from full-record duration. See
-[Workshop](set-workshop.md) for its exact feedback and duration semantics.
+[Weave](weave.md) for its exact feedback and duration semantics.
 
 ## MCP and public Python
+
+The branded route tools are MCP `weave`, `weave_feedback` and `weave_replan`. Shared-session tools are `whisker_prepare`, `whisker_snapshot`, `whisker` (options) and `whisker_update`. Their Python function names in the command table remain unchanged. The [compatibility guide](compatibility.md) documents the 35-primary/20-alias count and each renamed mapping.
 
 `pocket-mcp` exposes canonical tools alongside compatibility aliases. The 21 selection provider tools return one compact JSON
 text record without a duplicated structured copy. Inputs expose nested bag/plan
 handles, attributed profiles, brief constraints, integer revision/frame fields,
 choice enums and cached embedding receipt fields. Standard option limits apply:
-bag pages default to 20, On Deck to 6, Workshop to 3 distinct routes. Explicit
+bag pages default to 20, Whisker to 6, Weave to 3 distinct routes. Explicit
 larger requests still obey provider bounds; limited route diversity is reported.
 Full catalogues and embedding indexes are not automatically echoed by discovery.
 
@@ -142,4 +144,4 @@ Embedding preflight only checks a prepared cache. Build/query consume already
 computed receipts and run no model inference. Independent local audio and
 user-authored text are eligible; Spotify streams, previews and imported metadata
 are not model inputs. Optional inference uses the isolated worker described in
-[music embeddings](music-embeddings.md). On Deck remains usable offline without it.
+[music embeddings](music-embeddings.md). Whisker remains usable offline without it.

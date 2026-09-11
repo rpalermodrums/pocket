@@ -1,4 +1,4 @@
-"""Loopback-only human workspace over the shared Workshop and On Deck providers."""
+"""Loopback-only human workspace over the shared Weave and Whisker providers."""
 
 from __future__ import annotations
 
@@ -76,16 +76,16 @@ class _Workspace:
 
     def session_path(self, state):
         if not state["session_dir"]:
-            raise PocketError("Prepare an On Deck session first")
+            raise PocketError("Prepare a Whisker session first")
         target = (self.folder / state["session_dir"]).resolve()
         if not target.is_relative_to(self.folder):
             raise PocketError("Session path must stay inside this workspace")
         return str(target)
 
     def snapshot(self):
-        from .on_deck import session_snapshot
         from .record_bag import load_record_bag
-        from .set_workshop import load_set_plan
+        from .weave import load_set_plan
+        from .whisker import session_snapshot
         state = self.read()
         bag = load_record_bag(state["bag"]) if state["bag"] else None
         session = session_snapshot(self.session_path(state)) if state["session_dir"] else None
@@ -105,9 +105,9 @@ class _Workspace:
                 if current else None}
 
     def mutate(self, endpoint, data):
-        from .on_deck import prepare_session, session_snapshot, update_session
         from .record_bag import create_record_bag
-        from .set_workshop import plan_set_routes, record_plan_feedback, replan_set
+        from .weave import plan_set_routes, record_plan_feedback, replan_set
+        from .whisker import prepare_session, session_snapshot, update_session
         state = self.read()
         revision = data.get("expected_workspace_revision")
         if type(revision) is not int or revision != state["revision"]:
@@ -231,7 +231,7 @@ class _Handler(BaseHTTPRequestHandler):
                                               offset=int(query.get("offset", ["0"])[0])) if state["bag"] else {
                                                   "tracks": [], "total_matches": 0, "next_offset": None}
                 elif parsed.path == "/api/options":
-                    from .on_deck import session_options
+                    from .whisker import session_options
                     result = session_options(workspace.session_path(state), limit=6)
                 else:
                     return self._send(404, {"error": "Unknown workspace endpoint"})
