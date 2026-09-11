@@ -637,7 +637,7 @@ def prepare_native_trial(
     if signal_expectation == "intentional_silence" and expectation_note is None:
         raise PocketError("Intentional silence requires an expectation_note before rendering")
     note = _text(expectation_note, "expectation_note") if expectation_note is not None else None
-    name = _text(range_name, "range_name", 120)
+    range_label = _text(range_name, "range_name", 120)
     source = Path(source_als).expanduser().resolve()
     before = _stamp(source)
     source_hash = sha256_file(source)
@@ -730,7 +730,7 @@ def prepare_native_trial(
             "signal_expectation": signal_expectation,
             "expectation_note": note,
             "export_range": {
-                "name": name,
+                "name": range_label,
                 "start_beat": begin,
                 "length_beats": length,
                 "constant_bpm": bpm,
