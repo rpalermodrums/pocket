@@ -1,4 +1,4 @@
-# One library, three workflows
+# One library, shared evidence
 
 Pocket begins with a local Python package. The CLI and optional MCP server invoke the same functions; they are interfaces, not separate implementations. No hosted service, model download or running Live instance is required for the maps and rendered-audio comparisons.
 
@@ -18,6 +18,8 @@ JSON schema identifiers mark the record family/version. The package uses validat
 - `thread_queries.py` and `source_frames.py`: immutable snapshot handles, bounded timestamp queries, explicit omission budgets and inward conversion to complete source frames. Queries verify the snapshot, ALS and dependency versions; unsupported mappings remain unknown.
 - `stitch.py`: exact comparisons, collected native candidates, relocation validation, signal/readiness checks and feedback recording. Native observation fields are supplied reports; the provider does not operate Live or independently certify an export.
 - `feedback.py`: sealed output/interval/scope retrieval with pagination and no synthesized verdict.
+- `baste.py` and `devices/baste/`: fresh live observation through the actual read-only Max for Live reader and authenticated local transport. Saved maps remain separate from momentary runtime IDs. Device sources are package data, not an optional simulated implementation.
+- `pipette.py`: explicit kept-trial promotion, current evidence checks, collected-reference-only child rewrites and sealed lineage. Calls existing Stitch validation and normal Thread summary/handle queries; never merges unsaved state.
 - `cli.py` and `mcp_server.py`: the common tool surface. MCP inputs have explicit nested types. Four summary/query tools emit one compact JSON text record to avoid duplicate transport expansion; their parsed records match the providers.
 
 The integer source-frame pair is the preferred boundary from a set query to Peek. The conversion snaps at most 0.1 sample of floating-point overshoot at a file endpoint, and otherwise rounds inward. It records every adjustment and never interprets mapping precision as certainty about a musical downbeat.
@@ -39,3 +41,9 @@ NumPy, SciPy and soundfile provide numerical and audio-file primitives. The opti
 Use Peek, Thread and Stitch on unfamiliar transitions. Record where the tool's representation was useful, ambiguous or wrong. Then choose between better beat/downbeat providers, selective note transcription, MuseTok, broader editing or improved native integration.
 
 The decision criterion is whether a tool improves a musical choice or removes repeated work. A plausible MIDI file, more model confidence or more infrastructure is not sufficient on its own.
+
+The [Baste/Pipette plan](baste-pipette-plan.md) evaluates the six proposed tools
+and establishes this cycle's dependencies. Baste precedes a future guarded live
+parameter writer; Pipette provides saved promotion for a future comparison UI.
+Neither expands Stitch's editing or Max dependency collection scope. See
+[acceptance](baste-pipette-acceptance.md) for current verification boundaries.

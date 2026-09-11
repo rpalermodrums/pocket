@@ -51,11 +51,12 @@ def test_cli_aliases_normalize_before_output_dispatch(primary, old, args):
     assert f'{primary} ({old})' in help_text and f'compatibility alias: {old}' in ' '.join(help_text.split())
 
 
-def test_pipette_is_not_a_command(capsys):
+def test_pipette_requires_an_explicit_operation(capsys):
     with pytest.raises(SystemExit) as caught:
         parser().parse_args(['pipette'])
     assert caught.value.code == 2
-    assert "invalid choice: 'pipette'" in capsys.readouterr().err
+    assert "required: action" in capsys.readouterr().err
+    assert parser().parse_args(['pipette', 'promote', '--spec', 'keep.json', '--output', 'child']).action == 'promote'
 
 
 def test_legacy_read_output_and_export_write_the_same_artifact_kinds(tmp_path):
@@ -135,10 +136,10 @@ def test_all_mcp_aliases_share_callable_schema_annotations_and_transport():
         server = build_server()
         listed = await server.list_tools()
         tools = {tool.name: tool for tool in listed}
-        assert len(tools) == 55
-        assert not any('pipette' in name.casefold() for name in tools)
+        assert len(tools) == 59
+        assert {'baste', 'baste_build_device', 'pipette', 'pipette_validate'} <= tools.keys()
         names = [tool.name for tool in listed]
-        assert min(names.index(old) for old in MCP_PAIRS.values()) >= 35
+        assert min(names.index(old) for old in MCP_PAIRS.values()) >= 39
         for primary, old in MCP_PAIRS.items():
             assert tools[primary].inputSchema == tools[old].inputSchema
             assert tools[primary].outputSchema == tools[old].outputSchema

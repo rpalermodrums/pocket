@@ -1,5 +1,9 @@
 # Evaluation
 
+Current cycle: [Baste/Pipette acceptance](baste-pipette-acceptance.md) records 0.4
+automated, installed-package and native checks with their remaining gates. The
+0.2 results below are historical evidence for the earlier saved-project workflow.
+
 Pocket 0.2 implements the five needs from the private real-set field test plus bounded feedback retrieval. The evidence below distinguishes generated regressions, production-file checks, native operator observations and musical judgments. No new musical audition or autonomous native export capability is claimed.
 
 ## Version 0.2 field-test acceptance

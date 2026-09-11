@@ -2,7 +2,7 @@
 
 **The musical toolkit for agents.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
 
-Private, early development. Version 0.3 adds **Weave** and **Whisker** to Peek, Thread and Stitch. Plan several routes from one record bag, then keep a small, editable set of next-record options. Musical proposals stay separate from listening judgments.
+Private, early development. Version 0.4 adds **Baste** and **Pipette**: observe an open Live session, then preserve an explicitly kept saved trial as a new project. Musical proposals, technical verification and listening judgments stay separate.
 
 | Tool | What it does |
 |---|---|
@@ -11,10 +11,13 @@ Private, early development. Version 0.3 adds **Weave** and **Whisker** to Peek, 
 | **Peek** | Analyze exact source frames, attacks, competing pulse phases, crop sensitivity, local count uncertainty and tonal evidence. Keep musical beat one unresolved. |
 | **Thread** | Start with a compact project summary, then query a timestamp for clips, source frames and relevant controls. Reject stale saved maps. |
 | **Stitch** | Collect a native trial's media, validate after relocation, separate render identity from signal readiness, and retrieve feedback about the exact audio heard. |
+| **Baste** | Read the open, possibly unsaved Live session through an editable Max for Live device; retain fresh observation timing and explicit failures. |
+| **Pipette** | Promote an explicitly kept saved Stitch candidate with a usable render into a new collected project and sealed parent/trial/child lineage. |
 
-Weave shapes a route through records. Whisker is Pip feeling out what comes next. These complete the five-tool suite alongside Peek, Thread and Stitch; record bags and the descriptive Spotify, acquisition and embedding adapters support their work.
-
-**Pipette** is reserved for a future tool. It has no implementation, command or MCP endpoint yet.
+Weave shapes a route through records. Whisker is Pip feeling out what comes next.
+Peek, Thread and Stitch support exact passage experiments. Baste observes current
+session state; Pipette preserves a saved keep decision. Record bags and the
+Spotify, acquisition and embedding adapters support these workflows.
 
 ## Install
 
@@ -76,6 +79,23 @@ The summary contains an identity-bound handle for later calls. A valid region su
 
 See [Peek](docs/peek.md), [Thread](docs/thread.md), [Stitch](docs/stitch.md), [feedback retrieval](docs/feedback.md) and the [agent workflow](skills/pocket/SKILL.md). Output records may contain local paths: keep them in your local working area, outside Git. The [0.2 release notes](docs/releases/0.2.0.md) describe compatibility changes and limits.
 
+## Observe Live and keep a trial
+
+```sh
+pocket baste-device --output /path/to/new/Baste-device
+# Load the generated Baste.amxd in Live with its adjacent scripts, then:
+pocket baste
+pocket pipette promote --spec keep-spec.json --output '/path/to/new/Kept Project'
+```
+
+[Baste](docs/baste.md) documents setup, read scope and failures. It reads the live
+session without saving or changing it. [Pipette](docs/pipette.md) documents the
+explicit keep specification and selected render hashes. It copies a saved trial's
+evidence and media, rebinds only the child's collected reference hints, and verifies
+the result through Thread. It does not promote mutable Baste observations.
+See the [implementation plan](docs/baste-pipette-plan.md) and
+[acceptance record](docs/baste-pipette-acceptance.md) for verification and limits.
+
 ## Work with an agent
 
 `pocket-mcp` serves the same provider records over standard input/output. Its `thread` tool returns a summary and handle; `thread_region`, `thread_find_clips` and `thread_export` reuse that handle. These four tools return one compact JSON text record, without a second expanded copy. `peek` analyzes a source region, and `stitch` creates a comparison trial. A local MCP configuration can point to the executable in your virtual environment:
@@ -106,6 +126,7 @@ The [name compatibility guide](docs/compatibility.md) maps the previous names to
 
 ```sh
 python -m pytest
+node --test tests/baste_reader.test.cjs
 ```
 
 Tests generate small signals and saved-project fixtures. Full recordings, renders, model weights and real listener notes stay outside the repository. [Architecture](docs/architecture.md) describes the shared contracts and extraction from earlier production work. [Evaluation](docs/evaluation.md) records the production field checks and what still needs listening tests. The [implementation plan](docs/implementation-plan.md) records scope, ownership and acceptance gates.

@@ -17,6 +17,10 @@ from .errors import PocketError
 # With a destination, --output creates that artifact; otherwise it saves the
 # response JSON. The parsed record printed to stdout is the library result.
 _SPEC_OPERATIONS = {
+    "pipette": {
+        "promote": ("pipette", "promote_trial", "output_dir"),
+        "validate": ("pipette", "validate_promotion", None),
+    },
     "bag": {
         "create": ("record_bag", "create_record_bag", "output_dir"),
         "query": ("record_bag", "query_record_bag", None),
@@ -87,10 +91,16 @@ def _initial_command(commands, name, compatibility_name, help_text):
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="pocket", description=(
-        "The musical toolkit for agents: Peek, Thread, Stitch, Weave and Whisker."
+        "The musical toolkit for agents: Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette."
     ))
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="command", required=True)
+    baste = commands.add_parser("baste", help="Read the current Live session through the Baste device")
+    baste.add_argument("--timeout-seconds", type=float, default=35)
+    baste.add_argument("--bridge-dir", help="Local Baste connection directory; no observation cache")
+    baste.add_argument("--output", help="New observation JSON file; otherwise stdout")
+    device = commands.add_parser("baste-device", help="Build an editable Max for Live device; does not load it")
+    device.add_argument("--output", required=True, help="New device directory")
     asset = commands.add_parser("identify", help="Identify an exact local recording")
     asset.add_argument("path")
     asset.add_argument("--output", help="Write a new JSON file (never overwrite)")
@@ -151,6 +161,7 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--spec", required=True, help="JSON arguments for this operation")
     for group, operations in _SPEC_OPERATIONS.items():
         help_text = {
+            "pipette": "Promote a kept Stitch candidate into a new collected saved project",
             "bag": "Create or navigate a sealed record catalogue",
             "weave": "Explore routes through a set and refine them with feedback",
             "whisker": "Feel out the next record in a shared live session",
@@ -175,6 +186,12 @@ def parser() -> argparse.ArgumentParser:
 
 
 def _dispatch(args: argparse.Namespace):
+    if args.command == "baste":
+        from .baste import observe_live
+        return observe_live(timeout_seconds=args.timeout_seconds, bridge_dir=args.bridge_dir)
+    if args.command == "baste-device":
+        from .baste import build_baste_device
+        return build_baste_device(args.output)
     if args.command in _SPEC_OPERATIONS:
         module, function, destination = _SPEC_OPERATIONS[args.command][args.action]
         spec = _read_object(args.spec)
@@ -237,7 +254,7 @@ def _dispatch(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        artifact_output = (args.command in {"stitch", "thread-export", "workspace"} or
+        artifact_output = (args.command in {"stitch", "thread-export", "workspace", "baste-device"} or
                            (args.command in _SPEC_OPERATIONS and
                             _SPEC_OPERATIONS[args.command][args.action][2] is not None))
         response_path = None if artifact_output else getattr(args, "output", None)

@@ -1,11 +1,11 @@
 ---
 name: pocket
-description: Explore record bags, plan set routes, share live next-track decisions, and inspect exact recordings and Ableton transitions with scoped feedback.
+description: Explore record bags, plan routes, inspect saved and open Ableton sessions, compare exact passages, and preserve explicitly kept saved trials with scoped evidence.
 ---
 
 # Pocket workflow
 
-Use this skill for Peek, Thread, Stitch, Weave and Whisker. Read the provider documentation when an operation is unfamiliar. The [selection interfaces](../../docs/selection-interfaces.md) document matching CLI/MCP calls; the [workspace](../../docs/workspace.md) gives a local human interface.
+Use this skill for Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette. Read the provider documentation when an operation is unfamiliar. The [selection interfaces](../../docs/selection-interfaces.md) document matching CLI/MCP calls; the [workspace](../../docs/workspace.md) gives a local human interface.
 
 ## Selection and improvisation
 
@@ -33,3 +33,24 @@ MCP `stitch_prepare_native` (Python `prepare_native_trial`) prepares only its de
 Read artifact validity, signal disposition, native loading, export observation and `ready_to_compare` separately. Silent or near-silent expected music, non-finite samples and sample overload cannot become ready through a successful export alone. Intentional silence requires an explicit expectation and note at preparation. Readiness still carries no listening judgment. Do not overwrite an immutable candidate when Live wants to normalize it—save a separate file and preserve the chain of evidence. Re-preparing from a relocated source with stale absolute references currently requires deliberate relinking; old v1 native trials must remain preserved and be freshly prepared as v2.
 
 Prefer existing local recordings. Follow the current task's authorization for optional model preparation, acquisition and playlist writes; these are not implicit in a read-only map request. General project editing and public sharing remain separate scopes. Keep generated outputs, recordings, personal notes, credentials and machine paths outside Git. Publishing the repository remains a separate owner decision.
+
+## Open session observations and saved keep decisions
+
+Use MCP `baste` or CLI `pocket baste` for the currently open, possibly unsaved Live
+session. Build the real editable device with `baste_build_device` / `baste-device`
+and deliberately load it with all adjacent scripts. Coordinate native use of Live
+with other tasks first. See [Baste](../../docs/baste.md) for setup and failure
+dispositions. Read observation timing and completeness; never reuse a runtime ID
+as a durable handle, infer a saved revision, or call a failed/empty read success.
+The observer has no Live mutation or save capability.
+
+Use MCP `pipette` / CLI `pipette promote` only for an explicitly kept **saved**
+Stitch v2 candidate and one selected usable render attachment. Supply exact trial,
+candidate and attachment hashes, a new destination and the actual decision maker's
+name, kind and reason. An agent's technical keep is not human listening approval.
+Pipette preserves the parent/trial, collects the child, proves only its dependency
+hints changed, seals lineage and returns a normal Thread handle. Use
+`pipette_validate` / `pipette validate` after moving the whole project. Keep the
+sealed baseline immutable and save later work separately. Native loading and
+listening remain separate checks; mutable Baste observations cannot be promoted.
+See [Pipette](../../docs/pipette.md) for rejection rules and evidence scope.

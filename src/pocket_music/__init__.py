@@ -1,10 +1,12 @@
 """Pocket: evidence-linked musical tools with lazy, offline-capable providers."""
 from importlib import import_module
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 # Importing Pocket does not load a model, contact a service, or start a workspace.
 _PUBLIC = {
+    "observe_live": "baste", "build_baste_device": "baste",
+    "promote_trial": "pipette", "validate_promotion": "pipette",
     "identify_audio": "assets", "analyze_region": "peek",
     "inspect_set": "thread", "source_position": "thread", "arrangement_position": "thread",
     "inspect_set_summary": "thread_queries", "query_set_region": "thread_queries",
@@ -26,7 +28,7 @@ _PUBLIC = {
     "build_embedding_index": "music_embeddings", "load_embedding_index": "music_embeddings",
     "rank_embedding_query": "music_embeddings", "start_workspace": "workspace",
 }
-_MODULES = ("peek", "thread", "stitch", "weave", "whisker")
+_MODULES = ("peek", "thread", "stitch", "weave", "whisker", "baste", "pipette")
 __all__ = ["__version__"] + list(_PUBLIC) + list(_MODULES)
 
 

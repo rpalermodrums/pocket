@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pocket-music"
-version = "0.3.0"
+version = "0.4.0"
 description = "The musical toolkit for agents: record selection, evidence-linked maps and transition experiments."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -30,4 +30,4 @@ target-version = "py311"
 line-length = 110
 
 [tool.setuptools.package-data]
-pocket_music = ["web/*.html", "web/*.css", "web/*.js", "web/*.svg"]
+pocket_music = ["web/*.html", "web/*.css", "web/*.js", "web/*.svg", "devices/baste/*.js", "devices/baste/*.maxpat"]

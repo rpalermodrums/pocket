@@ -98,7 +98,7 @@ def test_public_exports_are_lazy_and_metadata_matches():
     import pocket_music
     from pocket_music.record_bag import create_record_bag
     assert pocket_music.create_record_bag is create_record_bag
-    assert pocket_music.__version__ == '0.3.0'
+    assert pocket_music.__version__ == '0.4.0'
     import tomllib
     metadata = tomllib.loads((Path(__file__).parents[1] / 'pyproject.toml').read_text())
     assert metadata['project']['version'] == __version__
@@ -134,7 +134,7 @@ def test_mcp_selection_schema_and_real_typed_calls(tmp_path):
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
             tools = {t.name: t for t in (await session.list_tools()).tools}
-            assert len(tools) == 55
+            assert len(tools) == 59
             assert tools['whisker'].inputSchema['properties']['limit']['type'] == 'integer'
             assert tools['whisker_update'].inputSchema['properties']['action']['enum'] == ['choose', 'skip', 'intent']
             assert tools['execute_spotify_playlist'].annotations.openWorldHint

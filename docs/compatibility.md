@@ -1,6 +1,6 @@
 # Name compatibility
 
-**Peek**, **Thread** and **Stitch** are the current names for Track Map, Set Map and Transition Lab. **Weave** and **Whisker** are the current names for Set Workshop and On Deck. These are naming changes, not analysis, editing or saved-format migrations. **Pipette** is reserved for a future tool; it has no command, provider or MCP endpoint.
+**Peek**, **Thread** and **Stitch** are the current names for Track Map, Set Map and Transition Lab. **Weave** and **Whisker** are the current names for Set Workshop and On Deck. These are naming changes, not analysis, editing or saved-format migrations. **Baste** and **Pipette** are new 0.4 tools, with no legacy aliases.
 
 ## Current interfaces
 
@@ -18,7 +18,18 @@ Use the current names for new calls. The CLI still accepts these exact older ali
 | `pocket weave` | `pocket workshop` |
 | `pocket whisker` | `pocket on-deck` |
 
-MCP discovery exposes **35 primary tools and 20 compatibility aliases: 55 names total**. Twenty primary names changed across the five branded tools. The other 15, including `identify_audio`, record-bag operations and the Spotify, acquisition and embedding adapters, are unchanged.
+MCP discovery exposes **39 primary tools and 20 compatibility aliases: 59 names total**. Twenty primary names changed across the original five branded tools. The other 15 original names, including `identify_audio`, record-bag operations and the Spotify, acquisition and embedding adapters, are unchanged. Baste/Pipette add four names:
+
+| MCP | CLI | Python provider |
+|---|---|---|
+| `baste` | `pocket baste` | `baste.observe_live` |
+| `baste_build_device` | `pocket baste-device` | `baste.build_baste_device` |
+| `pipette` | `pocket pipette promote` | `pipette.promote_trial` |
+| `pipette_validate` | `pocket pipette validate` | `pipette.validate_promotion` |
+
+These functions are also lazy root exports from `pocket_music`. New observation,
+device and promotion records have their own v1 schemas; they do not rename or
+rewrite existing Thread, Stitch or selection records.
 
 | Current MCP name | Accepted compatibility alias | Python function |
 |---|---|---|

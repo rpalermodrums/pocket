@@ -117,9 +117,11 @@ def build_server():
         raise SystemExit("Install Pocket's agent extra: python -m pip install -e '.[agent]'") from exc
     from .acquisition import acquire_source, discover_sources, inspect_source_formats, plan_acquisition
     from .assets import identify_audio
+    from .baste import build_baste_device, observe_live
     from .feedback import query_feedback
     from .music_embeddings import build_embedding_index, model_preflight, rank_embedding_query
     from .peek import analyze_region
+    from .pipette import promote_trial, validate_promotion
     from .record_bag import create_record_bag, query_record_bag, revise_record_bag
     from .spotify_bridge import (
         execute_spotify_playlist,
@@ -142,6 +144,8 @@ def build_server():
     server = FastMCP("Pocket", instructions=(
         "Use Peek for bounded source evidence, Thread for saved arrangement/source intent, "
         "Stitch for controlled transition trials, Weave for set routes and Whisker for next-record options. "
+        "Baste reads fresh live state without saving; runtime IDs are not durable handles. "
+        "Pipette promotes an explicit kept saved trial into a new project with sealed lineage. "
         "Prefer these primary names; older tool names "
         "remain compatibility aliases. Keep evidence separate from musical approval. "
         "Never infer bar one solely from tempo. Native export remains supervised. "
@@ -158,6 +162,15 @@ def build_server():
     server.add_tool(identify_audio, annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
     ))
+    for name, function, read_only in (
+        ("baste", observe_live, True), ("baste_build_device", build_baste_device, False),
+        ("pipette", promote_trial, False), ("pipette_validate", validate_promotion, True),
+    ):
+        server.add_tool(_compact_response(function), name=name,
+                        description=f"{name}: {inspect.getdoc(function)}", structured_output=False,
+                        annotations=ToolAnnotations(readOnlyHint=read_only, destructiveHint=False,
+                                                    idempotentHint=function is validate_promotion,
+                                                    openWorldHint=False))
     initial_tools = (
         ("peek", "analyze_region", analyze_region),
         ("thread", "inspect_set", inspect_set_summary),

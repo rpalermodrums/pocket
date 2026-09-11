@@ -60,10 +60,12 @@ def test_root_exports_stay_lazy_and_names_are_modules():
 import importlib, sys
 from types import ModuleType
 import pocket_music
-assert not any('pocket_music.' + name in sys.modules for name in ('peek', 'thread', 'stitch', 'weave', 'whisker'))
+assert not any('pocket_music.' + name in sys.modules for name in ('peek', 'thread', 'stitch', 'weave', 'whisker',
+                                                               'baste', 'pipette'))
 assert 'numpy' not in sys.modules
 for name, function in [('peek', 'analyze_region'), ('thread', 'inspect_set'), ('stitch', 'create_trial'),
-                       ('weave', 'plan_set_routes'), ('whisker', 'session_options')]:
+                       ('weave', 'plan_set_routes'), ('whisker', 'session_options'),
+                       ('baste', 'observe_live'), ('pipette', 'promote_trial')]:
     module = getattr(pocket_music, name)
     assert isinstance(module, ModuleType)
     assert module is importlib.import_module('pocket_music.' + name)
