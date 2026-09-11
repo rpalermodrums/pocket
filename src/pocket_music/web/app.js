@@ -17,6 +17,18 @@ const tell = (text) => { $("message").textContent = text; $("message").hidden = 
 const time = (seconds) => Number.isFinite(seconds) ? `${Math.round(seconds / 60)} min` : "Duration unknown";
 const artist = (track) => (track.artists || []).join(", ");
 const laneName = (lane) => ({hold: "Hold", lift: "Lift", left_turn: "Left turn", explore: "Explore"}[lane] || lane);
+const historyText = (entry) => {
+  const action = {prepare: "Started with", choose: "Chose", skip: "Skipped", intent: "Changed intent"}[entry.action] || entry.action;
+  return entry.track ? `${action} · ${entry.track.title}${artist(entry.track) ? " — " + artist(entry.track) : ""}` : `${action}${entry.track_id ? " · Unknown record" : ""}`;
+};
+const timingNote = (duration) => {
+  const target = duration.target_seconds;
+  const delta = duration.estimate_minus_target_seconds;
+  if (!Number.isFinite(target) || !Number.isFinite(delta)) return null;
+  if (delta === 0) return `At the ${time(target)} planning target — still an estimate.`;
+  const difference = Math.abs(delta) < 60 ? `${Math.round(Math.abs(delta))} sec` : time(Math.abs(delta));
+  return delta < 0 ? `About ${difference} short of ${time(target)} target — add records or revise the plan.` : `About ${difference} over ${time(target)} target — use fewer records or revise the plan.`;
+};
 
 async function request(path, data) {
   const response = await fetch(path, data === undefined ? {cache: "no-store"} : {
@@ -77,7 +89,7 @@ function render() {
     element.classList.toggle("selected", element.dataset.intent === direction);
     element.setAttribute("aria-pressed", String(element.dataset.intent === direction));
   });
-  $("history").replaceChildren(...(state.session?.history || []).slice(-15).map((entry) => node("li", `${entry.action}${entry.track_id ? " · " + entry.track_id : ""}`)));
+  $("history").replaceChildren(...(state.history || []).map((entry) => node("li", historyText(entry))));
   $("session-info").textContent = state.session ? `Session revision ${state.session.revision} · ${state.session.played_ids.length} chosen · ${state.session.skipped_ids.length} skipped. Shared directory: ${state.session.session_dir}` : "No session yet.";
   renderRoutes();
 }
@@ -115,7 +127,10 @@ function renderRoutes() {
   const plan = ui.snapshot.plan;
   $("routes").replaceChildren(...plan.routes.map((route, index) => {
     const article = node("article", null, "route");
-    article.append(node("h2", `Route ${index + 1}`), node("p", `${time(route.duration.estimated_performance_seconds)} estimated · ${route.tracks.length} records`, "small muted"));
+    const label = route.origin === "annotation_baseline" ? "Baseline" : route.origin === "preferred_ordering_retained" ? "Preferred direction" : `Alternative ${index || 1}`;
+    article.append(node("h2", label), node("p", `${time(route.duration.estimated_performance_seconds)} estimated · ${route.tracks.length} records`, "small muted"));
+    const timing = timingNote(route.duration);
+    if (timing) article.append(node("p", timing, "small"));
     const list = node("ol");
     route.tracks.forEach((track) => {
       const item = node("li");
