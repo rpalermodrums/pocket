@@ -5,13 +5,13 @@ __version__ = "0.3.0"
 
 # Importing Pocket does not load a model, contact a service, or start a workspace.
 _PUBLIC = {
-    "identify_audio": "assets", "analyze_region": "track_map",
-    "inspect_set": "set_map", "source_position": "set_map", "arrangement_position": "set_map",
-    "inspect_set_summary": "set_queries", "query_set_region": "set_queries",
-    "find_clips": "set_queries", "export_set_map": "set_queries",
-    "create_trial": "transition_lab", "prepare_native_trial": "transition_lab",
-    "attach_completed_render": "transition_lab", "validate_native_trial": "transition_lab",
-    "record_feedback": "transition_lab", "query_feedback": "feedback",
+    "identify_audio": "assets", "analyze_region": "peek",
+    "inspect_set": "thread", "source_position": "thread", "arrangement_position": "thread",
+    "inspect_set_summary": "thread_queries", "query_set_region": "thread_queries",
+    "find_clips": "thread_queries", "export_thread": "thread_queries", "export_set_map": "thread_queries",
+    "create_trial": "stitch", "prepare_native_trial": "stitch",
+    "attach_completed_render": "stitch", "validate_native_trial": "stitch",
+    "record_feedback": "stitch", "query_feedback": "feedback",
     "create_record_bag": "record_bag", "load_record_bag": "record_bag",
     "query_record_bag": "record_bag", "revise_record_bag": "record_bag",
     "plan_set_routes": "set_workshop", "load_set_plan": "set_workshop",
@@ -26,13 +26,17 @@ _PUBLIC = {
     "build_embedding_index": "music_embeddings", "load_embedding_index": "music_embeddings",
     "rank_embedding_query": "music_embeddings", "start_workspace": "workspace",
 }
-__all__ = ["__version__"] + list(_PUBLIC)
+_MODULES = ("peek", "thread", "stitch")
+__all__ = ["__version__"] + list(_PUBLIC) + list(_MODULES)
 
 
 def __getattr__(name):
-    if name not in _PUBLIC:
+    if name in _MODULES:
+        value = import_module(f".{name}", __name__)
+    elif name in _PUBLIC:
+        value = getattr(import_module(f".{_PUBLIC[name]}", __name__), name)
+    else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(import_module(f".{_PUBLIC[name]}", __name__), name)
     globals()[name] = value
     return value
 

@@ -13,12 +13,12 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from test_set_map import Fixture, value
+from test_thread import Fixture, value
 
 from pocket_music.errors import PocketError
-from pocket_music.set_map import inspect_set
-from pocket_music.set_queries import (
-    export_set_map,
+from pocket_music.thread import inspect_set
+from pocket_music.thread_queries import (
+    export_thread,
     find_clips,
     inspect_set_summary,
     parse_set_time,
@@ -51,17 +51,17 @@ class QueryTests(unittest.TestCase):
         self.assertLess(len(json.dumps(summary).encode()), 4000)
         handle = summary['handle']
         output = subprocess.check_output([sys.executable, '-c',
-            ('import json,sys; from pocket_music.set_queries import find_clips; '
+            ('import json,sys; from pocket_music.thread_queries import find_clips; '
              'print(json.dumps(find_clips(json.loads(sys.argv[1]),"Fixture")))'), json.dumps(handle)],
             env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
         found = json.loads(output)
         self.assertEqual(found['clips'][0]['id'], 'track:10/clip:0')
         dest = self.directory / 'full.json'
-        exported = export_set_map(handle, dest)
+        exported = export_thread(handle, dest)
         self.assertEqual(json.loads(dest.read_text())['schema'], 'pocket.set-map/v1')
         self.assertEqual(exported['bytes'], dest.stat().st_size)
         with self.assertRaises(PocketError):
-            export_set_map(handle, dest)
+            export_thread(handle, dest)
         self.assertEqual(self.path.read_bytes(), self.before)
         self.assertEqual(inspect_set(self.path)['clips'][0]['loop']['LoopStart'], -.5)
 

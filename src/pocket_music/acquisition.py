@@ -15,7 +15,7 @@ import soundfile as sf
 from .assets import identify_audio, sha256_file
 from .errors import PocketError
 from .spotify_bridge import _checked_plan, _new_dir
-from .transition_lab import _integer, _now, _seal, _text
+from .stitch import _integer, _now, _seal, _text
 
 _SCHEMA = "pocket.acquisition-plan/v1"
 _COMMON = ["--ignore-config", "--no-plugin-dirs", "--no-cache-dir"]

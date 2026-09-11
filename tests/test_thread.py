@@ -14,7 +14,7 @@ import numpy as np
 import soundfile as sf
 
 from pocket_music.errors import PocketError
-from pocket_music.set_map import inspect_set, source_position, arrangement_position
+from pocket_music.thread import inspect_set, source_position, arrangement_position
 from pocket_music.timing import TempoMap, warp_coordinate
 
 
@@ -257,7 +257,7 @@ class SetMapTests(unittest.TestCase):
     def test_set_changed_during_inspection_is_rejected(self):
         self.f.clip(self.f.track())
         path = self.f.save()
-        with patch('pocket_music.set_map._stamp', side_effect=[(1, 2, 3, 4), (1, 2, 3, 5)]):
+        with patch('pocket_music.thread._stamp', side_effect=[(1, 2, 3, 4), (1, 2, 3, 5)]):
             with self.assertRaisesRegex(PocketError, 'changed during inspection'):
                 inspect_set(path)
 

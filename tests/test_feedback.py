@@ -6,7 +6,7 @@ import pytest
 
 from pocket_music.errors import PocketError
 from pocket_music.feedback import query_feedback
-from test_transition_lab import feedback, make_trial
+from test_stitch import feedback, make_trial
 
 
 def test_retrieval_preserves_conflicting_scoped_claims_and_exact_intervals(tmp_path):
@@ -67,6 +67,6 @@ def test_cli_retrieval_uses_same_provider(tmp_path):
     spec = tmp_path / "query.json"
     arguments = {"trial_dir": trial["trial_dir"], "variant_id": "v01"}
     spec.write_text(json.dumps(arguments))
-    result = _cli("lab", "feedback-list", "--spec", spec)
+    result = _cli("stitch", "feedback-list", "--spec", spec)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == query_feedback(**arguments)

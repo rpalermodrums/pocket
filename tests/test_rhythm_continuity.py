@@ -8,7 +8,7 @@ import soundfile as sf
 
 from pocket_music.errors import PocketError
 from pocket_music.rhythm_continuity import circular_delta, compare_grids
-from pocket_music.track_map import analyze_region
+from pocket_music.peek import analyze_region
 
 RATE = 12000
 

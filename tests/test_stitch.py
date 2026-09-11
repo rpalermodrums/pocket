@@ -12,7 +12,7 @@ import soundfile as sf
 
 from pocket_music.assets import sha256_file
 from pocket_music.errors import PocketError
-from pocket_music.transition_lab import (
+from pocket_music.stitch import (
     attach_completed_render,
     create_trial,
     prepare_native_trial,
@@ -443,7 +443,7 @@ def test_native_attach_has_two_frame_limit_not_a_millisecond_timing_excuse(tmp_p
 
 
 def test_source_mutation_between_validation_and_extraction_is_rejected(tmp_path, monkeypatch):
-    from pocket_music import transition_lab as lab
+    from pocket_music import stitch as lab
 
     source, data = audio(tmp_path)
     identify = lab.identify_audio
@@ -546,7 +546,7 @@ def test_public_inputs_have_discoverable_nested_types():
 
     from typing_extensions import is_typeddict
 
-    from pocket_music.transition_lab import NativeExportSettings, TrialVariant
+    from pocket_music.stitch import NativeExportSettings, TrialVariant
 
     for provider in (
         create_trial,
@@ -707,7 +707,7 @@ def test_intentional_silence_requires_preparation_note_and_is_separate(tmp_path)
 
 
 def test_collection_failure_leaves_no_published_trial(tmp_path, monkeypatch):
-    import pocket_music.transition_lab as lab
+    import pocket_music.stitch as lab
 
     path, _ = als_fixture(tmp_path)
     copy_file = lab.shutil.copyfile
@@ -732,7 +732,7 @@ def test_collection_failure_leaves_no_published_trial(tmp_path, monkeypatch):
 
 
 def test_candidate_mutation_during_attachment_is_not_published(tmp_path, monkeypatch):
-    from pocket_music import transition_lab as lab
+    from pocket_music import stitch as lab
 
     result, _, _ = prepare(tmp_path)
     rendered, _ = audio(tmp_path, "rendered.wav")

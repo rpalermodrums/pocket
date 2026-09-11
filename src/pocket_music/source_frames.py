@@ -17,7 +17,7 @@ def source_frame_interval(start_seconds: float, end_seconds: float,
     Only deviations just *outside the file* may snap to zero/EOF (at most
     0.1 sample). Interior positions do not acquire a broad rounding tolerance.
     One-ULP nextafter handles exact-frame floating multiplication consistently
-    with Track Map. Raw/snapped positions and every adjustment remain explicit.
+    with Peek. Raw/snapped positions and every adjustment remain explicit.
     """
     start = finite(start_seconds, 'source start seconds')
     end = finite(end_seconds, 'source end seconds')

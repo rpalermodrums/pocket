@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from pocket_music import track_map
+from pocket_music import peek
 from pocket_music.errors import PocketError
-from pocket_music.track_map import analyze_region
+from pocket_music.peek import analyze_region
 
 RATE = 12000
 
@@ -170,14 +170,14 @@ def test_result_is_deterministic_and_wrong_hint_does_not_supply_evidence(tmp_pat
 
 def test_identity_read_race_is_rejected(tmp_path, monkeypatch):
     path = audio_file(tmp_path, np.zeros(2 * RATE))
-    identify = track_map.identify_audio
+    identify = peek.identify_audio
 
     def identify_then_change(source):
         identity = identify(source)
         sf.write(source, np.ones(2 * RATE) * .1, RATE, subtype="FLOAT")
         return identity
 
-    monkeypatch.setattr(track_map, "identify_audio", identify_then_change)
+    monkeypatch.setattr(peek, "identify_audio", identify_then_change)
     with pytest.raises(PocketError, match="changed during analysis"):
         analyze_region(path, duration_seconds=2)
 

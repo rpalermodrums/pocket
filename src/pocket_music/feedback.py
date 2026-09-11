@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .assets import sha256_file
 from .errors import PocketError
-from .transition_lab import FeedbackScope, SCOPES, _integer, _load_sealed, _safe_child
+from .stitch import FeedbackScope, SCOPES, _integer, _load_sealed, _safe_child
 
 
 def query_feedback(

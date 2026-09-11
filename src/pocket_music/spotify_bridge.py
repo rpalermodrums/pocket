@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 from typing_extensions import TypedDict
 
 from .errors import PocketError
-from .transition_lab import _load_sealed, _now, _seal, _text
+from .stitch import _load_sealed, _now, _seal, _text
 
 
 class SpotifyCatalogItem(TypedDict):
