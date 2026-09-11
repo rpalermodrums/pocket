@@ -22,16 +22,16 @@ _SPEC_OPERATIONS = {
         "query": ("record_bag", "query_record_bag", None),
         "revise": ("record_bag", "revise_record_bag", "output_dir"),
     },
-    "workshop": {
-        "plan": ("set_workshop", "plan_set_routes", "output_dir"),
-        "feedback": ("set_workshop", "record_plan_feedback", "output_dir"),
-        "replan": ("set_workshop", "replan_set", "output_dir"),
+    "weave": {
+        "plan": ("weave", "plan_set_routes", "output_dir"),
+        "feedback": ("weave", "record_plan_feedback", "output_dir"),
+        "replan": ("weave", "replan_set", "output_dir"),
     },
-    "on-deck": {
-        "prepare": ("on_deck", "prepare_session", "output_dir"),
-        "snapshot": ("on_deck", "session_snapshot", None),
-        "options": ("on_deck", "session_options", None),
-        "update": ("on_deck", "update_session", None),
+    "whisker": {
+        "prepare": ("whisker", "prepare_session", "output_dir"),
+        "snapshot": ("whisker", "session_snapshot", None),
+        "options": ("whisker", "session_options", None),
+        "update": ("whisker", "update_session", None),
     },
     "spotify": {
         "import": ("spotify_bridge", "import_spotify_items", "output_dir"),
@@ -51,6 +51,8 @@ _SPEC_OPERATIONS = {
         "query": ("music_embeddings", "rank_embedding_query", None),
     },
 }
+
+_GROUP_ALIASES = {"weave": "workshop", "whisker": "on-deck"}
 
 
 def _read_object(path: str) -> dict:
@@ -84,7 +86,9 @@ def _initial_command(commands, name, compatibility_name, help_text):
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="pocket", description="Inspect sources and sets, and test transitions with Peek, Thread and Stitch.")
+    root = argparse.ArgumentParser(prog="pocket", description=(
+        "The musical toolkit for agents: Peek, Thread, Stitch, Weave and Whisker."
+    ))
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="command", required=True)
     asset = commands.add_parser("identify", help="Identify an exact local recording")
@@ -146,14 +150,16 @@ def parser() -> argparse.ArgumentParser:
         command = actions.add_parser(name, help=help_text)
         command.add_argument("--spec", required=True, help="JSON arguments for this operation")
     for group, operations in _SPEC_OPERATIONS.items():
-        command = commands.add_parser(group, help={
+        help_text = {
             "bag": "Create or navigate a sealed record catalogue",
-            "workshop": "Explore constrained routes and scoped feedback",
-            "on-deck": "Prepare a session and record manual next-track choices",
+            "weave": "Explore routes through a set and refine them with feedback",
+            "whisker": "Feel out the next record in a shared live session",
             "spotify": "Import a catalogue or execute a reviewed fresh-playlist plan",
             "acquire": "Discover candidates or acquire an explicitly selected recording",
             "embeddings": "Inspect an optional model cache or use prepared local receipts",
-        }[group])
+        }[group]
+        command = (_initial_command(commands, group, _GROUP_ALIASES[group], help_text)
+                   if group in _GROUP_ALIASES else commands.add_parser(group, help=help_text))
         actions = command.add_subparsers(dest="action", required=True)
         for name, (_, function, destination) in operations.items():
             action = actions.add_parser(name, help=function.replace("_", " "))

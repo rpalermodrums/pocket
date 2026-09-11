@@ -39,8 +39,10 @@ def cli(group, action, spec, output=None):
 
 
 @pytest.mark.parametrize('group,action,module,function,destination', [
-    (group, action, *provider) for group, operations in _SPEC_OPERATIONS.items()
+    (invocation, action, *provider) for group, operations in _SPEC_OPERATIONS.items()
     for action, provider in operations.items()
+    for invocation in ([group, {'weave': 'workshop', 'whisker': 'on-deck'}[group]]
+                       if group in {'weave', 'whisker'} else [group])
 ])
 def test_all_command_routes_match_public_functions(tmp_path, monkeypatch, capsys,
                                                      group, action, module, function, destination):
@@ -68,26 +70,26 @@ def test_cli_bag_routes_scoped_feedback_and_session_cas(tmp_path):
               tmp_path / 'bag')
     found = cli('bag', 'query', write_spec(tmp_path, 'query', {'handle': bag['handle'], 'limit': 2}))
     assert found['returned'] == 2 and found['next_offset'] == 2
-    plan = cli('workshop', 'plan', write_spec(tmp_path, 'plan-spec', {
+    plan = cli('weave', 'plan', write_spec(tmp_path, 'plan-spec', {
         'bag_handle': bag['handle'], 'brief': {'setting': 'warm_up', 'track_count': 4}, 'seed': 7}), tmp_path / 'plan')
     route = plan['routes'][0]
-    event = cli('workshop', 'feedback', write_spec(tmp_path, 'feedback-spec', {
+    event = cli('weave', 'feedback', write_spec(tmp_path, 'feedback-spec', {
         'plan_handle': plan['handle'], 'route_id': route['route_id'], 'disposition': 'avoid',
         'from_track_id': route['track_ids'][0], 'to_track_id': route['track_ids'][1]}), tmp_path / 'feedback')
-    next_plan = cli('workshop', 'replan', write_spec(tmp_path, 'replan-spec', {
+    next_plan = cli('weave', 'replan', write_spec(tmp_path, 'replan-spec', {
         'plan_handle': event['handle'], 'seed': 7}), tmp_path / 'next-plan')
     assert next_plan['summary']['feedback_applied_count'] == 1
-    state = cli('on-deck', 'prepare', write_spec(tmp_path, 'session-spec', {
+    state = cli('whisker', 'prepare', write_spec(tmp_path, 'session-spec', {
         'bag_handle': bag['handle'], 'current_track_id': 'r0', 'intent': {'setting': 'peak_time'}}), tmp_path / 'session')
-    options = cli('on-deck', 'options', write_spec(tmp_path, 'options-spec', {
+    options = cli('whisker', 'options', write_spec(tmp_path, 'options-spec', {
         'session_dir': state['session_dir'], 'limit': 3}))
     assert len(options['options']) == 3 and all(t['track_id'] != 'r0' for t in options['options'])
     update = write_spec(tmp_path, 'update-spec', {'session_dir': state['session_dir'], 'action': 'choose',
                         'track_id': options['options'][0]['track_id'], 'expected_revision': state['revision'],
                         'expected_sha256': state['sha256']})
-    chosen = cli('on-deck', 'update', update)
+    chosen = cli('whisker', 'update', update)
     assert chosen['revision'] == 1
-    stale = subprocess.run([sys.executable, '-m', 'pocket_music.cli', 'on-deck', 'update', '--spec', str(update)],
+    stale = subprocess.run([sys.executable, '-m', 'pocket_music.cli', 'whisker', 'update', '--spec', str(update)],
                            capture_output=True, text=True, timeout=45, check=False)
     assert stale.returncode == 2 and 'Session changed' in json.loads(stale.stderr)['message']
 
@@ -132,18 +134,18 @@ def test_mcp_selection_schema_and_real_typed_calls(tmp_path):
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
             tools = {t.name: t for t in (await session.list_tools()).tools}
-            assert len(tools) == 48
-            assert tools['session_options'].inputSchema['properties']['limit']['type'] == 'integer'
-            assert tools['update_session'].inputSchema['properties']['action']['enum'] == ['choose', 'skip', 'intent']
+            assert len(tools) == 55
+            assert tools['whisker'].inputSchema['properties']['limit']['type'] == 'integer'
+            assert tools['whisker_update'].inputSchema['properties']['action']['enum'] == ['choose', 'skip', 'intent']
             assert tools['execute_spotify_playlist'].annotations.openWorldHint
             assert not tools['execute_spotify_playlist'].annotations.readOnlyHint
             assert tools['query_record_bag'].annotations.readOnlyHint
             assert tools['inspect_source_formats'].annotations.openWorldHint
             assert tools['inspect_source_formats'].inputSchema['properties']['limit']['type'] == 'integer'
-            assert not tools['plan_set_routes'].annotations.openWorldHint
+            assert not tools['weave'].annotations.openWorldHint
             assert 'token' not in tools['execute_spotify_playlist'].inputSchema['properties']
             assert 'workspace' not in tools
-            plan_schema = tools['plan_set_routes'].inputSchema
+            plan_schema = tools['weave'].inputSchema
             assert plan_schema['$defs']['SetBrief']['properties']['track_count']['type'] == 'integer'
             bag_schema = tools['create_record_bag'].inputSchema
             assert {'schema', 'path', 'sha256'} <= set(plan_schema['$defs']['BagHandle']['required'])
@@ -160,19 +162,19 @@ def test_mcp_selection_schema_and_real_typed_calls(tmp_path):
                                                    'output_dir': str(tmp_path / 'bag')})
             page = await call('query_record_bag', {'handle': bag['handle'], 'limit': 2})
             assert page['returned'] == 2 and page['truncated']
-            plans = await call('plan_set_routes', {'bag_handle': bag['handle'], 'brief': {
+            plans = await call('weave', {'bag_handle': bag['handle'], 'brief': {
                 'setting': 'after_hours', 'track_count': 4, 'anchor_track_ids': ['r1', 'r4']},
                 'output_dir': str(tmp_path / 'plans'), 'seed': 12})
             assert len(plans['routes']) == 3
-            state = await call('prepare_session', {'bag_handle': bag['handle'],
+            state = await call('whisker_prepare', {'bag_handle': bag['handle'],
                 'output_dir': str(tmp_path / 'session'), 'current_track_id': 'r0'})
-            opts = await call('session_options', {'session_dir': state['session_dir'], 'limit': 2,
+            opts = await call('whisker', {'session_dir': state['session_dir'], 'limit': 2,
                 'expected_revision': state['revision'], 'expected_sha256': state['sha256']})
-            state2 = await call('update_session', {'session_dir': state['session_dir'], 'action': 'choose',
+            state2 = await call('whisker_update', {'session_dir': state['session_dir'], 'action': 'choose',
                 'track_id': opts['options'][0]['track_id'], 'expected_revision': state['revision'],
                 'expected_sha256': state['sha256']})
             assert state2['revision'] == 1
-            stale = await session.call_tool('update_session', {'session_dir': state['session_dir'],
+            stale = await session.call_tool('whisker_update', {'session_dir': state['session_dir'],
                 'action': 'skip', 'track_id': 'r5', 'expected_revision': 0, 'expected_sha256': state['sha256']})
             assert stale.isError
             imported = await call('import_spotify_items', {'items': [{'uri': 'spotify:track:' + 'A' * 22,
@@ -202,10 +204,10 @@ def test_mcp_selection_schema_and_real_typed_calls(tmp_path):
             matches = await call('rank_embedding_query', {'query_receipt': receipt('text'), 'index_handle': index,
                                                             'limit': 1})
             assert matches[0]['audio_sha256'] == 'a' * 64
-            bad = await session.call_tool('plan_set_routes', {'bag_handle': bag['handle'],
+            bad = await session.call_tool('weave', {'bag_handle': bag['handle'],
                 'brief': {'track_count': -2}, 'output_dir': str(tmp_path / 'bad')})
             assert bad.isError and not (tmp_path / 'bad').exists()
-            typo = await session.call_tool('plan_set_routes', {'bag_handle': bag['handle'],
+            typo = await session.call_tool('weave', {'bag_handle': bag['handle'],
                     'brief': {'track_count': 3, 'exluded_track_ids': ['r1']}, 'output_dir': str(tmp_path / 'typo')})
             assert typo.isError and not (tmp_path / 'typo').exists()
 
@@ -213,10 +215,10 @@ def test_mcp_selection_schema_and_real_typed_calls(tmp_path):
 
 
 def test_cli_bad_response_parent_does_not_update_session(tmp_path, monkeypatch, capsys):
-    from pocket_music import on_deck
+    from pocket_music import whisker
     seen = []
-    monkeypatch.setattr(on_deck, 'update_session', lambda **kwargs: seen.append(kwargs))
+    monkeypatch.setattr(whisker, 'update_session', lambda **kwargs: seen.append(kwargs))
     spec = write_spec(tmp_path, 'spec', {})
-    assert main(['on-deck', 'update', '--spec', str(spec), '--output', str(tmp_path / 'missing' / 'out.json')]) == 2
+    assert main(['whisker', 'update', '--spec', str(spec), '--output', str(tmp_path / 'missing' / 'out.json')]) == 2
     assert not seen
     assert 'parent' in capsys.readouterr().err

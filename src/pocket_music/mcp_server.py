@@ -89,13 +89,23 @@ _SELECTION_INPUTS = {
 _TOOL_DESCRIPTIONS = {
     "query_record_bag": "Search a sealed record bag by ID/title/artist/tag; default20 records, explicit paging. Validates local source stamps.",
     "replan_set": "Create new seeded alternatives from a saved plan. Feedback stays bound to the same bag and brief; originals remain unchanged.",
-    "prepare_session": "Create an offline On Deck session from a sealed bag. Optional cached embedding index is copied; no inference or deck control.",
+    "prepare_session": "Create an offline Whisker session from a sealed bag. Optional cached embedding index is copied; no inference or deck control.",
     "session_options": "Read up to limit next-track proposals (default6, maximum128) from the current sealed session. Excludes current/played/skipped records; no inference.",
     "session_snapshot": "Read the current session revision, SHA and exact decision history. Use revision+SHA for subsequent updates.",
     "update_session": "Record an explicit manual choose/skip/intent action. Requires current revision+SHA; stale writes fail. Never controls a deck.",
     "model_preflight": "Check the prepared optional model cache against pinned hashes. Does not download, import torch or claim successful inference.",
     "build_embedding_index": "Build a new sealed local index from already-computed eligible audio receipts. Preserves provenance; no model inference.",
     "rank_embedding_query": "Retrieve bounded semantic matches from a prepared index and user-text receipt; no inference or musical approval.",
+}
+
+_SELECTION_NAMES = {
+    "plan_set_routes": "weave",
+    "record_plan_feedback": "weave_feedback",
+    "replan_set": "weave_replan",
+    "session_options": "whisker",
+    "prepare_session": "whisker_prepare",
+    "session_snapshot": "whisker_snapshot",
+    "update_session": "whisker_update",
 }
 
 
@@ -109,10 +119,8 @@ def build_server():
     from .assets import identify_audio
     from .feedback import query_feedback
     from .music_embeddings import build_embedding_index, model_preflight, rank_embedding_query
-    from .on_deck import prepare_session, session_options, session_snapshot, update_session
     from .peek import analyze_region
     from .record_bag import create_record_bag, query_record_bag, revise_record_bag
-    from .set_workshop import plan_set_routes, record_plan_feedback, replan_set
     from .spotify_bridge import (
         execute_spotify_playlist,
         import_spotify_items,
@@ -128,16 +136,20 @@ def build_server():
     )
     from .thread import arrangement_position, source_position
     from .thread_queries import export_thread, find_clips, inspect_set_summary, query_set_region
+    from .weave import plan_set_routes, record_plan_feedback, replan_set
+    from .whisker import prepare_session, session_options, session_snapshot, update_session
 
     server = FastMCP("Pocket", instructions=(
         "Use Peek for bounded source evidence, Thread for saved arrangement/source intent, "
-        "and Stitch for controlled transition trials. Prefer these primary names; older tool names "
+        "Stitch for controlled transition trials, Weave for set routes and Whisker for next-record options. "
+        "Prefer these primary names; older tool names "
         "remain compatibility aliases. Keep evidence separate from musical approval. "
         "Never infer bar one solely from tempo. Native export remains supervised. "
         "Trial functions write only new local outputs; preserve baseline recordings and projects. "
         "Record bags distinguish catalog metadata, attributed hypotheses and exact local audio identity. "
         "Selection routes and next-track choices are proposals, not auditions or deck control. "
-        "Use query_record_bag for bounded discovery. Prepare a session once; use options and explicit "
+        "Use query_record_bag for bounded discovery. Use whisker_prepare once, then whisker for options "
+        "and whisker_update for explicit "
         "revision-bound updates. Spotify execution creates a fresh private playlist only from a reviewed "
         "plan; credentials must remain in the process environment, never tool arguments. "
         "Acquisition requires a selected source plan; model retrieval uses prepared independent local "
@@ -190,11 +202,20 @@ def build_server():
         discover_sources, inspect_source_formats, plan_acquisition, acquire_source,
         model_preflight, build_embedding_index, rank_embedding_query,
     ):
-        server.add_tool(_compact_response(function, _SELECTION_INPUTS.get(function.__name__)),
-                        description=_TOOL_DESCRIPTIONS.get(function.__name__), structured_output=False, annotations=ToolAnnotations(
-                            readOnlyHint=function in readonly, destructiveHint=False,
-                            idempotentHint=function in readonly, openWorldHint=function in external,
-                        ))
+        compatibility = function.__name__
+        primary = _SELECTION_NAMES.get(compatibility, compatibility)
+        transport = _compact_response(function, _SELECTION_INPUTS.get(compatibility))
+        description = _TOOL_DESCRIPTIONS.get(compatibility)
+        annotations = ToolAnnotations(
+            readOnlyHint=function in readonly, destructiveHint=False,
+            idempotentHint=function in readonly, openWorldHint=function in external,
+        )
+        if primary != compatibility:
+            description = description or inspect.getdoc(function) or "Use the corresponding public provider."
+            registrations.append((primary, compatibility, transport, False, annotations, description))
+            description = f"{primary}: {description}"
+        server.add_tool(transport, name=primary, description=description,
+                        structured_output=False, annotations=annotations)
     # Reuse the exact callable, signature and transport for old names. Register
     # aliases after all primaries so discovery leads with the current vocabulary.
     for primary, compatibility, transport, structured, annotations, description in registrations:

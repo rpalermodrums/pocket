@@ -1,4 +1,4 @@
-"""Canonical Peek/Thread/Stitch names preserve legacy CLI and MCP behavior."""
+"""Canonical Pocket tool names preserve legacy CLI and MCP behavior."""
 from __future__ import annotations
 
 import asyncio
@@ -21,6 +21,8 @@ CLI_PAIRS = [
     ('thread-export', 'map-export', ['handle.json', '--output', 'result.json']),
     ('thread-source-position', 'source-position', ['map.json', 'track:1/clip:2', '4', '--output', 'result.json']),
     ('stitch', 'lab', ['create', '--spec', 'spec.json', '--output', 'new-trial']),
+    ('weave', 'workshop', ['plan', '--spec', 'spec.json', '--output', 'new-plan']),
+    ('whisker', 'on-deck', ['options', '--spec', 'spec.json', '--output', 'result.json']),
 ]
 MCP_PAIRS = {
     'peek': 'analyze_region', 'thread': 'inspect_set', 'thread_region': 'query_set_region',
@@ -29,6 +31,9 @@ MCP_PAIRS = {
     'stitch': 'create_trial', 'stitch_prepare_native': 'prepare_native_trial',
     'stitch_feedback': 'record_feedback', 'stitch_feedback_list': 'query_feedback',
     'stitch_attach_render': 'attach_completed_render', 'stitch_validate_native': 'validate_native_trial',
+    'weave': 'plan_set_routes', 'weave_feedback': 'record_plan_feedback', 'weave_replan': 'replan_set',
+    'whisker': 'session_options', 'whisker_prepare': 'prepare_session',
+    'whisker_snapshot': 'session_snapshot', 'whisker_update': 'update_session',
 }
 
 
@@ -130,7 +135,7 @@ def test_all_mcp_aliases_share_callable_schema_annotations_and_transport():
         server = build_server()
         listed = await server.list_tools()
         tools = {tool.name: tool for tool in listed}
-        assert len(tools) == 48
+        assert len(tools) == 55
         assert not any('pipette' in name.casefold() for name in tools)
         names = [tool.name for tool in listed]
         assert min(names.index(old) for old in MCP_PAIRS.values()) >= 35
