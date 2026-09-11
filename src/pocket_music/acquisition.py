@@ -84,13 +84,55 @@ def discover_sources(query: str, *, limit: int = 5, executable: str = "yt-dlp") 
             "downloaded": False, "automatic_selection": False}
 
 
+def _format_id(value: str) -> str:
+    if (not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", value)
+            or value in {"best", "worst", "bestaudio", "worstaudio", "bestvideo", "worstvideo", "all"}):
+        raise PocketError("format_id must be one concrete format ID, not a selection expression")
+    return value
+
+
+def inspect_source_formats(source_url: str, *, executable: str = "yt-dlp", limit: int = 32) -> dict:
+    """Inspect bounded audio formats for an explicit retry; expose no signed media URLs."""
+    source_url = _url(source_url)
+    _integer(limit, "limit", 1)
+    if limit > 64:
+        raise PocketError("Format inspection limit must be at most 64")
+    info = _json_command([executable, *_COMMON, "--no-playlist", "--skip-download",
+                          "--dump-single-json", "--", source_url])
+    if info.get("entries") is not None or info.get("is_live"):
+        raise PocketError("Inspect one finite recording source")
+    rows = info.get("formats")
+    if not isinstance(rows, list):
+        rows = [info]
+    formats = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("acodec") in (None, "none"):
+            continue
+        try:
+            ident = _format_id(row.get("format_id"))
+        except PocketError:
+            continue
+        fields = {key: row.get(key) for key in
+                  ("ext", "acodec", "vcodec", "abr", "asr", "audio_channels", "filesize", "filesize_approx")
+                  if isinstance(row.get(key), (str, int, float, type(None)))}
+        fields = {key: (None if isinstance(value, float) and not math.isfinite(value) else value)
+                  for key, value in fields.items()}
+        formats.append({"format_id": ident, **fields})
+    return {"schema": "pocket.source-formats/v1", "source_url": source_url,
+            "source": _metadata(info), "formats": formats[:limit],
+            "total_audio_formats": len(formats), "truncated": len(formats) > limit,
+            "downloaded": False, "quality": "Reported encoding metadata; not a fidelity ranking"}
+
+
 def plan_acquisition(
     source_url: str, output_dir: str, *, version_note: str, authorization_note: str,
     expected_source_id: str | None = None, sample_rate: int | None = None,
-    channels: int | None = None,
+    channels: int | None = None, format_id: str | None = None,
 ) -> dict:
     """Seal an explicitly selected URL. None rate/channels preserves decoded source format."""
     source_url = _url(source_url)
+    if format_id is not None:
+        _format_id(format_id)
     if sample_rate is not None:
         _integer(sample_rate, "sample_rate", 8000)
         if sample_rate > 192000:
@@ -103,7 +145,9 @@ def plan_acquisition(
             "expected_source_id": None if expected_source_id is None else
             _text(expected_source_id, "expected_source_id", 200),
             "sample_rate": sample_rate, "channels": channels,
-            "format_policy": "bestaudio/best; pin selected accessible format before download",
+            "format_id": format_id,
+            "format_policy": ("explicit inspected format; verify exact ID before download" if format_id else
+                              "bestaudio/best; pin selected accessible format before download"),
             "maximum_seconds": 1800, "maximum_original_bytes": 512 * 1024 * 1024,
             "gain_db": 0, "fades": False, "normalization": False,
             "version_identity": "unverified"}
@@ -200,7 +244,8 @@ def acquire_source(
                 raise PocketError("Cannot establish decoder/probe runtime version")
             result[key] = runtime.stdout.splitlines()[0][:300]
         info = _json_command([yt_dlp_executable, *_COMMON, "--no-playlist", "--skip-download",
-                              "--dump-single-json", "-f", "bestaudio/best", "--", plan["source_url"]])
+                              "--dump-single-json", "-f", plan.get("format_id") or "bestaudio/best",
+                              "--", plan["source_url"]])
         if info.get("_type") in ("playlist", "multi_video") or info.get("entries") is not None:
             raise PocketError("Select one recording URL, not a playlist")
         if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
@@ -215,6 +260,8 @@ def acquire_source(
         format_id = info.get("format_id")
         if not isinstance(format_id, str) or not format_id or len(format_id) > 100:
             raise PocketError("Extractor did not establish a concrete format")
+        if plan.get("format_id") is not None and format_id != plan["format_id"]:
+            raise PocketError("Inspected format differs from the explicitly selected plan format")
         result["source_metadata"] = _metadata(info)
         args = [yt_dlp_executable, *_COMMON, "--no-playlist", "--no-overwrites",
                 "--abort-on-unavailable-fragments", "--retries", "2", "--fragment-retries", "2",

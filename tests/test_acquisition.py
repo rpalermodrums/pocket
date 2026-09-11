@@ -154,6 +154,52 @@ def test_discovery_is_bounded_and_does_not_download(monkeypatch):
         acq.discover_sources("artist", limit=11)
 
 
+def test_reviewed_format_retry_is_pinned_and_mismatch_fails(tmp_path, monkeypatch):
+    runner = FixtureRunner(tmp_path)
+    monkeypatch.setattr(acq, "_run", runner)
+    result = execute(tmp_path, planned(tmp_path, format_id="wave"))
+    assert result["status"] == "completed"
+    commands = [c for c in runner.calls if "-f" in c]
+    assert all(c[c.index("-f") + 1] == "wave" for c in commands)
+    other = tmp_path / "other"
+    other.mkdir()
+    failed = execute(other, planned(other, format_id="different"))
+    assert failed["status"] == "failed" and "explicitly selected" in failed["reason"]
+    assert not (other / "result" / ".staging" / "original.wav").exists()
+
+
+def test_zero_exit_with_decoder_error_still_fails(tmp_path, monkeypatch):
+    runner = FixtureRunner(tmp_path)
+    def warning(args, **kwargs):
+        result = runner(args, **kwargs)
+        if "-c:a" in args:
+            return subprocess.CompletedProcess(args, 0, "", "Error parsing Opus packet header.")
+        return result
+    monkeypatch.setattr(acq, "_run", warning)
+    result = execute(tmp_path, planned(tmp_path))
+    assert result["status"] == "failed" and not result["ready_for_analysis"]
+
+
+def test_format_inspection_is_bounded_and_sanitized(monkeypatch):
+    monkeypatch.setattr(acq, "_json_command", lambda *args, **kwargs: {
+        "id": "example", "formats": [
+            {"format_id": "140", "acodec": "aac", "url": "https://cdn.invalid/?secret=abc"},
+            {"format_id": "251", "acodec": "opus"}, {"format_id": "video", "acodec": "none"}]})
+    result = acq.inspect_source_formats("https://example.org/audio", limit=1)
+    assert len(result["formats"]) == 1 and result["total_audio_formats"] == 2 and result["truncated"]
+    assert "secret" not in json.dumps(result) and not result["downloaded"]
+
+
+@pytest.mark.parametrize("format_id", ["140/251", "bestaudio", "", "-f 140", None])
+def test_format_id_requires_concrete_token(tmp_path, format_id):
+    if format_id is None:
+        # Omission selects the default.
+        planned(tmp_path, format_id=format_id)
+    else:
+        with pytest.raises(PocketError):
+            planned(tmp_path, format_id=format_id)
+
+
 def test_real_ytdlp_generated_http_audio(tmp_path):
     """No public recording: exercise optional binaries against a local generated WAV."""
     binaries = [shutil.which(x) for x in ("yt-dlp", "ffmpeg", "ffprobe")]
