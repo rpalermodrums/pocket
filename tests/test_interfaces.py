@@ -129,12 +129,24 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                     "start_frame": 10, "end_frame": 20, "scope": "bar_phase",
                     "note": "Generated fixture claim, not an actual listening judgment",
                 })
+                stored = await call("query_feedback", {
+                    "trial_dir": trial["trial_dir"], "variant_id": "v01", "scope": "bar_phase",
+                    "start_frame": 15, "end_frame": 21,
+                })
+                assert len(stored["notes"]) == 1
+                assert stored["notes"][0]["start_frame"] == 10
+                assert stored["musical_verdict"] is None
                 native = await call("prepare_native_trial", {
                     "source_als": str(source_set), "output_dir": str(tmp_path / "agent-native"),
                     "clip_id": "track:100/clip:0", "shift_beats": 1,
                     "export_start_beat": 0, "export_length_beats": 8,
                     "expected_als_sha256": sha256_file(source_set),
                 })
+                checked = await call("validate_native_trial", {
+                    "trial_dir": native["trial_dir"],
+                    "expected_candidate_sha256": native["candidate_sha256"],
+                })
+                assert checked["ready_to_compare"] is False
                 settings = {"rendered_track": "Main", "sample_rate": 8000, "channels": 2,
                             "normalization": False, "mono": False, "loop_render": False, "dither": "none"}
                 # A generated artifact checks the provider contract. It does not
@@ -146,6 +158,8 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                     "expected_frames": 32000, "settings": settings, "export_completed": True,
                 })
                 assert attached["musical_verdict"] is None
+                assert attached["signal"]["disposition"] == "usable_signal"
+                assert attached["ready_to_compare"] is False  # no native observation supplied
                 bad_dir = tmp_path / "bad-agent-trial"
                 invalid = await session.call_tool("create_trial", {
                     "output_dir": str(bad_dir), "variants": [{"source_path": str(source)}],

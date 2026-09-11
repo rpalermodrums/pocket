@@ -10,6 +10,7 @@ def build_server():
     except ImportError as exc:
         raise SystemExit("Install Pocket's agent extra: python -m pip install -e '.[agent]'") from exc
     from .assets import identify_audio
+    from .feedback import query_feedback
     from .set_map import arrangement_position, inspect_set, source_position
     from .track_map import analyze_region
     from .transition_lab import (
@@ -17,6 +18,7 @@ def build_server():
         create_trial,
         prepare_native_trial,
         record_feedback,
+        validate_native_trial,
     )
 
     server = FastMCP("Pocket", instructions=(
@@ -26,10 +28,12 @@ def build_server():
     ))
     for function in (
         identify_audio, analyze_region, inspect_set, source_position, arrangement_position,
-        create_trial, record_feedback, prepare_native_trial, attach_completed_render,
+        create_trial, record_feedback, query_feedback, prepare_native_trial,
+        validate_native_trial, attach_completed_render,
     ):
         read_only = function in {
-            identify_audio, analyze_region, inspect_set, source_position, arrangement_position,
+            identify_audio, analyze_region, inspect_set, source_position, arrangement_position, query_feedback,
+            validate_native_trial,
         }
         server.add_tool(function, annotations=ToolAnnotations(
             readOnlyHint=read_only, destructiveHint=False,

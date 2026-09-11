@@ -64,7 +64,9 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--output", required=True, help="New trial directory")
     for name, help_text in [
         ("feedback", "Attach a scoped listener note to the exact heard variant"),
+        ("feedback-list", "Retrieve exact scoped listener claims without widening their meaning"),
         ("attach-render", "Check and attach a declared completed native export"),
+        ("validate-native", "Verify a collected candidate after relocation; does not observe Live"),
     ]:
         command = actions.add_parser(name, help=help_text)
         command.add_argument("--spec", required=True, help="JSON arguments for this operation")
@@ -84,6 +86,7 @@ def _dispatch(args: argparse.Namespace) -> dict:
         from .set_map import source_position
         return source_position(_read_object(args.map), args.clip_id, args.beat)
     from . import transition_lab
+    from .feedback import query_feedback
     spec = _read_object(args.spec)
     if args.action in {"create", "prepare-native"}:
         if "output_dir" in spec:
@@ -93,7 +96,9 @@ def _dispatch(args: argparse.Namespace) -> dict:
         "create": transition_lab.create_trial,
         "prepare-native": transition_lab.prepare_native_trial,
         "feedback": transition_lab.record_feedback,
+        "feedback-list": query_feedback,
         "attach-render": transition_lab.attach_completed_render,
+        "validate-native": transition_lab.validate_native_trial,
     }[args.action]
     return action(**spec)
 
