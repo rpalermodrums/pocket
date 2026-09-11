@@ -20,7 +20,7 @@ from pocket_music.music_embeddings import DIMENSION, MODEL_ID, MODEL_REVISION, W
 def entries():
     return [{'track_id': f'r{i}', 'title': f'Generated {i}', 'artists': ['Fixture artist'],
              'duration_seconds': 240 + i * 20,
-             'profile': {'energy': i / 5, 'bpm': None, 'provenance': 'user'}} for i in range(6)]
+             'profile': {'energy': i / 5, 'bpm': None, 'vocal_density': None, 'provenance': 'user'}} for i in range(6)]
 
 
 def write_spec(tmp_path, name, value):
