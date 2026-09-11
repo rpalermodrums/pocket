@@ -660,6 +660,14 @@ def test_negative_native_observation_is_preserved_without_readiness(tmp_path, fl
     receipt = attach(result, rendered, native_observation=observed(result, **{flag: False}))
     assert receipt["ready_to_compare"] is False
     assert receipt["native_readiness"]["operator_observation"][flag] is False
+    assert receipt["native_readiness"]["native_loading"] == (
+        "operator_reported_missing_media"
+        if flag == "no_missing_media"
+        else "operator_reported_no_missing_media"
+    )
+    assert receipt["native_readiness"]["native_export"] == (
+        "operator_reported_incomplete" if flag == "export_completed" else "operator_reported_completed"
+    )
 
 
 @pytest.mark.parametrize(

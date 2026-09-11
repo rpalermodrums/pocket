@@ -906,10 +906,20 @@ def attach_completed_render(
         {
             "operator_observation": observation,
             "observation_provenance": "operator_reported_not_independently_observed",
-            "native_loading": "operator_reported_no_missing_media"
-            if observed_ready
-            else "unverified_or_reported_problem",
-            "native_export": "operator_reported_completed" if observed_ready else "declared_completion_only",
+            "native_loading": (
+                "unverified"
+                if observation is None
+                else "operator_reported_no_missing_media"
+                if observation["no_missing_media"]
+                else "operator_reported_missing_media"
+            ),
+            "native_export": (
+                "declared_completion_only"
+                if observation is None
+                else "operator_reported_completed"
+                if observation["export_completed"]
+                else "operator_reported_incomplete"
+            ),
         }
     )
     attachment_id = "render-" + uuid.uuid4().hex
