@@ -1,13 +1,13 @@
 """Read saved Live 12 intent without changing projects or executing devices."""
 from __future__ import annotations
 
-from collections import Counter, defaultdict
 import gzip
 import hashlib
 import math
-from pathlib import Path
 import xml.etree.ElementTree as ET
 import zlib
+from collections import Counter, defaultdict
+from pathlib import Path
 
 from .errors import PocketError
 from .timing import TempoMap, finite, warp_coordinate
@@ -82,6 +82,29 @@ def _stamp(path):
     return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
 
 
+def _filesystem_version(path):
+    """Observe a lexical reference and its target, including replacement/retiming.
+
+    ctime catches in-place writes with restored mtime; lstat catches symlink
+    retargeting. This is filesystem-version evidence, not a native load claim.
+    """
+    def fields(stat):
+        return [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+    try:
+        link = path.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise PocketError(f'Cannot observe dependency: {error}') from error
+    try:
+        target = fields(path.stat())
+    except FileNotFoundError:
+        target = None
+    except OSError as error:
+        raise PocketError(f'Cannot observe dependency target: {error}') from error
+    return {'link': fields(link), 'target': target}
+
+
 def _project_root(path):
     return next((p for p in path.parent.parents if (p / 'Ableton Project Info').is_dir()),
                 path.parent) if not (path.parent / 'Ableton Project Info').is_dir() else path.parent
@@ -103,17 +126,22 @@ def _dependency(ref, key, parents, paths, set_path, project_root, hash_sources):
     absolute, relative = saved.get('Path', ''), saved.get('RelativePath', '')
     relative_type = saved.get('RelativePathType')
     candidates = []
+    reference_paths = []
     # Native type 3 is project-relative. Type 1 is also emitted by the existing
     # offline builder; inspect both set-directory and project-root candidates.
     if relative and relative_type in ('1', '3'):
         for base in (project_root, set_path.parent):
+            reference_paths.append(base / relative)
             candidate = (base / relative).resolve()
             if str(candidate) not in [c['path'] for c in candidates]:
                 candidates.append({'origin': 'relative', 'path': str(candidate), 'exists': candidate.is_file()})
     if absolute and Path(absolute).is_absolute():
+        reference_paths.append(Path(absolute))
         candidate = Path(absolute).resolve()
         if str(candidate) not in [c['path'] for c in candidates]:
             candidates.append({'origin': 'absolute', 'path': str(candidate), 'exists': candidate.is_file()})
+    filesystem_snapshot = [{'path': str(p), 'version': _filesystem_version(p)}
+                           for p in dict.fromkeys(reference_paths)]
     existing = [c for c in candidates if c['exists']]
     # A conflicting live absolute and relative target is not silently resolved.
     identities = {(Path(c['path']).stat().st_dev, Path(c['path']).stat().st_ino) for c in existing}
@@ -123,7 +151,8 @@ def _dependency(ref, key, parents, paths, set_path, project_root, hash_sources):
               'runtime_dependency': required, 'saved_reference': saved,
               'candidates': candidates, 'resolved_path': resolved,
               'status': 'ambiguous' if conflict else ('present' if existing else 'missing'),
-              'header': None, 'sha256': None}
+              'header': None, 'sha256': None, 'filesystem_snapshot': filesystem_snapshot,
+              'native_loaded_media': 'not_verified'}
     if resolved and kind == 'audio_source':
         source_stamp = _stamp(Path(resolved))
         try:
@@ -139,6 +168,8 @@ def _dependency(ref, key, parents, paths, set_path, project_root, hash_sources):
         result['sha256'] = sha256_file(resolved)
     if resolved and kind == 'audio_source' and _stamp(Path(resolved)) != source_stamp:
         raise PocketError('Audio source changed while reading its header/identity')
+    if any(_filesystem_version(Path(v['path'])) != v['version'] for v in filesystem_snapshot):
+        raise PocketError('Dependency changed during inspection')
     result['asset_id'] = 'sha256:' + result['sha256'] if result['sha256'] else None
     return result
 
