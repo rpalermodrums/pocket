@@ -20,12 +20,11 @@ import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from itertools import pairwise
 from pathlib import Path
-from typing import Literal
-
-from typing_extensions import NotRequired, TypedDict
+from typing import Literal, NotRequired
 
 import numpy as np
 import soundfile as sf
+from typing_extensions import TypedDict
 
 from .assets import identify_audio, sha256_file
 from .errors import PocketError
