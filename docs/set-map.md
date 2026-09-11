@@ -80,3 +80,111 @@ Generated tests cover piecewise warp inversion, pickups, changing-tempo natural
 playback, negative automation, multiple clips, duplicate local IDs, dependency
 classification, MIDI state and explicit unsupported cases. No user recordings or
 machine-specific fixture paths are shipped.
+
+## Bounded queries and persistent handles
+
+The full `inspect_set` library call above remains compatible. For normal agent
+work, use `pocket_music.set_queries`:
+
+```python
+from pocket_music.set_queries import (
+    inspect_set_summary, find_clips, query_set_region, export_set_map,
+)
+
+summary = inspect_set_summary("mix.als", cache_dir="private-map-cache")
+handle = summary["handle"]
+clips = find_clips(handle, "opening", limit=10)
+region = query_set_region(handle, "2:22", 32)
+# Optional: a new full inventory artifact, never echoed through the handle.
+receipt = export_set_map(handle, "full-inventory.json")
+```
+
+Public signatures:
+
+- `inspect_set_summary(path, *, cache_dir=None, hash_sources=False)`
+- `find_clips(handle, query="", *, limit=20, offset=0)`
+- `query_set_region(handle, start_seconds, duration_seconds=32, *, max_clips=16,
+  clip_offset=0, max_events_per_lane=12, max_bytes=16000)`
+- `export_set_map(handle, output_path)`
+
+`SetHandle` is a discoverable `TypedDict`: schema `pocket.set-handle/v1`, absolute
+`cache_path`, `cache_sha256` and `set_sha256`. It is a small JSON value that works
+in a new process; no global interpreter registry or full-map echo is required.
+The cache is a new gzip JSON snapshot, bound by its complete hash. By default it
+lives in `$XDG_CACHE_HOME/pocket/set-maps` (or `~/.cache/pocket/set-maps`). These
+artifacts contain local paths and must stay outside public repositories. Each
+inspection writes a new file. Export also refuses to overwrite existing files.
+
+Every operation verifies the cache and saved ALS hashes. Active and unclassified
+references are checked against device/inode/size/mtime/**ctime**, lexical symlink
+and target versions, including absent paths and project-marker existence. A
+changed, replaced, disappeared or newly appearing candidate invalidates the
+handle; callers must inspect again. Restoring a file's mtime does not evade its
+ctime/replacement check. Source hashing is optional: without it, a reference is
+bound to an observed local filesystem version, **not claimed as a recording-byte
+asset identity**. With it, the initial full source hashes are retained. No claim
+is made against privileged manipulation of filesystem metadata or mutation after
+an operation returns.
+
+The summary separates audio mapping support, MIDI placement inventory,
+automation target resolution, active filesystem reference status, unreadable
+headers, missing relative candidates, dormant provenance, and unevaluated DSP.
+An existing absolute reference does not prove that Live loads it when another
+saved relative location is absent. Native loaded-media status remains
+`not_verified`; successful queries never constitute a native trial receipt.
+
+Region starts accept nonnegative seconds, `mm:ss[.fraction]`, or `hh:mm:ss`.
+Duration is positive and at most 600 seconds. The half-open region intersects
+physical Arrangement audio/MIDI clip instances; it does not assume these are
+sequential records or audible layers. Source intervals are returned for supported
+audio. MIDI includes placement, loop fields and note count; full note/expression
+structures remain in the raw snapshot. Unsupported tempo prevents seconds-based
+selection and yields an explicit unknown result. Loops, grooves, unsupported
+pickup semantics and unwarped transposition retain their existing mapping limits.
+
+Controls cover the selected tracks and Main: manual mixer values, resolved
+parameter names, bracketing/inside envelope knots, exact linear numeric window
+start/end/min/max when supported, relevant EQ band configuration and Utility
+manual settings. Negative initial knots are retained when they bracket a query.
+Nonlinear/ambiguous event shapes are not numerically interpreted. Device and
+routing state does not simulate group/return processing, modulation or DSP.
+
+Truncation is explicit. Clip discovery pages by `offset`; region clips page by
+`clip_offset`. Event lists retain boundary brackets and disclose the relevant
+count and omissions. The complete linear window extrema are computed before
+truncation. The compact UTF-8 JSON byte budget can omit whole control tracks or
+clips, with their counts/IDs disclosed. No query returns a nonadvancing cursor:
+if the budget cannot hold even one overlapping clip, it asks for a larger budget
+or a raw export. Increase limits deliberately for complete event traces. The
+16 KB default leaves room for ordinary transport overhead; callers must still
+respect the truncation flags. It does not guarantee a fixed MCP wire size for
+arbitrary projects, paths or serialization.
+
+## Complete source-frame intervals
+
+`pocket_music.source_frames.source_frame_interval(start_seconds, end_seconds,
+ sample_rate, source_frames)` returns raw coordinates plus inward complete frames:
+`[ceil(start * rate), floor(end * rate))`. It does **not** expand a source crop to
+cover partial edge samples. One-ULP arithmetic handling matches Track Map.
+
+The named policy
+`inward_complete_frames_with_0.1_sample_file_boundary_snap/v1` allows only a raw
+coordinate just outside source zero or EOF, by at most **0.1 sample**, to snap to
+that file boundary. Every adjustment and its size are recorded. Interior
+fractional positions do not gain this tolerance. Genuine negative/out-of-file
+intervals return `out_of_bounds`; intervals containing no complete frames return
+`empty`; unavailable headers or unsupported source mappings remain `unknown` in
+region queries. Raw mapping results from `source_position` remain unchanged.
+
+For a valid interval, use integer `analyze_region_frame_args` (`start_frame`,
+`frames`) as the preferred tool-to-tool handoff. The result also includes
+`analyze_region_args` in seconds only when a checked inward rounding roundtrip
+preserves the same frames; otherwise that compatibility value is null. The
+source path is the sibling clip `source.path`. This frame contract describes
+original recording samples, not sample-exact rendered warp DSP or plugin latency.
+
+Generated query tests cover cross-process handles, invalidation after same-size
+source writes with restored mtime, file replacement, symlink retargeting, newly
+appearing media, cache corruption, changing-tempo natural regions, warped
+pickups, MIDI/layers, ambiguous targets, event/byte truncation and complete-frame
+boundaries. Production acceptance artifacts remain private and outside Git.
