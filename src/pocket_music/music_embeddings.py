@@ -21,23 +21,30 @@ from scipy.signal import resample_poly
 from .assets import identify_audio, sha256_file
 from .errors import PocketError
 
-MODEL_ID = "laion/larger_clap_music"
-MODEL_REVISION = "a0b4534a14f58e20944452dff00a22a06ce629d1"
-WEIGHT_SHA256 = "5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1"
-MODEL_FILES = {"config.json": 628, "merges.txt": 456318, "preprocessor_config.json": 541,
-               "pytorch_model.bin": 776444665, "special_tokens_map.json": 280,
-               "tokenizer.json": 2108774, "tokenizer_config.json": 1362, "vocab.json": 798293}
-MODEL_FILE_SHA256 = {
-    "config.json": "2d7722d338bb83ea8824272b1431f088954d3425d79eb3c2d39489478516dc03",
-    "merges.txt": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
-    "preprocessor_config.json": "9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753",
-    "pytorch_model.bin": WEIGHT_SHA256,
-    "special_tokens_map.json": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f",
-    "tokenizer.json": "dc239041d98de27ffc3975473a1a23e3db4c937b23c138c38bbc66588bd247e5",
-    "tokenizer_config.json": "e2eb445cfdbf4711de620cbdf10478b0423950799e85652d9f28da47066ab86d",
-    "vocab.json": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e",
+MODEL_ID = "laion/clap-htsat-unfused"
+MODEL_REVISION = "8fa0f1c6d0433df6e97c127f64b2a1d6c0dcda8a"
+WEIGHT_SHA256 = "1cd3c601bc4afe0fa87be3de4c13dd2cfadd249fac1e29acf74a9b296c3219bb"
+MODEL_FILES = {
+    "config.json": 5390,
+    "merges.txt": 456356,
+    "preprocessor_config.json": 541,
+    "pytorch_model.bin": 614525833,
+    "special_tokens_map.json": 280,
+    "tokenizer.json": 2108746,
+    "tokenizer_config.json": 384,
+    "vocab.json": 798293
 }
-ADAPTER_VERSION = "1.0.0"
+MODEL_FILE_SHA256 = {
+    "config.json": "9efb9557bc804f2ca6e394486af2e45dfed0b18554909735a99c6220b84e4288",
+    "merges.txt": "fe36cab26d4f4421ed725e10a2e9ddb7f799449c603a96e7f29b5a3c82a95862",
+    "preprocessor_config.json": "9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753",
+    "pytorch_model.bin": "1cd3c601bc4afe0fa87be3de4c13dd2cfadd249fac1e29acf74a9b296c3219bb",
+    "special_tokens_map.json": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f",
+    "tokenizer.json": "77ef92283d67f0d97e1454909a964afcbfa2019f0fb9f18f8e88d5c25c3ba729",
+    "tokenizer_config.json": "377f91458f7729a4574a84c77bdce67dbc3c58c1a345a29bbf8c4eb1307948a3",
+    "vocab.json": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"
+}
+ADAPTER_VERSION = "1.1.0"
 DIMENSION = 512
 _SAMPLE_RATE = 48000
 _WINDOW_FRAMES = 480000
@@ -98,6 +105,7 @@ def model_preflight(model_dir):
             "required_bytes": sum(MODEL_FILES.values()), "missing_files": missing,
             "mismatched_files": mismatched, "file_sha256": hashes, "runtime_packages": packages,
             "files_ready": not missing and not mismatched,
+            "provider_status": "discriminative_control_listener_relevance_unverified",
             "runtime_imports_tested": False, "download_performed": False,
             "network_required_for_inference": False}
 
@@ -189,6 +197,13 @@ class LocalClapAdapter:
                         "automatic_backend_fallback": False, "trust_remote_code": False,
                         "local_files_only": True}
 
+    def _single_vector(self, result):
+        # Transformers versions differ on getter return types; never reinterpret
+        # a ModelOutput/hidden-state tensor as a contrastive retrieval vector.
+        if not isinstance(result, self.torch.Tensor) or tuple(result.shape) != (1, DIMENSION):
+            raise PocketError("Unsupported CLAP output contract; use the tested Transformers 4.57.6 runtime")
+        return result[0].detach().cpu().numpy()
+
     def _receipt(self, vector, elapsed):
         unit = _unit(vector)
         return {"schema": "pocket.music-embedding/v1", "adapter_version": ADAPTER_VERSION,
@@ -197,7 +212,8 @@ class LocalClapAdapter:
                 "dimension": DIMENSION, "normalization": "l2", "vector": unit.tolist(),
                 "vector_f64le_sha256": hashlib.sha256(unit.astype('<f8').tobytes()).hexdigest(),
                 "runtime": self.runtime, "inference_seconds": elapsed,
-                "interpretation": "semantic_retrieval_evidence_not_musical_approval"}
+                "interpretation": "semantic_retrieval_evidence_not_musical_approval",
+                "provider_status": "discriminative_control_listener_relevance_unverified"}
 
     def embed_audio_region(self, path, *, start_frame, frames, source_origin, expected_audio_sha256=None):
         asset, audio, recipe = _read_audio_region(path, start_frame, frames,
@@ -208,7 +224,7 @@ class LocalClapAdapter:
         # Exact 480000-frame input makes the processor's random-truncation branch unreachable.
         inputs = {key: value.to(self.device) for key, value in inputs.items()}
         with self.torch.inference_mode():
-            vector = self.model.get_audio_features(**inputs)[0].detach().cpu().numpy()
+            vector = self._single_vector(self.model.get_audio_features(**inputs))
         receipt = self._receipt(vector, time.perf_counter() - start)
         return {**receipt, "modality": "audio", "asset": asset, "source_region": recipe}
 
@@ -223,7 +239,7 @@ class LocalClapAdapter:
             raise PocketError("Query exceeds CLAP's 77-token bound; shorten it explicitly")
         inputs = {key: value.to(self.device) for key, value in inputs.items()}
         with self.torch.inference_mode():
-            vector = self.model.get_text_features(**inputs)[0].detach().cpu().numpy()
+            vector = self._single_vector(self.model.get_text_features(**inputs))
         return {**self._receipt(vector, time.perf_counter() - start), "modality": "text",
                 "query_sha256": hashlib.sha256(query.encode()).hexdigest(), "text_origin": text_origin}
 

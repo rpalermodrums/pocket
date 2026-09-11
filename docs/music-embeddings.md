@@ -4,11 +4,11 @@ This adapter is an experiment in semantic record/passages retrieval. It does not
 
 ## Provider and preparation
 
-The current provider is [LAION larger CLAP music](https://huggingface.co/laion/larger_clap_music), pinned at revision `a0b4534a14f58e20944452dff00a22a06ce629d1`. The eight required files total **779,810,861 bytes**. Code checks all eight SHA-256 hashes, including the 776,444,665-byte PyTorch weight. The model repository is tagged Apache-2.0; upstream LAION code has its separate license. Model weights are never committed to Pocket.
+The current provider is [LAION CLAP HTSAT unfused](https://huggingface.co/laion/clap-htsat-unfused), pinned at revision `8fa0f1c6d0433df6e97c127f64b2a1d6c0dcda8a`. The eight required files total **617,895,823 bytes**. Code checks all eight SHA-256 hashes, including the 614,525,833-byte PyTorch weight. The model repository is tagged Apache-2.0; upstream LAION code has its separate license. Model weights are never committed to Pocket.
 
 Use `model_preflight(model_dir)` to inspect a cache. It neither downloads nor loads torch. Missing or modified bytes are explicit. Runtime package presence is not a successful import/inference claim.
 
-Only an explicitly approved setup should download the pinned files. Run the adapter in a separate Python environment with torch and Transformers. The tested baseline used Python 3.12, torch 2.12.0 and Transformers 4.57.6, CPU float32. It did not require torchaudio or a second model. Core Pocket retains its smaller dependency set. No install or network request is triggered by ordinary ranking or session operations.
+Only an explicitly approved setup should download the pinned files. Run the adapter in a separate Python environment with torch and Transformers. The tested baseline used Python 3.12, torch 2.12.0 and Transformers 4.57.6, CPU float32. It did not require torchaudio or a second model. Core Pocket retains its smaller dependency set. Getter outputs must be a single 512-D tensor; changed runtime return types are rejected rather than misread as embeddings. No install or network request is triggered by ordinary ranking or session operations.
 
 `LocalClapAdapter(model_dir, device="cpu", threads=4)` verifies the cache then loads it with `local_files_only=True` and `trust_remote_code=False`. MPS is opt-in; hardware availability alone is not a model compatibility or performance guarantee. Automatic backend fallback is disabled and runtime details are recorded. Initialization and offline feature extraction happen outside the performance decision loop.
 
@@ -40,6 +40,8 @@ For an isolated process, `python -m pocket_music.embedding_worker --model-dir ..
 
 ## Evidence and limits from the initial local pilot
 
-A bounded CPU run covered eight independently sourced recordings, ten windows, and three exact brief phrases. Identical repeated extraction produced identical vectors; a 125-ms crop shift changed its embedding, confirming source-window choice matters. Bare setting labels produced nearly identical rankings and did **not** demonstrate useful musical selection. Detailed private timings, hashes and ranking outputs remain in external evaluation artifacts. Do not present successful tensor execution as a successful musical recommendation benchmark.
+The first tested `larger_clap_music` checkpoint failed to discriminate even contrasting descriptive queries: text vectors clustered near cosine 0.999 despite matching the official processor path, valid masks, complete checkpoint loading and an eager-attention check. It is **not** an eligible production provider; its earlier receipts/indices fail current model-identity validation. No silent reuse across checkpoints is permitted.
+
+The selected unfused control produced distinct descriptive text vectors (pairwise cosine approximately 0.113–0.501) and different rankings for jazz, rap, breakbeat and atmospheric descriptions across four bounded diagnostic passages. This is a useful discrimination sanity check, not a listener-rated musical recommendation pass. Agent-authored diagnostic descriptions were explicitly labeled as such in private evidence; the public text API retains its user-authored gate. The bounded production-path smoke uses eight independently sourced recordings and exact source windows. Timings, hashes and ranking outputs remain outside Git. Do not present successful tensor execution as a complete musical-quality benchmark.
 
 Useful next evaluation is listener-rated, descriptive intent retrieval against a metadata/annotation baseline, using held-out passages. No training, remote audio service, automatic cue edit, or global correctness claim is included in this provider.
