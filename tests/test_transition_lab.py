@@ -521,3 +521,22 @@ def test_feedback_rejects_manifest_mutation_between_read_and_use(tmp_path, monke
     with pytest.raises(PocketError, match="Manifest changed"):
         feedback(result, end_frame=4000)
     assert not (Path(result["trial_dir"]) / "feedback").exists()
+
+
+def test_public_inputs_have_discoverable_nested_types():
+    import inspect
+    from typing import get_args, get_type_hints
+
+    from typing_extensions import is_typeddict
+
+    from pocket_music.transition_lab import NativeExportSettings, TrialVariant
+
+    for provider in (create_trial, record_feedback, prepare_native_trial, attach_completed_render):
+        hints = get_type_hints(provider)
+        assert set(inspect.signature(provider).parameters) <= hints.keys()
+    assert get_args(get_type_hints(create_trial)["variants"]) == (TrialVariant,)
+    assert is_typeddict(TrialVariant) and is_typeddict(NativeExportSettings)
+    assert get_type_hints(TrialVariant)["frames"] is int
+    assert get_type_hints(NativeExportSettings)["sample_rate"] is int
+    assert get_type_hints(attach_completed_render)["expected_frames"] is int
+    assert get_type_hints(attach_completed_render)["export_completed"] is bool

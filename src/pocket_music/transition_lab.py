@@ -20,12 +20,41 @@ import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from itertools import pairwise
 from pathlib import Path
+from typing import Literal
+
+from typing_extensions import NotRequired, TypedDict
 
 import numpy as np
 import soundfile as sf
 
 from .assets import identify_audio, sha256_file
 from .errors import PocketError
+
+
+class TrialVariant(TypedDict):
+    """One exact source window; omitted fields use the shared explicit window."""
+
+    source_path: str
+    label: str
+    expected_sha256: NotRequired[str]
+    start_frame: NotRequired[int]
+    frames: NotRequired[int]
+    gain_db: NotRequired[float]
+
+
+class NativeExportSettings(TypedDict):
+    """Declared export settings, independently checked against the WAV header."""
+
+    rendered_track: Literal["Main"]
+    sample_rate: int
+    channels: Literal[2]
+    normalization: Literal[False]
+    mono: Literal[False]
+    loop_render: Literal[False]
+    dither: Literal["none"]
+
+
+FeedbackScope = Literal["timing", "bar_phase", "flow", "tonal_overlap", "level", "preference", "other"]
 
 MAX_SECONDS = 300
 MAX_VARIANTS = 8
@@ -130,13 +159,13 @@ def _peak_summary(peak: float, overs: int, frames: int) -> dict:
 
 
 def create_trial(
-    output_dir,
-    variants,
+    output_dir: str,
+    variants: list[TrialVariant],
     *,
-    start_frame=None,
-    frames=None,
-    title="Transition trial",
-    allow_duration_mismatch=False,
+    start_frame: int | None = None,
+    frames: int | None = None,
+    title: str = "Transition trial",
+    allow_duration_mismatch: bool = False,
 ) -> dict:
     """Create immutable, exact-window DOUBLE WAV variants from existing audio.
 
@@ -257,7 +286,15 @@ def create_trial(
 
 
 def record_feedback(
-    trial_dir, variant_id, *, output_sha256, note, start_frame, end_frame, scope="timing", listener=None
+    trial_dir: str,
+    variant_id: str,
+    *,
+    output_sha256: str,
+    note: str,
+    start_frame: int,
+    end_frame: int,
+    scope: FeedbackScope = "timing",
+    listener: str | None = None,
 ) -> dict:
     """Append human feedback bound to one output hash and an exact local time span."""
     folder = Path(trial_dir).expanduser().resolve()
@@ -422,15 +459,15 @@ def _dependencies(root) -> list:
 
 
 def prepare_native_trial(
-    source_als,
-    output_dir,
+    source_als: str,
+    output_dir: str,
     *,
-    clip_id,
-    shift_beats,
-    export_start_beat,
-    export_length_beats,
-    expected_als_sha256,
-    range_name="Trial",
+    clip_id: str,
+    shift_beats: float,
+    export_start_beat: float,
+    export_length_beats: float,
+    expected_als_sha256: str,
+    range_name: str = "Trial",
 ) -> dict:
     """Duplicate a set and translate one warped Audio Arrangement clip only.
 
@@ -544,15 +581,15 @@ def prepare_native_trial(
 
 
 def attach_completed_render(
-    trial_dir,
-    rendered_audio,
+    trial_dir: str,
+    rendered_audio: str,
     *,
-    expected_candidate_sha256,
-    rendered_start_beat,
-    rendered_length_beats,
-    expected_frames,
-    settings,
-    export_completed=False,
+    expected_candidate_sha256: str,
+    rendered_start_beat: float,
+    rendered_length_beats: float,
+    expected_frames: int,
+    settings: NativeExportSettings,
+    export_completed: bool = False,
 ) -> dict:
     """Attach actual completed audio; export attribution remains user-supplied.
 
