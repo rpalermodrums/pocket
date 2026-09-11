@@ -71,14 +71,26 @@ def _emit(value: dict, output: str | None = None) -> None:
         sys.stdout.write(payload)
 
 
+def _initial_command(commands, name, compatibility_name, help_text):
+    command = commands.add_parser(
+        name, aliases=[compatibility_name],
+        help=f"{help_text} (compatibility alias: {compatibility_name})",
+        description=f"{help_text}. {compatibility_name} remains a compatibility alias.",
+    )
+    # argparse retains the literal alias by default. Normalize before both
+    # provider dispatch and response/artifact --output routing.
+    command.set_defaults(command=name)
+    return command
+
+
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="pocket", description="Map music, inspect sets and test transitions.")
+    root = argparse.ArgumentParser(prog="pocket", description="Inspect sources and sets, and test transitions with Peek, Thread and Stitch.")
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="command", required=True)
     asset = commands.add_parser("identify", help="Identify an exact local recording")
     asset.add_argument("path")
     asset.add_argument("--output", help="Write a new JSON file (never overwrite)")
-    track = commands.add_parser("track-map", help="Analyze a bounded source passage")
+    track = _initial_command(commands, "peek", "track-map", "Analyze a bounded source passage")
     track.add_argument("path")
     track.add_argument("--start", type=float, default=0.0, help="Original-source seconds")
     track.add_argument("--duration", type=float, default=30.0)
@@ -87,13 +99,13 @@ def parser() -> argparse.ArgumentParser:
     track.add_argument("--bpm-hint", type=float)
     track.add_argument("--beats-per-bar", type=int, default=4)
     track.add_argument("--output")
-    project = commands.add_parser("set-map", help="Inspect saved Ableton control and source intent")
+    project = _initial_command(commands, "thread", "set-map", "Inspect saved Ableton control and source intent")
     project.add_argument("path")
     project.add_argument("--hash-sources", action="store_true", help="Also hash active source files")
     project.add_argument("--full", action="store_true", help="Explicit full raw inventory instead of a handle")
     project.add_argument("--cache-dir", help="Directory for immutable handle snapshots")
     project.add_argument("--output")
-    region = commands.add_parser("set-region", help="Query a saved handle at arrangement seconds or mm:ss")
+    region = _initial_command(commands, "thread-region", "set-region", "Query a saved handle at arrangement seconds or mm:ss")
     region.add_argument("handle", help="JSON file containing a summary or bare handle")
     region.add_argument("start", help="Seconds, mm:ss or hh:mm:ss")
     region.add_argument("--duration", type=float, default=32)
@@ -102,22 +114,22 @@ def parser() -> argparse.ArgumentParser:
     region.add_argument("--max-events-per-lane", type=int, default=12)
     region.add_argument("--max-bytes", type=int, default=16000)
     region.add_argument("--output")
-    search = commands.add_parser("find-clips", help="Find clip names or IDs in a saved handle")
+    search = _initial_command(commands, "thread-find-clips", "find-clips", "Find clip names or IDs in a saved handle")
     search.add_argument("handle")
     search.add_argument("query", nargs="?", default="")
     search.add_argument("--limit", type=int, default=20)
     search.add_argument("--offset", type=int, default=0)
     search.add_argument("--output")
-    raw = commands.add_parser("map-export", help="Export the full raw inventory from a verified handle")
+    raw = _initial_command(commands, "thread-export", "map-export", "Export the full raw inventory from a verified handle")
     raw.add_argument("handle")
     raw.add_argument("--output", required=True)
-    position = commands.add_parser("source-position", help="Map an arrangement beat to original-source time")
-    position.add_argument("map", help="Saved Set Map JSON")
+    position = _initial_command(commands, "thread-source-position", "source-position", "Map an arrangement beat to original-source time")
+    position.add_argument("map", help="Saved Thread JSON (existing set-map schema)")
     position.add_argument("clip_id")
     position.add_argument("beat", type=float)
     position.add_argument("--output")
-    lab = commands.add_parser("lab", help="Prepare and review controlled transition experiments")
-    actions = lab.add_subparsers(dest="action", required=True)
+    stitch_parser = _initial_command(commands, "stitch", "lab", "Prepare and review controlled transition experiments")
+    actions = stitch_parser.add_subparsers(dest="action", required=True)
     for name, help_text in [
         ("create", "Create exact comparison excerpts from a variant specification"),
         ("prepare-native", "Prepare a new media-only shifted Ableton candidate"),
@@ -174,31 +186,31 @@ def _dispatch(args: argparse.Namespace):
         return None
     if args.command == "identify":
         return identify_audio(args.path)
-    if args.command == "track-map":
-        from .track_map import analyze_region
+    if args.command == "peek":
+        from .peek import analyze_region
         return analyze_region(args.path, args.start, args.duration, args.bpm_hint, args.beats_per_bar,
                               start_frame=args.start_frame, frames=args.frames)
-    if args.command == "set-map":
-        from .set_map import inspect_set
-        from .set_queries import inspect_set_summary
+    if args.command == "thread":
+        from .thread import inspect_set
+        from .thread_queries import inspect_set_summary
         if args.full:
             return inspect_set(args.path, hash_sources=args.hash_sources)
         return inspect_set_summary(args.path, cache_dir=args.cache_dir, hash_sources=args.hash_sources)
-    if args.command in {"set-region", "find-clips", "map-export"}:
-        from .set_queries import export_set_map, find_clips, query_set_region
+    if args.command in {"thread-region", "thread-find-clips", "thread-export"}:
+        from .thread_queries import export_thread, find_clips, query_set_region
         stored = _read_object(args.handle)
         handle = stored.get("handle", stored)
-        if args.command == "set-region":
+        if args.command == "thread-region":
             return query_set_region(handle, args.start, args.duration, max_clips=args.max_clips,
                                     clip_offset=args.clip_offset, max_events_per_lane=args.max_events_per_lane,
                                     max_bytes=args.max_bytes)
-        if args.command == "find-clips":
+        if args.command == "thread-find-clips":
             return find_clips(handle, args.query, limit=args.limit, offset=args.offset)
-        return export_set_map(handle, args.output)
-    if args.command == "source-position":
-        from .set_map import source_position
+        return export_thread(handle, args.output)
+    if args.command == "thread-source-position":
+        from .thread import source_position
         return source_position(_read_object(args.map), args.clip_id, args.beat)
-    from . import transition_lab
+    from . import stitch
     from .feedback import query_feedback
     spec = _read_object(args.spec)
     if args.action in {"create", "prepare-native"}:
@@ -206,12 +218,12 @@ def _dispatch(args: argparse.Namespace):
             raise PocketError("Use --output for the destination; omit output_dir from the specification")
         spec["output_dir"] = args.output
     action = {
-        "create": transition_lab.create_trial,
-        "prepare-native": transition_lab.prepare_native_trial,
-        "feedback": transition_lab.record_feedback,
+        "create": stitch.create_trial,
+        "prepare-native": stitch.prepare_native_trial,
+        "feedback": stitch.record_feedback,
         "feedback-list": query_feedback,
-        "attach-render": transition_lab.attach_completed_render,
-        "validate-native": transition_lab.validate_native_trial,
+        "attach-render": stitch.attach_completed_render,
+        "validate-native": stitch.validate_native_trial,
     }[args.action]
     return action(**spec)
 
@@ -219,7 +231,7 @@ def _dispatch(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        artifact_output = (args.command in {"lab", "map-export", "workspace"} or
+        artifact_output = (args.command in {"stitch", "thread-export", "workspace"} or
                            (args.command in _SPEC_OPERATIONS and
                             _SPEC_OPERATIONS[args.command][args.action][2] is not None))
         response_path = None if artifact_output else getattr(args, "output", None)

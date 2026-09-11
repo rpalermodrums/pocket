@@ -132,7 +132,7 @@ def test_mcp_selection_schema_and_real_typed_calls(tmp_path):
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
             tools = {t.name: t for t in (await session.list_tools()).tools}
-            assert len(tools) == 35
+            assert len(tools) == 48
             assert tools['session_options'].inputSchema['properties']['limit']['type'] == 'integer'
             assert tools['update_session'].inputSchema['properties']['action']['enum'] == ['choose', 'skip', 'intent']
             assert tools['execute_spotify_playlist'].annotations.openWorldHint

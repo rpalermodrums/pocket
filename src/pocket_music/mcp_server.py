@@ -110,9 +110,8 @@ def build_server():
     from .feedback import query_feedback
     from .music_embeddings import build_embedding_index, model_preflight, rank_embedding_query
     from .on_deck import prepare_session, session_options, session_snapshot, update_session
+    from .peek import analyze_region
     from .record_bag import create_record_bag, query_record_bag, revise_record_bag
-    from .set_map import arrangement_position, source_position
-    from .set_queries import export_set_map, find_clips, inspect_set_summary, query_set_region
     from .set_workshop import plan_set_routes, record_plan_feedback, replan_set
     from .spotify_bridge import (
         execute_spotify_playlist,
@@ -120,17 +119,20 @@ def build_server():
         plan_spotify_playlist,
         verify_spotify_playlist_ui,
     )
-    from .track_map import analyze_region
-    from .transition_lab import (
+    from .stitch import (
         attach_completed_render,
         create_trial,
         prepare_native_trial,
         record_feedback,
         validate_native_trial,
     )
+    from .thread import arrangement_position, source_position
+    from .thread_queries import export_thread, find_clips, inspect_set_summary, query_set_region
 
     server = FastMCP("Pocket", instructions=(
-        "Analyze bounded passages and keep evidence separate from musical approval. "
+        "Use Peek for bounded source evidence, Thread for saved arrangement/source intent, "
+        "and Stitch for controlled transition trials. Prefer these primary names; older tool names "
+        "remain compatibility aliases. Keep evidence separate from musical approval. "
         "Never infer bar one solely from tempo. Native export remains supervised. "
         "Trial functions write only new local outputs; preserve baseline recordings and projects. "
         "Record bags distinguish catalog metadata, attributed hypotheses and exact local audio identity. "
@@ -141,25 +143,42 @@ def build_server():
         "Acquisition requires a selected source plan; model retrieval uses prepared independent local "
         "audio/user-text receipts, never Spotify content. No inference runs in the live suggestion path."
     ))
-    for function in (
-        identify_audio, analyze_region, inspect_set_summary, source_position, arrangement_position,
-        find_clips, query_set_region, export_set_map,
-        create_trial, record_feedback, query_feedback, prepare_native_trial,
-        validate_native_trial, attach_completed_render,
-    ):
+    server.add_tool(identify_audio, annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
+    ))
+    initial_tools = (
+        ("peek", "analyze_region", analyze_region),
+        ("thread", "inspect_set", inspect_set_summary),
+        ("thread_region", "query_set_region", query_set_region),
+        ("thread_find_clips", "find_clips", find_clips),
+        ("thread_export", "export_set_map", export_thread),
+        ("thread_source_position", "source_position", source_position),
+        ("thread_arrangement_position", "arrangement_position", arrangement_position),
+        ("stitch", "create_trial", create_trial),
+        ("stitch_prepare_native", "prepare_native_trial", prepare_native_trial),
+        ("stitch_feedback", "record_feedback", record_feedback),
+        ("stitch_feedback_list", "query_feedback", query_feedback),
+        ("stitch_attach_render", "attach_completed_render", attach_completed_render),
+        ("stitch_validate_native", "validate_native_trial", validate_native_trial),
+    )
+    registrations = []
+    for primary, compatibility, function in initial_tools:
         read_only = function in {
-            identify_audio, analyze_region, source_position, arrangement_position, query_feedback,
+            analyze_region, source_position, arrangement_position, query_feedback,
             validate_native_trial, find_clips, query_set_region,
         }
         transport = _compact_response(function) if function in {
-            inspect_set_summary, find_clips, query_set_region, export_set_map,
+            inspect_set_summary, find_clips, query_set_region, export_thread,
         } else function
-        server.add_tool(transport, name="inspect_set" if function is inspect_set_summary else None,
-                       structured_output=False if transport is not function else None,
-                       annotations=ToolAnnotations(
+        annotations = ToolAnnotations(
             readOnlyHint=read_only, destructiveHint=False,
             idempotentHint=read_only, openWorldHint=False,
-        ))
+        )
+        structured = False if transport is not function else None
+        description = inspect.getdoc(function) or "Read the corresponding provider's saved evidence."
+        server.add_tool(transport, name=primary, description=f"{primary}: {description}",
+                        structured_output=structured, annotations=annotations)
+        registrations.append((primary, compatibility, transport, structured, annotations, description))
     readonly = {query_record_bag, session_options, session_snapshot, model_preflight, rank_embedding_query,
                 discover_sources, inspect_source_formats}
     external = {discover_sources, inspect_source_formats, acquire_source, execute_spotify_playlist}
@@ -176,6 +195,12 @@ def build_server():
                             readOnlyHint=function in readonly, destructiveHint=False,
                             idempotentHint=function in readonly, openWorldHint=function in external,
                         ))
+    # Reuse the exact callable, signature and transport for old names. Register
+    # aliases after all primaries so discovery leads with the current vocabulary.
+    for primary, compatibility, transport, structured, annotations, description in registrations:
+        server.add_tool(transport, name=compatibility,
+                        description=f"Compatibility alias for {primary}. {description}",
+                        structured_output=structured, annotations=annotations)
     return server
 
 

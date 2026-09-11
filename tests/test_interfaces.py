@@ -42,52 +42,52 @@ def test_cli_uses_same_asset_contract_and_refuses_output_overwrite(tmp_path):
 def test_cli_bad_source_and_nonfinite_region_are_structured_errors(tmp_path):
     missing = _cli("identify", tmp_path / "missing.wav")
     assert missing.returncode == 2 and "message" in json.loads(missing.stderr)
-    result = _cli("track-map", _audio(tmp_path), "--duration", "nan")
+    result = _cli("peek", _audio(tmp_path), "--duration", "nan")
     assert result.returncode == 2 and "message" in json.loads(result.stderr)
 
 
 def test_cli_set_handle_workflow_full_export_and_stale_rejection(tmp_path):
-    from test_transition_lab import als_fixture
+    from test_stitch import als_fixture
 
     source_set, _ = als_fixture(tmp_path)
     overview = tmp_path / "overview.json"
-    result = _cli("set-map", source_set, "--cache-dir", tmp_path / "cache", "--output", overview)
+    result = _cli("thread", source_set, "--cache-dir", tmp_path / "cache", "--output", overview)
     assert result.returncode == 0, result.stderr
     summary = json.loads(overview.read_text())
     assert summary["schema"] == "pocket.set-summary/v1"
     assert "tracks" not in summary and "clips" not in summary
-    region = _cli("set-region", overview, "0:00", "--duration", 3)
+    region = _cli("thread-region", overview, "0:00", "--duration", 3)
     assert region.returncode == 0, region.stderr
     assert len(json.loads(region.stdout)["clips"]) == 1
     bare = tmp_path / "handle.json"
     bare.write_text(json.dumps(summary["handle"]))
-    found = _cli("find-clips", bare, "track:100/clip:0")
+    found = _cli("thread-find-clips", bare, "track:100/clip:0")
     assert found.returncode == 0, found.stderr
     assert json.loads(found.stdout)["total_matches"] == 1
     full = tmp_path / "full.json"
-    exported = _cli("map-export", bare, "--output", full)
+    exported = _cli("thread-export", bare, "--output", full)
     assert exported.returncode == 0, exported.stderr
     assert json.loads(full.read_text())["schema"] == "pocket.set-map/v1"
-    legacy = _cli("set-map", source_set, "--full")
+    legacy = _cli("thread", source_set, "--full")
     assert legacy.returncode == 0, legacy.stderr
     assert json.loads(legacy.stdout)["clips"] == json.loads(full.read_text())["clips"]
     before = full.read_bytes()
-    assert _cli("map-export", bare, "--output", full).returncode == 2
+    assert _cli("thread-export", bare, "--output", full).returncode == 2
     assert full.read_bytes() == before
     # Even changing an active dependency invalidates the cross-process handle.
     (tmp_path / "source.wav").touch()
-    stale = _cli("set-region", overview, "0:00", "--duration", 3)
+    stale = _cli("thread-region", overview, "0:00", "--duration", 3)
     assert stale.returncode == 2 and "message" in json.loads(stale.stderr)
 
 
 def test_cli_exact_frame_analysis_and_mixed_address_rejection(tmp_path):
     path = _audio(tmp_path)
-    result = _cli("track-map", path, "--start-frame", 11, "--frames", 8003)
+    result = _cli("peek", path, "--start-frame", 11, "--frames", 8003)
     assert result.returncode == 0, result.stderr
     region = json.loads(result.stdout)["region"]
     assert region["start_frame"] == 11 and region["end_frame_exclusive"] == 8014
     assert region["addressing"] == "source_frames"
-    invalid = _cli("track-map", path, "--start-frame", 11, "--frames", 8003, "--duration", 2)
+    invalid = _cli("peek", path, "--start-frame", 11, "--frames", 8003, "--duration", 2)
     assert invalid.returncode == 2 and "mixed" in json.loads(invalid.stderr)["message"]
 
 
@@ -105,15 +105,15 @@ def test_mcp_stdio_lists_tools_and_returns_same_identity(tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 names = {tool.name for tool in (await session.list_tools()).tools}
-                assert {"identify_audio", "analyze_region", "inspect_set", "create_trial",
-                        "record_feedback", "prepare_native_trial", "attach_completed_render"} <= names
+                assert {"identify_audio", "peek", "thread", "stitch",
+                        "stitch_feedback", "stitch_prepare_native", "stitch_attach_render"} <= names
                 result = await session.call_tool("identify_audio", {"path": str(path)})
                 assert not result.isError
                 data = result.structuredContent
                 if data is None:
                     data = json.loads(next(block.text for block in result.content if block.type == "text"))
                 assert data == identify_audio(path)
-                invalid = await session.call_tool("analyze_region", {
+                invalid = await session.call_tool("peek", {
                     "path": str(path), "start_seconds": 0, "duration_seconds": -1,
                 })
                 assert invalid.isError
@@ -126,8 +126,9 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
     """Replay a real stdio trial, not just discovery or a read-only smoke test."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
+    from test_stitch import als_fixture
+
     from pocket_music.assets import sha256_file
-    from test_transition_lab import als_fixture
 
     source_set, _ = als_fixture(tmp_path)
     source = tmp_path / "source.wav"
@@ -139,17 +140,17 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 schemas = {t.name: t.inputSchema for t in (await session.list_tools()).tools}
-                trial_schema = schemas["create_trial"]
+                trial_schema = schemas["stitch"]
                 assert trial_schema["properties"]["variants"]["type"] == "array"
                 item = trial_schema["properties"]["variants"]["items"]
                 definition = trial_schema["$defs"][item["$ref"].rsplit("/", 1)[1]]
                 assert {"source_path", "label"} <= set(definition["required"])
                 assert definition["properties"]["start_frame"]["type"] == "integer"
                 assert trial_schema["properties"]["allow_duration_mismatch"]["type"] == "boolean"
-                assert schemas["record_feedback"]["properties"]["start_frame"]["type"] == "integer"
-                assert schemas["prepare_native_trial"]["properties"]["shift_beats"]["type"] == "number"
-                assert schemas["attach_completed_render"]["properties"]["expected_frames"]["type"] == "integer"
-                handle_schema = schemas["query_set_region"]
+                assert schemas["stitch_feedback"]["properties"]["start_frame"]["type"] == "integer"
+                assert schemas["stitch_prepare_native"]["properties"]["shift_beats"]["type"] == "number"
+                assert schemas["stitch_attach_render"]["properties"]["expected_frames"]["type"] == "integer"
+                handle_schema = schemas["thread_region"]
                 handle_ref = handle_schema["properties"]["handle"]["$ref"].rsplit("/", 1)[1]
                 assert {"cache_sha256", "set_sha256", "cache_path"} <= set(
                     handle_schema["$defs"][handle_ref]["required"])
@@ -157,7 +158,7 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                 async def call(name, args):
                     result = await session.call_tool(name, args)
                     assert not result.isError, result.content
-                    if name in {"inspect_set", "query_set_region", "find_clips", "export_set_map"}:
+                    if name in {"thread", "thread_region", "thread_find_clips", "thread_export"}:
                         assert result.structuredContent is None
                         assert len(result.content) == 1
                         # One compact JSON record; no duplicated/pretty-printed transport copy.
@@ -166,56 +167,56 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                                                                        if b.type == "text"))
 
                 identity = await call("identify_audio", {"path": str(source)})
-                await call("analyze_region", {"path": str(source), "duration_seconds": 3})
-                summary = await call("inspect_set", {"path": str(source_set),
+                await call("peek", {"path": str(source), "duration_seconds": 3})
+                summary = await call("thread", {"path": str(source_set),
                                                      "cache_dir": str(tmp_path / "cache")})
                 assert summary["schema"] == "pocket.set-summary/v1" and "clips" not in summary
                 handle = summary["handle"]
-                region = await call("query_set_region", {"handle": handle, "start_seconds": "0:00",
+                region = await call("thread_region", {"handle": handle, "start_seconds": "0:00",
                                                          "duration_seconds": 3})
                 assert len(region["clips"]) == 1
                 interval = region["clips"][0]["source_interval"]
-                exact = await call("analyze_region", {"path": str(source),
+                exact = await call("peek", {"path": str(source),
                                                        **interval["analyze_region_frame_args"]})
                 assert exact["region"]["start_frame"] == interval["start_frame"]
                 assert exact["region"]["end_frame_exclusive"] == interval["end_frame_exclusive"]
                 assert exact["region"]["addressing"] == "source_frames"
                 assert exact["rhythm"]["bar_phase_status"] == "unresolved"
-                found = await call("find_clips", {"handle": handle, "query": "track:100/clip:0"})
+                found = await call("thread_find_clips", {"handle": handle, "query": "track:100/clip:0"})
                 assert found
-                exported = await call("export_set_map", {"handle": handle,
+                exported = await call("thread_export", {"handle": handle,
                                                           "output_path": str(tmp_path / "raw-map.json")})
                 mapped = json.loads(Path(exported["path"]).read_text())
-                position = await call("source_position", {"set_map": mapped, "clip_id": "track:100/clip:0",
+                position = await call("thread_source_position", {"set_map": mapped, "clip_id": "track:100/clip:0",
                                                           "arrangement_beat": 2})
-                await call("arrangement_position", {"set_map": mapped, "clip_id": "track:100/clip:0",
+                await call("thread_arrangement_position", {"set_map": mapped, "clip_id": "track:100/clip:0",
                                                       "source_seconds": position["source_seconds"]})
-                trial = await call("create_trial", {
+                trial = await call("stitch", {
                     "output_dir": str(tmp_path / "agent-trial"),
                     "variants": [{"source_path": str(source), "label": "Generated fixture",
                                   "expected_sha256": identity["sha256"]}],
                     "start_frame": 0, "frames": 1000, "allow_duration_mismatch": False,
                 })
-                await call("record_feedback", {
+                await call("stitch_feedback", {
                     "trial_dir": trial["trial_dir"], "variant_id": "v01",
                     "output_sha256": trial["variants"][0]["output"]["sha256"],
                     "start_frame": 10, "end_frame": 20, "scope": "bar_phase",
                     "note": "Generated fixture claim, not an actual listening judgment",
                 })
-                stored = await call("query_feedback", {
+                stored = await call("stitch_feedback_list", {
                     "trial_dir": trial["trial_dir"], "variant_id": "v01", "scope": "bar_phase",
                     "start_frame": 15, "end_frame": 21,
                 })
                 assert len(stored["notes"]) == 1
                 assert stored["notes"][0]["start_frame"] == 10
                 assert stored["musical_verdict"] is None
-                native = await call("prepare_native_trial", {
+                native = await call("stitch_prepare_native", {
                     "source_als": str(source_set), "output_dir": str(tmp_path / "agent-native"),
                     "clip_id": "track:100/clip:0", "shift_beats": 1,
                     "export_start_beat": 0, "export_length_beats": 8,
                     "expected_als_sha256": sha256_file(source_set),
                 })
-                checked = await call("validate_native_trial", {
+                checked = await call("stitch_validate_native", {
                     "trial_dir": native["trial_dir"],
                     "expected_candidate_sha256": native["candidate_sha256"],
                 })
@@ -224,7 +225,7 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                             "normalization": False, "mono": False, "loop_render": False, "dither": "none"}
                 # A generated artifact checks the provider contract. It does not
                 # claim that this fixture audio was produced by native rendering.
-                attached = await call("attach_completed_render", {
+                attached = await call("stitch_attach_render", {
                     "trial_dir": native["trial_dir"], "rendered_audio": str(source),
                     "expected_candidate_sha256": native["candidate_sha256"],
                     "rendered_start_beat": 0, "rendered_length_beats": 8,
@@ -234,12 +235,12 @@ def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
                 assert attached["signal"]["disposition"] == "usable_signal"
                 assert attached["ready_to_compare"] is False  # no native observation supplied
                 bad_dir = tmp_path / "bad-agent-trial"
-                invalid = await session.call_tool("create_trial", {
+                invalid = await session.call_tool("stitch", {
                     "output_dir": str(bad_dir), "variants": [{"source_path": str(source)}],
                     "start_frame": 0, "frames": 100,
                 })
                 assert invalid.isError and not bad_dir.exists()
-                invalid = await session.call_tool("prepare_native_trial", {
+                invalid = await session.call_tool("stitch_prepare_native", {
                     "source_als": str(source_set), "output_dir": str(bad_dir),
                     "clip_id": "track:100/clip:0", "shift_beats": 0,
                     "export_start_beat": 0, "export_length_beats": 8,
