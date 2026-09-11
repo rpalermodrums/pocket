@@ -165,3 +165,38 @@ def test_null_availability_is_unknown_and_id_not_silently_rewritten():
     records[1]["track_id"] = " b "
     with pytest.raises(PocketError, match="whitespace"):
         deck.rank_next_tracks(records, "a")
+
+
+def test_live_hold_lift_relative_to_current_override_setting_baseline():
+    records = [track("current", .55), track("low", .35), track("steady", .55), track("higher", .70)]
+    lift = deck.rank_next_tracks(records, "current", intent={"setting": "warm_up", "direction": "lift"}, limit=1)
+    hold = deck.rank_next_tracks(records, "current", intent={"setting": "warm_up", "direction": "hold"}, limit=1)
+    assert lift[0]["track_id"] == "higher"
+    assert hold[0]["track_id"] == "steady"
+    assert any("target 0.70" in reason for reason in lift[0]["reasons"])
+    assert any("target 0.55" in reason for reason in hold[0]["reasons"])
+
+
+def test_explicit_energy_target_wins_over_live_direction():
+    records = [track("current", .55), track("low", .35), track("higher", .70)]
+    options = deck.rank_next_tracks(records, "current", intent={"setting": "peak_time", "direction": "lift",
+                                                              "target_energy": .35}, limit=1)
+    assert options[0]["track_id"] == "low"
+    assert any("target 0.35" in reason for reason in options[0]["reasons"])
+
+
+def test_setting_baseline_remains_for_explore_and_unknown_current():
+    records = [track("current", .55), track("low", .35), track("higher", .70)]
+    assert deck.rank_next_tracks(records, "current", intent={"setting": "warm_up", "direction": "explore"},
+                                 limit=1)[0]["track_id"] == "low"
+    records[0]["profile"]["energy"] = None
+    options = deck.rank_next_tracks(records, "current", intent={"setting": "warm_up", "direction": "lift"}, limit=1)
+    assert options[0]["track_id"] == "low"
+    assert records[0]["profile"]["energy"] is None
+
+
+def test_lift_target_caps_at_one():
+    records = [track("current", .95), track("lower", .8), track("ceiling", 1)]
+    options = deck.rank_next_tracks(records, "current", intent={"direction": "lift"}, limit=1)
+    assert options[0]["track_id"] == "ceiling"
+    assert any("target 1.00" in reason for reason in options[0]["reasons"])
