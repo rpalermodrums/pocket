@@ -204,11 +204,13 @@ $("attach-form").addEventListener("submit", (event) => {
 $("import-file").addEventListener("change", () => act(async () => {
   const file = $("import-file").files[0];
   if (!file) return;
-  if (file.size > 2_000_000) throw new Error("JSON import must be under 2 MB.");
-  const data = JSON.parse(await file.text());
-  ui.snapshot = await request("/api/import", Array.isArray(data) ? {tracks: data, title: "Imported records"} : {tracks: data.tracks, title: data.title || "Imported records"});
-  $("import-file").value = ""; $("search").value = "";
-  render(); await Promise.all([loadTracks(), loadOptions()]);
+  try {
+    if (file.size > 2_000_000) throw new Error("JSON import must be under 2 MB.");
+    const data = JSON.parse(await file.text());
+    ui.snapshot = await request("/api/import", Array.isArray(data) ? {tracks: data, title: "Imported records"} : {tracks: data.tracks, title: data.title || "Imported records"});
+    $("search").value = "";
+    render(); await Promise.all([loadTracks(), loadOptions()]);
+  } finally { $("import-file").value = ""; }
 }, "Record bag imported. Previous bags, routes and sessions are preserved."));
 $("demo").addEventListener("click", () => act(async () => {
   const titles = ["Soft entrance", "Off the grid", "Blue staircase", "Slow current", "Bright corners", "Open room", "Loose thread", "After the rain"];
