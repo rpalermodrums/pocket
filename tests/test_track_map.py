@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import warnings
 
 import numpy as np
 import pytest
@@ -10,7 +11,6 @@ import soundfile as sf
 from pocket_music import track_map
 from pocket_music.errors import PocketError
 from pocket_music.track_map import analyze_region
-
 
 RATE = 12000
 
@@ -180,3 +180,28 @@ def test_identity_read_race_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(track_map, "identify_audio", identify_then_change)
     with pytest.raises(PocketError, match="changed during analysis"):
         analyze_region(path, duration_seconds=2)
+
+
+@pytest.mark.parametrize("extra_frames", [1, 2, 3])
+def test_sub_analysis_frame_tail_has_explicit_harmonic_abstention(tmp_path, extra_frames):
+    rate = 48000
+    start_frame = 11515
+    frames = 4 * rate + extra_frames
+    time = np.arange(start_frame + frames) / rate
+    path = tmp_path / "fractional-analysis-tail.wav"
+    sf.write(path, .2 * np.sin(2 * np.pi * 440 * time), rate, subtype="FLOAT")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = analyze_region(path, start_frame=start_frame, frames=frames)
+    assert result["region"]["start_frame"] == start_frame
+    assert result["region"]["frames"] == frames
+    assert result["region"]["end_frame_exclusive"] == start_frame + frames
+    windows = result["harmony"]["windows"]
+    assert windows[0]["status"] == "local_pitch_class_evidence"
+    assert windows[-1]["source_start_seconds"] == start_frame / rate + 4
+    assert windows[-1]["source_end_seconds"] == pytest.approx((start_frame + frames) / rate)
+    assert windows[-1]["status"] == "insufficient_tonal_evidence"
+    assert windows[-1]["reason"] == "fewer_than_one_complete_analysis_frame"
+    assert windows[-1]["rms_dbfs"] is None
+    assert windows[-1]["pitch_class_energy"] is None
+    json.dumps(result, allow_nan=False)

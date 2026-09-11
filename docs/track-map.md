@@ -91,6 +91,8 @@ Retain all bar hypotheses for subsequent musical review. Accent shares alone can
 
 Harmonic evidence uses local spectral peaks near A440 equal-tempered pitch bins. It includes overtones and mixed instruments. Broadband noise, silence, or diffuse pitch-class energy cause abstention. A tonal mixture can also cause abstention, and a percussive resonance can look tonal. There is no global key, chord label, note transcription, pitch-correction recommendation, or assertion of a harmonic clash.
 
+An exact crop can end a fraction of one downsampled analysis frame after a four-second window boundary. That tiny trailing source interval is retained as `insufficient_tonal_evidence`, with reason `fewer_than_one_complete_analysis_frame` and null level/pitch features. It is not analyzed using adjacent padded spectral data, and the requested source-frame bounds remain unchanged.
+
 The processing averages channel power rather than summing channel samples, so anti-phase stereo does not disappear from the analysis. Onset bands are independently normalized within the crop; their values are not mix-level ratios or bass loudness measurements.
 
 ## Validation
