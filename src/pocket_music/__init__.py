@@ -14,10 +14,10 @@ _PUBLIC = {
     "record_feedback": "stitch", "query_feedback": "feedback",
     "create_record_bag": "record_bag", "load_record_bag": "record_bag",
     "query_record_bag": "record_bag", "revise_record_bag": "record_bag",
-    "plan_set_routes": "set_workshop", "load_set_plan": "set_workshop",
-    "record_plan_feedback": "set_workshop", "replan_set": "set_workshop",
-    "rank_next_tracks": "on_deck", "prepare_session": "on_deck",
-    "session_snapshot": "on_deck", "session_options": "on_deck", "update_session": "on_deck",
+    "plan_set_routes": "weave", "load_set_plan": "weave",
+    "record_plan_feedback": "weave", "replan_set": "weave",
+    "rank_next_tracks": "whisker", "prepare_session": "whisker",
+    "session_snapshot": "whisker", "session_options": "whisker", "update_session": "whisker",
     "import_spotify_items": "spotify_bridge", "plan_spotify_playlist": "spotify_bridge",
     "execute_spotify_playlist": "spotify_bridge", "verify_spotify_playlist_ui": "spotify_bridge",
     "discover_sources": "acquisition", "inspect_source_formats": "acquisition",
@@ -26,7 +26,7 @@ _PUBLIC = {
     "build_embedding_index": "music_embeddings", "load_embedding_index": "music_embeddings",
     "rank_embedding_query": "music_embeddings", "start_workspace": "workspace",
 }
-_MODULES = ("peek", "thread", "stitch")
+_MODULES = ("peek", "thread", "stitch", "weave", "whisker")
 __all__ = ["__version__"] + list(_PUBLIC) + list(_MODULES)
 
 

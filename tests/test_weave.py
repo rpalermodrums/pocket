@@ -1,4 +1,4 @@
-"""Generated route/feedback mechanics; scoring itself belongs to On Deck tests."""
+"""Generated route/feedback mechanics; scoring itself belongs to Whisker tests."""
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +11,7 @@ import soundfile as sf
 
 from pocket_music.errors import PocketError
 from pocket_music.record_bag import create_record_bag, load_record_bag, revise_record_bag
-from pocket_music.set_workshop import load_set_plan, plan_set_routes, record_plan_feedback, replan_set
+from pocket_music.weave import load_set_plan, plan_set_routes, record_plan_feedback, replan_set
 
 
 def records(count=10):
@@ -37,7 +37,7 @@ def fake_rank(tracks, current_track_id=None, *, played_ids=(), intent=None, limi
 
 @pytest.fixture(autouse=True)
 def provider(monkeypatch):
-    monkeypatch.setattr('pocket_music.set_workshop._ranking_provider', lambda: (fake_rank, 'generated-test-v1'))
+    monkeypatch.setattr('pocket_music.weave._ranking_provider', lambda: (fake_rank, 'generated-test-v1'))
 
 
 def make_bag(tmp_path, tracks=None):
@@ -222,7 +222,7 @@ def test_source_edited_during_search_is_rejected_before_publish(tmp_path, monkey
     def edited_rank(*args, **kwargs):
         sf.write(audio, np.ones((8000, 1)) * .1, 8000, subtype='FLOAT')
         return fake_rank(*args, **kwargs)
-    monkeypatch.setattr('pocket_music.set_workshop._ranking_provider', lambda: (edited_rank, 'test'))
+    monkeypatch.setattr('pocket_music.weave._ranking_provider', lambda: (edited_rank, 'test'))
     with pytest.raises(PocketError, match='Stale local audio'):
         plan_set_routes(bag, {'track_count': 2}, str(tmp_path / 'plan'), route_count=1)
     assert not (tmp_path / 'plan').exists()

@@ -123,18 +123,18 @@ def test_query_ranking_is_offline_and_origin_restricted(tmp_path):
 
 
 def test_session_prepares_sealed_index_and_stale_audio_falls_back(tmp_path, monkeypatch):
-    from pocket_music import on_deck
+    from pocket_music import whisker
     handle = embeddings.build_embedding_index([receipt(), receipt("b" * 64, 1)], tmp_path / "index.json")
     tracks = [{"track_id": name, "audio": {"status": "identified", "identity": {"sha256": digest}}}
               for name, digest in (("a", "a" * 64), ("b", "b" * 64))]
-    monkeypatch.setattr(on_deck, "_load_bag", lambda _: {"tracks": copy.deepcopy(tracks)})
-    session = on_deck.prepare_session({}, tmp_path / "session", current_track_id="a", embedding_index=handle)
-    result = on_deck.session_options(session["session_dir"])
+    monkeypatch.setattr(whisker, "_load_bag", lambda _: {"tracks": copy.deepcopy(tracks)})
+    session = whisker.prepare_session({}, tmp_path / "session", current_track_id="a", embedding_index=handle)
+    result = whisker.session_options(session["session_dir"])
     assert result["options"][0]["evidence"]["semantic_cosine"] == 0
     index_path = tmp_path / "session/embeddings.json"
     index_path.write_text(json.dumps({}))
     with pytest.raises(PocketError, match="index"):
-        on_deck.session_options(session["session_dir"])
+        whisker.session_options(session["session_dir"])
 
 
 def test_failed_music_specific_checkpoint_receipts_are_not_reused(tmp_path):

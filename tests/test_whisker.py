@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from pocket_music import on_deck as deck
+from pocket_music import whisker as deck
 from pocket_music.errors import PocketError
 
 

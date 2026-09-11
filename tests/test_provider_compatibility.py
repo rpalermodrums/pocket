@@ -15,6 +15,8 @@ PROVIDERS = [
     ("set_map", "thread", "_stamp", "inspect_set"),
     ("set_queries", "thread_queries", "_load", "query_set_region"),
     ("transition_lab", "stitch", "_now", "create_trial"),
+    ("set_workshop", "weave", "_ranking_provider", "plan_set_routes"),
+    ("on_deck", "whisker", "_load_bag", "prepare_session"),
 ]
 
 
@@ -58,9 +60,10 @@ def test_root_exports_stay_lazy_and_names_are_modules():
 import importlib, sys
 from types import ModuleType
 import pocket_music
-assert not any('pocket_music.' + name in sys.modules for name in ('peek', 'thread', 'stitch'))
+assert not any('pocket_music.' + name in sys.modules for name in ('peek', 'thread', 'stitch', 'weave', 'whisker'))
 assert 'numpy' not in sys.modules
-for name, function in [('peek', 'analyze_region'), ('thread', 'inspect_set'), ('stitch', 'create_trial')]:
+for name, function in [('peek', 'analyze_region'), ('thread', 'inspect_set'), ('stitch', 'create_trial'),
+                       ('weave', 'plan_set_routes'), ('whisker', 'session_options')]:
     module = getattr(pocket_music, name)
     assert isinstance(module, ModuleType)
     assert module is importlib.import_module('pocket_music.' + name)
@@ -89,3 +92,18 @@ def test_export_alias_and_serialized_contracts_are_preserved():
     ]
     assert peek.SCHEMA == "pocket.track-map/v1"
     assert thread.SCHEMA == "pocket.set-map/v1"
+
+
+def test_selection_exports_and_stable_identifiers():
+    import pocket_music
+    from pocket_music import on_deck, set_workshop, weave, whisker
+
+    assert on_deck is whisker
+    assert set_workshop is weave
+    for name in ("plan_set_routes", "load_set_plan", "record_plan_feedback", "replan_set"):
+        assert getattr(pocket_music, name) is getattr(weave, name)
+    for name in ("rank_next_tracks", "prepare_session", "session_snapshot", "session_options", "update_session"):
+        assert getattr(pocket_music, name) is getattr(whisker, name)
+    assert weave._ranking_provider() == (whisker.rank_next_tracks, whisker.ON_DECK_VERSION)
+    assert whisker._SESSION == "pocket.on-deck-session/v1"
+    assert weave.WORKSHOP_VERSION == set_workshop.WORKSHOP_VERSION

@@ -1,4 +1,4 @@
-"""Real provider integration, enabled when the On Deck slice is installed."""
+"""Real provider integration, enabled when the Whisker slice is installed."""
 from __future__ import annotations
 
 from itertools import pairwise
@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip('pocket_music.on_deck')
+pytest.importorskip('pocket_music.whisker')
 
-from pocket_music.on_deck import ON_DECK_VERSION
+from pocket_music.whisker import ON_DECK_VERSION
 from pocket_music.record_bag import create_record_bag
-from pocket_music.set_workshop import load_set_plan, plan_set_routes, record_plan_feedback, replan_set
+from pocket_music.weave import load_set_plan, plan_set_routes, record_plan_feedback, replan_set
 
 
 def tracks():
@@ -30,7 +30,9 @@ def test_three_briefs_actual_provider_constraints_and_reproduction(tmp_path, set
     b = plan_set_routes(bag, brief, str(tmp_path / 'b'), seed=3)
     assert a['routes'] == b['routes']
     assert len({tuple(r['track_ids']) for r in a['routes']}) == 3
-    assert load_set_plan(a['handle'])['provenance']['ranking_version'] == ON_DECK_VERSION
+    provenance = load_set_plan(a['handle'])['provenance']
+    assert provenance['ranking_version'] == ON_DECK_VERSION
+    assert provenance['ranking_provider'] == 'on_deck.rank_next_tracks'
     for route in a['routes']:
         ids = route['track_ids']
         assert ids.index('t1') < ids.index('t8') and 't10' not in ids
