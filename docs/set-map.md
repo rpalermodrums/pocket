@@ -83,6 +83,13 @@ machine-specific fixture paths are shipped.
 
 ## Bounded queries and persistent handles
 
+CLI `set-map` and MCP `inspect_set` return the compact summary by default.
+`set-region`, `find-clips` and `map-export` accept a JSON file containing that
+summary or its bare handle. In MCP, pass the handle object directly to
+`query_set_region`, `find_clips` or `export_set_map`. The four MCP summary/query
+tools return one compact JSON text block; parse it without expecting a duplicate
+`structuredContent` record. For the old raw CLI output, use `set-map --full`.
+
 The full `inspect_set` library call above remains compatible. For normal agent
 work, use `pocket_music.set_queries`:
 

@@ -1,3 +1,3 @@
-"""Pocket: evidence-linked music tools for agents and listeners."""
+"""Pocket: the musical toolkit for agents."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

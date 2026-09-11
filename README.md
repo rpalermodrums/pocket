@@ -1,14 +1,14 @@
 <p align="center"><img src="assets/pocket.svg" alt="Pocket — Pip the field mouse in a terracotta record sleeve, with an audio waveform below the wordmark." width="960"></p>
 
-**Music tools for agents and the people listening with them.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
+**The musical toolkit for agents.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
 
-Private, early development. The first release focuses on **Track Map**, **Set Map** and **Transition Lab**. There is no transcription-model prerequisite.
+Private, early development. Version 0.2 focuses on **Track Map**, **Set Map** and **Transition Lab**, with improvements tested against real sets. There is no transcription-model prerequisite.
 
 | Tool | What it does |
 |---|---|
-| **Track Map** | Analyze a bounded recording: attacks, pulse/tempo alternatives, drift and local tonal evidence. Keep possible bar positions and uncertainty visible. |
-| **Set Map** | Inspect a saved Live set: source passages, warp maps, pickups, layers, fades, tempo and supported controls. Map between source time and arrangement time. |
-| **Transition Lab** | Make exact, comparable excerpts; prepare a narrowly specified native trial; attach a completed render; preserve feedback about the exact audio heard. |
+| **Track Map** | Analyze exact source frames, attacks, competing pulse phases, crop sensitivity, local count uncertainty and tonal evidence. Keep musical beat one unresolved. |
+| **Set Map** | Start with a compact project summary, then query a timestamp for clips, source frames and relevant controls. Reject stale saved maps. |
+| **Transition Lab** | Collect a native trial's media, validate after relocation, separate render identity from signal readiness, and retrieve feedback about the exact audio heard. |
 
 ## Install
 
@@ -36,14 +36,19 @@ pocket lab create --spec /tmp/pocket-demo/comparison.json --output /tmp/pocket-d
 For a saved Ableton project:
 
 ```sh
-pocket set-map '/path/to/Your Set.als' --output /tmp/set-map.json
+pocket set-map '/path/to/Your Set.als' --output /tmp/set-summary.json
+pocket set-region /tmp/set-summary.json 2:22 --duration 32 --output /tmp/region.json
+pocket find-clips /tmp/set-summary.json 'Clip name'
+pocket map-export /tmp/set-summary.json --output /tmp/full-set-map.json
 ```
 
-See [Track Map](docs/track-map.md), [Set Map](docs/set-map.md), [Transition Lab](docs/transition-lab.md) and the [agent workflow](skills/pocket/SKILL.md) for supported operations and limits. Output records may contain local paths: keep them in your local working area, outside Git.
+The summary contains an identity-bound handle for later calls. A valid region supplies `analyze_region_frame_args`; pass that exact pair to Track Map. In the CLI, use `--start-frame` and `--frames` without seconds flags. `set-map --full` remains available for an explicit raw inventory.
+
+See [Track Map](docs/track-map.md), [Set Map](docs/set-map.md), [Transition Lab](docs/transition-lab.md), [feedback retrieval](docs/feedback.md) and the [agent workflow](skills/pocket/SKILL.md). Output records may contain local paths: keep them in your local working area, outside Git. The [0.2 release notes](docs/releases/0.2.0.md) describe compatibility changes and limits.
 
 ## Work with an agent
 
-`pocket-mcp` serves the same library functions over standard input/output. A local MCP configuration can point to the executable in your virtual environment:
+`pocket-mcp` serves the same provider records over standard input/output. Its `inspect_set` tool returns a summary and handle; `query_set_region`, `find_clips` and `export_set_map` reuse that handle. These four tools return one compact JSON text record, without a second expanded copy. A local MCP configuration can point to the executable in your virtual environment:
 
 ```json
 {
@@ -71,7 +76,7 @@ Configure that local process only for agents you trust with your audio and proje
 python -m pytest
 ```
 
-Tests generate small signals and saved-project fixtures. Full recordings, renders, model weights and real listener notes stay outside the repository. [Architecture](docs/architecture.md) describes the shared contracts and extraction from earlier production work. [Evaluation](docs/evaluation.md) records what this first release actually demonstrates and what still needs listening tests.
+Tests generate small signals and saved-project fixtures. Full recordings, renders, model weights and real listener notes stay outside the repository. [Architecture](docs/architecture.md) describes the shared contracts and extraction from earlier production work. [Evaluation](docs/evaluation.md) records the production field checks and what still needs listening tests. The [implementation plan](docs/implementation-plan.md) records scope, ownership and acceptance gates.
 
 After using these three tools on more transitions, decide whether selective transcription, MuseTok, broader edit support or another tool would help most. Those are evaluation decisions, not a committed feature queue.
 

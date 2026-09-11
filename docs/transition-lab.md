@@ -143,7 +143,7 @@ attachment = attach_completed_render(
 )
 ```
 
-The explicit completion/range/settings statements are **user-supplied export evidence**. They are not proof that Live rendered this candidate. Pocket independently verifies the unchanged candidate and dependencies, the actual floating-point stereo WAV header, complete finite decoded frame count, stable audio hash, and byte-identical attachment copy. Duration must be within two frames of the constant-tempo modeled interval, with the exact discrepancy recorded. A larger difference is rejected for review, not excused as ordinary native rounding.
+The explicit completion/range/settings statements are **supplied operator evidence**. They are not proof that Live rendered this candidate. Pocket independently verifies the unchanged candidate and dependencies, the actual floating-point stereo WAV header, complete decoded frame count, stable audio hash, and byte-identical attachment copy. Signal finiteness is a separate disposition. Duration must be within two frames of the constant-tempo modeled interval, with the exact discrepancy recorded. A larger difference is rejected for review, not excused as ordinary native rounding.
 
 The attachment is a new immutable subdirectory under `renders/`. No gain or fades are applied. Its three outcomes are intentionally separate:
 
@@ -155,7 +155,7 @@ The attachment is a new immutable subdirectory under `renders/`. No gain or fade
 
 For a deliberately silent experiment, specify `signal_expectation="intentional_silence"` and a nonempty `expectation_note` when preparing the candidate, before rendering. Quiet output then has a separate `intentional_silence` disposition; unexpected audible output fails that expectation. This cannot be switched after hearing a failed export without preparing a new immutable trial.
 
- Create a normal trial from its `render.wav` and the comparable baseline render to gather scoped feedback. Full-set rendering, arbitrary native normalization/readback, automatic source mapping across tempo changes, true-peak mastering and promotion of a winner remain later work.
+Create a normal trial from its `render.wav` and the comparable baseline render to gather scoped feedback. Full-set rendering, arbitrary native normalization/readback, automatic source mapping across tempo changes, true-peak mastering and promotion of a winner remain later work. Retrieve existing claims with [query_feedback](feedback.md).
 
 ## Generated-data demonstration
 
