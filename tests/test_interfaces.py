@@ -72,3 +72,92 @@ def test_mcp_stdio_lists_tools_and_returns_same_identity(tmp_path):
                 assert invalid.isError
 
     asyncio.run(asyncio.wait_for(exchange(), timeout=45))
+
+
+@pytest.mark.skipif(importlib.util.find_spec("mcp") is None, reason="Optional agent extra is not installed")
+def test_mcp_all_original_tools_use_discoverable_typed_inputs(tmp_path):
+    """Replay a real stdio trial, not just discovery or a read-only smoke test."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from pocket_music.assets import sha256_file
+    from test_transition_lab import als_fixture
+
+    source_set, _ = als_fixture(tmp_path)
+    source = tmp_path / "source.wav"
+
+    async def exchange():
+        params = StdioServerParameters(command=sys.executable, args=["-m", "pocket_music.mcp_server"])
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                schemas = {t.name: t.inputSchema for t in (await session.list_tools()).tools}
+                trial_schema = schemas["create_trial"]
+                assert trial_schema["properties"]["variants"]["type"] == "array"
+                item = trial_schema["properties"]["variants"]["items"]
+                definition = trial_schema["$defs"][item["$ref"].rsplit("/", 1)[1]]
+                assert {"source_path", "label"} <= set(definition["required"])
+                assert definition["properties"]["start_frame"]["type"] == "integer"
+                assert trial_schema["properties"]["allow_duration_mismatch"]["type"] == "boolean"
+                assert schemas["record_feedback"]["properties"]["start_frame"]["type"] == "integer"
+                assert schemas["prepare_native_trial"]["properties"]["shift_beats"]["type"] == "number"
+                assert schemas["attach_completed_render"]["properties"]["expected_frames"]["type"] == "integer"
+
+                async def call(name, args):
+                    result = await session.call_tool(name, args)
+                    assert not result.isError, result.content
+                    return result.structuredContent or json.loads(next(b.text for b in result.content
+                                                                       if b.type == "text"))
+
+                identity = await call("identify_audio", {"path": str(source)})
+                await call("analyze_region", {"path": str(source), "duration_seconds": 3})
+                mapped = await call("inspect_set", {"path": str(source_set)})
+                # This explicit full-record compatibility path will become opt-in
+                # when the compact Set Map interface is integrated.
+                position = await call("source_position", {"set_map": mapped, "clip_id": "track:100/clip:0",
+                                                          "arrangement_beat": 2})
+                await call("arrangement_position", {"set_map": mapped, "clip_id": "track:100/clip:0",
+                                                      "source_seconds": position["source_seconds"]})
+                trial = await call("create_trial", {
+                    "output_dir": str(tmp_path / "agent-trial"),
+                    "variants": [{"source_path": str(source), "label": "Generated fixture",
+                                  "expected_sha256": identity["sha256"]}],
+                    "start_frame": 0, "frames": 1000, "allow_duration_mismatch": False,
+                })
+                await call("record_feedback", {
+                    "trial_dir": trial["trial_dir"], "variant_id": "v01",
+                    "output_sha256": trial["variants"][0]["output"]["sha256"],
+                    "start_frame": 10, "end_frame": 20, "scope": "bar_phase",
+                    "note": "Generated fixture claim, not an actual listening judgment",
+                })
+                native = await call("prepare_native_trial", {
+                    "source_als": str(source_set), "output_dir": str(tmp_path / "agent-native"),
+                    "clip_id": "track:100/clip:0", "shift_beats": 1,
+                    "export_start_beat": 0, "export_length_beats": 8,
+                    "expected_als_sha256": sha256_file(source_set),
+                })
+                settings = {"rendered_track": "Main", "sample_rate": 8000, "channels": 2,
+                            "normalization": False, "mono": False, "loop_render": False, "dither": "none"}
+                # A generated artifact checks the provider contract. It does not
+                # claim that this fixture audio was produced by native rendering.
+                attached = await call("attach_completed_render", {
+                    "trial_dir": native["trial_dir"], "rendered_audio": str(source),
+                    "expected_candidate_sha256": native["candidate_sha256"],
+                    "rendered_start_beat": 0, "rendered_length_beats": 8,
+                    "expected_frames": 32000, "settings": settings, "export_completed": True,
+                })
+                assert attached["musical_verdict"] is None
+                bad_dir = tmp_path / "bad-agent-trial"
+                invalid = await session.call_tool("create_trial", {
+                    "output_dir": str(bad_dir), "variants": [{"source_path": str(source)}],
+                    "start_frame": 0, "frames": 100,
+                })
+                assert invalid.isError and not bad_dir.exists()
+                invalid = await session.call_tool("prepare_native_trial", {
+                    "source_als": str(source_set), "output_dir": str(bad_dir),
+                    "clip_id": "track:100/clip:0", "shift_beats": 0,
+                    "export_start_beat": 0, "export_length_beats": 8,
+                    "expected_als_sha256": sha256_file(source_set),
+                })
+                assert invalid.isError and not bad_dir.exists()
+
+    asyncio.run(asyncio.wait_for(exchange(), timeout=60))
