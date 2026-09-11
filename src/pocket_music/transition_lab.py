@@ -53,6 +53,19 @@ class NativeExportSettings(TypedDict):
     dither: Literal["none"]
 
 
+class NativeObservation(TypedDict):
+    """Operator-reported observation; Pocket cannot independently observe Live."""
+
+    observer: str
+    observed_at: str
+    candidate_sha256: str
+    no_missing_media: bool
+    export_completed: bool
+
+
+SignalExpectation = Literal["music", "intentional_silence"]
+
+
 FeedbackScope = Literal["timing", "bar_phase", "flow", "tonal_overlap", "level", "preference", "other"]
 
 MAX_SECONDS = 300
@@ -442,19 +455,162 @@ def _check_relative_dependencies(root, set_path: Path) -> None:
                 raise PocketError("Conflicting project-relative and absolute dependency paths")
 
 
-def _dependencies(root) -> list:
-    # LastPresetRef is a historical preset pointer, not an active load dependency.
-    # Active audio clips (including Session clips) and Max patches are verified.
-    paths = set()
-    for reference in root.findall(".//SampleRef/FileRef") + root.findall(".//MxPatchRef/FileRef"):
-        path = Path(_value(reference, "Path")).expanduser()
-        if not path.is_absolute() or not path.is_file():
-            raise PocketError("Native adapter requires existing absolute audio/Max dependency paths")
-        paths.add(path.resolve())
+def _active_references(root):
     return [
-        {"local_path": str(path), "sha256": sha256_file(path), "size_bytes": path.stat().st_size}
-        for path in sorted(paths)
+        (kind, index, ref)
+        for kind in ("SampleRef", "MxPatchRef")
+        for index, ref in enumerate(root.findall(".//" + kind + "/FileRef"))
     ]
+
+
+def _collect_dependencies(root, stage: Path, destination: Path) -> tuple[list, list]:
+    """Copy exact declared sources and explicitly rebind only active FileRefs."""
+    dependencies, changes = {}, []
+
+    def collect(source: Path, relative: str, kind: str):
+        before = _stamp(source)
+        digest = sha256_file(source)
+        target = stage / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            if sha256_file(target) != digest:
+                raise PocketError("Collected dependency filename collision")
+        else:
+            shutil.copyfile(source, target)
+        if sha256_file(target) != digest or _stamp(source) != before or sha256_file(source) != digest:
+            raise PocketError("Dependency changed during collection")
+        dependencies[relative] = {
+            "relative_path": relative,
+            "sha256": digest,
+            "size_bytes": target.stat().st_size,
+            "source_path": str(source),
+            "kind": kind,
+        }
+
+    for kind, index, ref in _active_references(root):
+        source = Path(_value(ref, "Path")).expanduser()
+        if not source.is_absolute() or not source.is_file():
+            raise PocketError("Collection requires an existing absolute audio/Max source; relink first")
+        source = source.resolve()
+        digest = sha256_file(source)
+        if kind == "SampleRef":
+            relative = "Samples/Imported/" + digest[:16] + "-" + source.name
+        else:
+            relative = "Devices/" + digest[:16] + "/" + source.name
+        collect(source, relative, kind)
+        if kind == "MxPatchRef":
+            companion = source.with_suffix(".maxpat")
+            if companion != source and companion.is_file():
+                collect(companion, str(Path(relative).with_suffix(".maxpat")), "adjacent_same_stem_MAXPAT")
+        before_xml = ET.tostring(ref, encoding="unicode")
+        for name, value in (
+            ("RelativePathType", "3"),
+            ("RelativePath", relative),
+            ("Path", str(destination / relative)),
+            ("Type", "2"),
+        ):
+            child = ref.find(name)
+            if child is None:
+                child = ET.SubElement(ref, name)
+            child.set("Value", value)
+        changes.append(
+            {
+                "kind": kind,
+                "index": index,
+                "before_xml": before_xml,
+                "after_xml": ET.tostring(ref, encoding="unicode"),
+                "relative_path": relative,
+            }
+        )
+    (stage / "Ableton Project Info").mkdir()
+    return list(dependencies.values()), changes
+
+
+def _revert_reference_changes(root, changes: list) -> None:
+    for change in changes:
+        refs = root.findall(".//" + change["kind"] + "/FileRef")
+        ref = refs[change["index"]]
+        if ET.tostring(ref, encoding="unicode") != change["after_xml"]:
+            raise PocketError("Collected reference differs from the declared XML change")
+        original = ET.fromstring(change["before_xml"])
+        # Replace in place to retain the surrounding schema and child order.
+        ref.attrib.clear()
+        ref.attrib.update(original.attrib)
+        ref.text = original.text
+        ref[:] = list(original)
+
+
+def _validate_collected(folder: Path, manifest: dict) -> dict:
+    candidate = _safe_child(folder, manifest["candidate_file"])
+    if sha256_file(candidate) != manifest["candidate_sha256"]:
+        raise PocketError("Candidate changed after preparation; do not attach against stale intent")
+    if not (folder / "Ableton Project Info").is_dir():
+        raise PocketError("Collected trial is missing its Ableton Project Info marker")
+    root = _read_als(candidate)
+    references = _active_references(root)
+    changes = manifest["reference_changes"]
+    if len(references) != len(changes):
+        raise PocketError("Collected active reference count changed")
+    verified = {}
+    for dep in manifest["dependencies"]:
+        path = _safe_child(folder, dep["relative_path"])
+        if not path.is_file() or path.stat().st_size != dep["size_bytes"]:
+            raise PocketError("Collected dependency is missing or changed")
+        if sha256_file(path) != dep["sha256"]:
+            raise PocketError("Collected dependency changed; exported lineage is stale")
+        verified[dep["relative_path"]] = dep
+    stale_hints = 0
+    for (kind, index, ref), change in zip(references, changes, strict=True):
+        if kind != change["kind"] or index != change["index"]:
+            raise PocketError("Collected reference identity changed")
+        if ET.tostring(ref, encoding="unicode") != change["after_xml"]:
+            raise PocketError("Collected reference fields differ from the sealed receipt")
+        relative = _value(ref, "RelativePath")
+        if relative not in verified or _value(ref, "RelativePathType") != "3" or _value(ref, "Type") != "2":
+            raise PocketError("Unsupported collected reference semantics")
+        # The absolute hint is deliberately immutable after relocation. Active
+        # project-relative copies are authoritative; actual Live loading is not inferred.
+        stale_hints += Path(_value(ref, "Path")) != folder / relative
+    return {
+        "file_readiness": "collected_dependencies_verified",
+        "copied_files_verified": len(verified),
+        "active_references_verified": len(references),
+        "stale_absolute_hints_after_relocation": stale_hints,
+        "native_loading": "unverified",
+        "native_export": "unverified",
+        "evidence": "filesystem_hashes_and_saved_XML_only",
+        "scope": "active_audio_Max_patches_and_adjacent_same_stem_MAXPAT",
+        "limitations": [
+            "Opaque Max dependencies and stock DSP behavior are not proven by collection",
+            "Open the current relocated candidate in Live and check missing media before export",
+        ],
+    }
+
+
+def _native_binding_stamps(folder: Path, manifest: dict) -> tuple:
+    paths = ["candidate.als", "native-trial.json", "native-trial.json.sha256"]
+    paths.extend(dep["relative_path"] for dep in manifest["dependencies"])
+    return tuple(_stamp(_safe_child(folder, name)) for name in paths)
+
+
+def validate_native_trial(trial_dir: str, *, expected_candidate_sha256: str) -> dict:
+    """Reopen and verify collected files after relocation; does not observe Live."""
+    folder = Path(trial_dir).expanduser().resolve()
+    manifest, digest = _load_sealed(folder, "native-trial.json", "pocket.native-trial/v2")
+    if expected_candidate_sha256 != manifest["candidate_sha256"]:
+        raise PocketError("Stale expected candidate identity")
+    before = _native_binding_stamps(folder, manifest)
+    readiness = _validate_collected(folder, manifest)
+    if _native_binding_stamps(folder, manifest) != before:
+        raise PocketError("Native trial changed during validation")
+    return {
+        "schema": "pocket.native-file-readiness/v1",
+        "trial_manifest_sha256": digest,
+        "candidate_sha256": expected_candidate_sha256,
+        "trial_dir": str(folder),
+        "native_readiness": readiness,
+        "ready_to_compare": False,
+    }
 
 
 def prepare_native_trial(
@@ -467,6 +623,8 @@ def prepare_native_trial(
     export_length_beats: float,
     expected_als_sha256: str,
     range_name: str = "Trial",
+    signal_expectation: SignalExpectation = "music",
+    expectation_note: str | None = None,
 ) -> dict:
     """Duplicate a set and translate one warped Audio Arrangement clip only.
 
@@ -474,6 +632,12 @@ def prepare_native_trial(
     clip content travels with its clip. The named export range is an instruction,
     not an automated export or a change to the project's saved loop range.
     """
+    if signal_expectation not in ("music", "intentional_silence"):
+        raise PocketError("signal_expectation must be music or intentional_silence")
+    if signal_expectation == "intentional_silence" and expectation_note is None:
+        raise PocketError("Intentional silence requires an expectation_note before rendering")
+    note = _text(expectation_note, "expectation_note") if expectation_note is not None else None
+    name = _text(range_name, "range_name", 120)
     source = Path(source_als).expanduser().resolve()
     before = _stamp(source)
     source_hash = sha256_file(source)
@@ -517,8 +681,6 @@ def prepare_native_trial(
         raise PocketError(f"Native trial export exceeds {MAX_SECONDS} seconds")
     destination = Path(output_dir).expanduser().resolve()
     _check_relative_dependencies(root, source)
-    _check_relative_dependencies(root, destination / "candidate.als")
-    dependencies = _dependencies(root)
     original = copy.deepcopy(root)
     changes = {
         "Time": {"before": selected.get("Time"), "after": format(start + shift, ".17g")},
@@ -530,6 +692,7 @@ def prepare_native_trial(
         selected.find(name).set("Value", changes[name]["after"])
     stage = _staging(destination)
     try:
+        dependencies, reference_changes = _collect_dependencies(root, stage, destination)
         candidate = stage / "candidate.als"
         candidate.write_bytes(
             gzip.compress(ET.tostring(root, encoding="utf-8", xml_declaration=True), mtime=0)
@@ -540,12 +703,15 @@ def prepare_native_trial(
         reverted_clip.set("Time", changes["Time"]["before"])
         for name in ("CurrentStart", "CurrentEnd"):
             reverted_clip.find(name).set("Value", changes[name]["before"])
+        _revert_reference_changes(reverted, reference_changes)
         if ET.tostring(reverted) != ET.tostring(original):
-            raise PocketError("Candidate readback contains changes outside the declared clip translation")
+            raise PocketError(
+                "Candidate readback contains changes outside translation and collected references"
+            )
         if _stamp(source) != before or sha256_file(source) != source_hash:
             raise PocketError("Original ALS changed while preparing trial")
         manifest = {
-            "schema": "pocket.native-trial/v1",
+            "schema": "pocket.native-trial/v2",
             "created_at": _now(),
             "source_als": {"local_path": str(source), "sha256": source_hash},
             "candidate_file": "candidate.als",
@@ -554,29 +720,107 @@ def prepare_native_trial(
             "shift_beats": shift,
             "changes": changes,
             "controls_fixed": True,
-            "fixed_controls_scope": "host automation and all unchanged XML fields",
+            "fixed_controls_scope": "host automation; only clip translation and collected FileRefs changed",
             "clip_attached_content": "source, warp and clip-fade settings unchanged; travels with clip",
-            "portability": False,
-            "relative_reference_validation": "no_existing_conflict_at_original_or_candidate_location",
+            "portability": True,
+            "portability_scope": "active_audio_Max_patches_and_adjacent_same_stem_MAXPAT_only",
+            "relative_reference_validation": "collected_project_relative_copies_and_exact_hashes",
             "dependencies": dependencies,
+            "reference_changes": reference_changes,
+            "signal_expectation": signal_expectation,
+            "expectation_note": note,
             "export_range": {
-                "name": _text(range_name, "range_name", 120),
+                "name": name,
                 "start_beat": begin,
                 "length_beats": length,
                 "constant_bpm": bpm,
                 "modeled_seconds": length * 60 / bpm,
             },
-            "readback": {"generated_xml": "passed_only_declared_translation", "native_save": False},
+            "readback": {
+                "generated_xml": "passed_only_translation_and_collected_references",
+                "native_save": False,
+            },
             "render_status": "awaiting_supervised_native_export",
-            "instruction": "Render the named range in Live. Keep candidate.als unchanged; Save As elsewhere "
+            "instruction": "Open the current candidate in Live; verify no missing media, then render the named "
+            "range. Keep candidate.als unchanged; Save As elsewhere "
             "if Live needs to save. Attach only the completed output with explicit settings.",
         }
+        manifest["native_readiness"] = _validate_collected(stage, manifest)
+        # Before publication the candidate's absolute hints point at the final location.
+        manifest["native_readiness"]["stale_absolute_hints_after_relocation"] = 0
         digest = _seal(stage, "native-trial.json", manifest)
         _publish(stage, destination)
         return {**manifest, "trial_dir": str(destination), "manifest_sha256": digest}
     finally:
         if stage.exists():
             shutil.rmtree(stage)
+
+
+# Deliberately conservative whole-excerpt screening, not loudness normalization.
+# A quiet recording may legitimately fall below this threshold; retain it and
+# require explicit silence intent or a reviewed new experiment rather than gain it.
+NATIVE_NEAR_SILENCE_RMS_DBFS = -60.0
+
+
+def _validate_native_observation(value: NativeObservation | None, candidate_hash: str) -> dict | None:
+    if value is None:
+        return None
+    expected = {"observer", "observed_at", "candidate_sha256", "no_missing_media", "export_completed"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise PocketError(
+            "native_observation requires observer, timestamp, candidate hash and media/export flags"
+        )
+    if value["candidate_sha256"] != candidate_hash:
+        raise PocketError("Native observation references a different candidate")
+    for flag in ("no_missing_media", "export_completed"):
+        if not isinstance(value[flag], bool):
+            raise PocketError(f"native_observation.{flag} must be a boolean")
+    observer = _text(value["observer"], "observer", 120)
+    when = _text(value["observed_at"], "observed_at", 64)
+    try:
+        parsed = datetime.fromisoformat(when)
+        if parsed.utcoffset() is None:
+            raise ValueError("timezone missing")
+    except ValueError as exc:
+        raise PocketError("observed_at must be an ISO8601 timestamp with timezone") from exc
+    return {**value, "observer": observer, "observed_at": when}
+
+
+def _native_signal(peak, overs, frames, nonzero, nonfinite, squared, manifest) -> dict:
+    rms = peak * math.sqrt(squared / (frames * 2))
+    rms_db = 20 * math.log10(rms) if rms else None
+    near_silent = rms_db is None or rms_db <= NATIVE_NEAR_SILENCE_RMS_DBFS
+    intentional = manifest["signal_expectation"] == "intentional_silence"
+    if nonfinite:
+        disposition, reason = "nonfinite_audio", "Decoded audio contains non-finite samples"
+    elif overs:
+        disposition, reason = "sample_overload", "Decoded samples reach or exceed full scale"
+    elif intentional and near_silent:
+        disposition, reason = "intentional_silence", "Quiet output matches explicit pre-render silence intent"
+    elif intentional:
+        disposition, reason = "unexpected_audio", "Output exceeds the intentional-silence threshold"
+    elif nonzero == 0:
+        disposition, reason = "unexpected_silence", "Expected musical audio is digitally silent"
+    elif near_silent:
+        disposition, reason = (
+            "unexpected_near_silence",
+            "Expected musical audio falls below the screening threshold",
+        )
+    else:
+        disposition, reason = "usable_signal", "Nonzero finite output exceeds the near-silence threshold"
+    return {
+        **_peak_summary(peak, overs, frames),
+        "rms_dbfs": rms_db,
+        "nonzero_samples": nonzero,
+        "nonfinite_samples": nonfinite,
+        "near_silence_rms_threshold_dbfs": NATIVE_NEAR_SILENCE_RMS_DBFS,
+        "expectation": manifest["signal_expectation"],
+        "expectation_note": manifest["expectation_note"],
+        "disposition": disposition,
+        "reasons": [reason],
+        "usable_for_expectation": disposition in ("usable_signal", "intentional_silence"),
+        "interpretation": "technical screening only; not an audition, true-peak check or musical verdict",
+    }
 
 
 def attach_completed_render(
@@ -589,6 +833,7 @@ def attach_completed_render(
     expected_frames: int,
     settings: NativeExportSettings,
     export_completed: bool = False,
+    native_observation: NativeObservation | None = None,
 ) -> dict:
     """Attach actual completed audio; export attribution remains user-supplied.
 
@@ -596,14 +841,16 @@ def attach_completed_render(
     the candidate. Audio/header/hash/readability checks are measured independently.
     """
     folder = Path(trial_dir).expanduser().resolve()
-    manifest, digest = _load_sealed(folder, "native-trial.json", "pocket.native-trial/v1")
+    manifest, digest = _load_sealed(folder, "native-trial.json", "pocket.native-trial/v2")
     if export_completed is not True:
         raise PocketError("Explicit completed-export confirmation is required")
+    binding_before = _native_binding_stamps(folder, manifest)
     candidate = _safe_child(folder, manifest["candidate_file"])
     actual_candidate = sha256_file(candidate)
     if expected_candidate_sha256 != actual_candidate or actual_candidate != manifest["candidate_sha256"]:
         raise PocketError("Candidate changed after preparation; do not attach against stale intent")
-    _check_relative_dependencies(_read_als(candidate), candidate)
+    native_readiness = _validate_collected(folder, manifest)
+    observation = _validate_native_observation(native_observation, actual_candidate)
     requested = manifest["export_range"]
     for actual, key in ((rendered_start_beat, "start_beat"), (rendered_length_beats, "length_beats")):
         if abs(_number(actual, key) - requested[key]) > 1e-8:
@@ -635,20 +882,36 @@ def attach_completed_render(
     delta = frame_delta / identity["sample_rate"]
     if abs(frame_delta) > 2:
         raise PocketError("Render duration differs from modeled range by more than 2 frames")
-    # Verify external dependencies are still the versions the candidate references.
-    for dep in manifest["dependencies"]:
-        if sha256_file(dep["local_path"]) != dep["sha256"]:
-            raise PocketError("Native trial dependency changed; exported lineage is stale")
-    peak, overs, decoded = 0.0, 0, 0
+    peak, overs, decoded, nonzero, nonfinite, squared = 0.0, 0, 0, 0, 0, 0.0
     with sf.SoundFile(source) as stream:
         for block in stream.blocks(blocksize=65536, dtype="float64", always_2d=True):
-            if not np.isfinite(block).all():
-                raise PocketError("Completed render contains non-finite audio")
-            peak = max(peak, float(np.max(np.abs(block))))
-            overs += int(np.count_nonzero(np.abs(block) >= 1))
+            finite = np.isfinite(block)
+            nonfinite += int(np.count_nonzero(~finite))
+            values = block[finite]
+            if values.size:
+                next_peak = max(peak, float(np.max(np.abs(values))))
+                if next_peak:
+                    squared = squared * (peak / next_peak) ** 2 + float(np.sum((values / next_peak) ** 2))
+                peak = next_peak
+                overs += int(np.count_nonzero(np.abs(values) >= 1))
+                nonzero += int(np.count_nonzero(values))
             decoded += len(block)
     if decoded != count or _stamp(source) != before:
         raise PocketError("Render changed or full decoded frame count is incomplete")
+    signal = _native_signal(peak, overs, decoded, nonzero, nonfinite, squared, manifest)
+    observed_ready = (
+        observation is not None and observation["no_missing_media"] and observation["export_completed"]
+    )
+    native_readiness.update(
+        {
+            "operator_observation": observation,
+            "observation_provenance": "operator_reported_not_independently_observed",
+            "native_loading": "operator_reported_no_missing_media"
+            if observed_ready
+            else "unverified_or_reported_problem",
+            "native_export": "operator_reported_completed" if observed_ready else "declared_completion_only",
+        }
+    )
     attachment_id = "render-" + uuid.uuid4().hex
     destination = folder / "renders" / attachment_id
     stage = _staging(destination)
@@ -656,6 +919,8 @@ def attach_completed_render(
         shutil.copyfile(source, stage / "render.wav")
         if sha256_file(stage / "render.wav") != identity["sha256"] or _stamp(source) != before:
             raise PocketError("Render changed during attachment")
+        if _native_binding_stamps(folder, manifest) != binding_before:
+            raise PocketError("Native trial changed during attachment")
         receipt = {
             "schema": "pocket.native-render-attachment/v1",
             "created_at": _now(),
@@ -672,7 +937,10 @@ def attach_completed_render(
             "modeled_frames": modeled_frames,
             "frame_delta": frame_delta,
             "duration_tolerance_frames": 2,
-            "signal": _peak_summary(peak, overs, decoded),
+            "artifact": {"status": "verified", "byte_copy_verified": True, "complete_frames": decoded},
+            "signal": signal,
+            "native_readiness": native_readiness,
+            "ready_to_compare": bool(signal["usable_for_expectation"] and observed_ready),
             "native_export_attribution": "user_supplied_not_observed_by_pocket",
             "native_save_verified": False,
             "completion": "explicit_confirmation_plus_stable_full_decode",
