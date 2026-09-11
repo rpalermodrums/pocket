@@ -110,8 +110,8 @@ def _validate_profile(profile):
         _number(profile['bpm'], 'profile bpm', 20, 400)
     if profile.get('bpm_candidates') is not None:
         values = profile['bpm_candidates']
-        if not isinstance(values, list) or len(values) > 30:
-            raise PocketError('bpm_candidates must be a list of at most 30 numbers')
+        if not isinstance(values, list) or len(values) > 8:
+            raise PocketError('bpm_candidates must be a list of at most 8 numbers')
         for value in values:
             _number(value, 'bpm candidate', 20, 400)
     for key in ('tags', 'roles'):
@@ -131,6 +131,8 @@ def _prepare_tracks(tracks):
             raise PocketError('Track input contains unsupported fields; derived audio is not caller input')
         track = deepcopy(input_track)
         key = _text(track.get('track_id'), 'track_id', 200)
+        if key != key.strip():
+            raise PocketError('track_id must not contain surrounding whitespace')
         if key in seen:
             raise PocketError(f'Duplicate track_id: {key}')
         seen.add(key)
@@ -199,7 +201,7 @@ def _bag_summary(tracks):
             'catalog_only': sum('audio' not in t for t in tracks),
             'unavailable': sum(t.get('available') is False for t in tracks),
             'with_attributed_profile': sum(bool(t.get('profile')) for t in tracks),
-            'full_track_duration_known_count': sum(t.get('duration_seconds') is not None for t in tracks),
+            'full_track_duration_known_count': sum('audio' in t or t.get('duration_seconds') is not None for t in tracks),
             'measured_musical_properties_added': 0}
 
 

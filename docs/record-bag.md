@@ -27,8 +27,9 @@ are rejected. Search matches IDs, titles, artists and tags, with explicit paging
 Inputs use `selection_types.BagTrackInput`. Optional unknown fields may be absent
 or null. A nonempty profile must explicitly attribute values to `user`,
 `agent_hypothesis` or `measured`. Energy and vocal density use 0–1, and BPM uses
-20–400. These are supplied values and attributions; the bag never invents a
-measured key, energy, tempo or listening verdict. Spotify-derived catalogue
+20–400, with at most eight BPM candidates. These are supplied values and
+attributions; the bag never invents a measured key, energy, tempo or listening
+verdict. Spotify-derived catalogue
 metadata remains identified by `catalog_source`; model input provenance is a
 separate contract. Unavailable entries can remain in the bag with `available:
 false`, allowing later tools to exclude them without deleting their identity.

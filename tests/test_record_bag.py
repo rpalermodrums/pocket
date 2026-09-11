@@ -105,3 +105,21 @@ def test_relative_input_is_not_reinterpreted_under_new_cwd(tmp_path, monkeypatch
     another.mkdir()
     monkeypatch.chdir(another)
     assert load_record_bag(handle)['tracks'][0]['local_path'] == 'tone.wav'
+
+
+def test_stable_ids_and_bounded_bpm_candidates(tmp_path):
+    with pytest.raises(PocketError, match='whitespace'):
+        create_record_bag([{'track_id': ' padded ', 'title': 'a', 'artists': []}],
+                          str(tmp_path / 'bad-id'), 'bad')
+    with pytest.raises(PocketError, match='at most 8'):
+        create_record_bag([{'track_id': 'a', 'title': 'a', 'artists': [],
+                          'profile': {'provenance': 'user', 'bpm_candidates': list(range(120, 129))}}],
+                          str(tmp_path / 'bad-profile'), 'bad')
+
+
+def test_local_header_alone_counts_as_known_full_duration(tmp_path):
+    audio = tmp_path / 'local.wav'
+    sf.write(audio, np.zeros((8000, 1)), 8000, subtype='FLOAT')
+    bag = create_record_bag([{'track_id': 'local', 'title': 'Generated', 'artists': [],
+                             'local_path': str(audio)}], str(tmp_path / 'bag'), 'Local')
+    assert bag['summary']['full_track_duration_known_count'] == 1
