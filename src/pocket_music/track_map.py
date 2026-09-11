@@ -17,7 +17,7 @@ from pocket_music.errors import PocketError
 from pocket_music.rhythm_continuity import analyze_phase_continuity, compare_grids
 
 SCHEMA = "pocket.track-map/v1"
-ANALYSIS_VERSION = "1.1.1"
+ANALYSIS_VERSION = "1.1.2"
 MAX_REGION_SECONDS = 600.0
 _RATE = 12000
 _HOP = 120
@@ -292,7 +292,8 @@ def _crop_stability(rate: int, original: np.ndarray, original_rate: int,
     result = {"status": "insufficient_evidence", "checks": [],
               "method": "independent_onset_and_grid_refits_on_overlapping_inward_crops",
               "inset_seconds": [.125, .375], "automatic_edit_authorized": False,
-              "limitation": "Only these two smaller crops are checked; matching clocks do not certify beat one."}
+              "comparison_scope": "shared_source_midpoints_only_boundary_drift_not_tested",
+              "limitation": "Only phase at the two shared source midpoints is compared; boundary drift is not tested, and midpoint agreement does not certify beat one."}
     if grid is None or len(original) / original_rate < 8:
         result["reason"] = "Requires a supported reference lattice and at least eight seconds."
         return result
@@ -324,7 +325,7 @@ def _crop_stability(rate: int, original: np.ndarray, original_rate: int,
     elif "different_pulse_rate_or_counting" in states:
         result["status"] = "counting_sensitive_to_crop"
     elif states == {"similar_acoustic_phase"}:
-        result["status"] = "stable_in_tested_crops"
+        result["status"] = "similar_phase_at_tested_midpoints"
     return result
 
 

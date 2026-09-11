@@ -84,7 +84,8 @@ def test_stable_multiband_control_is_positive_acoustic_evidence(tmp_path):
     rhythm = result["rhythm"]
     assert rhythm["phase_count_continuity"]["status"] == "locally_stable_acoustic_phase"
     assert rhythm["phase_count_continuity"]["change_intervals"] == []
-    assert rhythm["crop_stability"]["status"] == "stable_in_tested_crops"
+    assert rhythm["crop_stability"]["status"] == "similar_phase_at_tested_midpoints"
+    assert rhythm["crop_stability"]["comparison_scope"] == "shared_source_midpoints_only_boundary_drift_not_tested"
     assert len(rhythm["crop_stability"]["checks"]) == 2
     assert all(row["source_start_frame"] > 4 * RATE and row["source_end_frame_exclusive"] < 32 * RATE
                for row in rhythm["crop_stability"]["checks"])
@@ -131,6 +132,14 @@ def test_crop_comparison_retains_subpulse_and_octave_disagreement():
     comparison = compare_grids(grid, doubled, 20)
     assert comparison["status"] == "different_pulse_rate_or_counting"
     assert comparison["signed_phase_difference_pulses"] is None
+    # Midpoint phase agreement is not agreement across the whole interval. Keep
+    # this numerical limitation explicit rather than upgrading the diagnostic.
+    reference = {**grid, "source_lattice_origin_seconds": 0}
+    drifting = {"bpm": 121, "pulse_period_seconds": 60 / 121,
+                "source_lattice_origin_seconds": 30 - 60 * (60 / 121)}
+    assert compare_grids(reference, drifting, 30)["status"] == "similar_acoustic_phase"
+    assert compare_grids(reference, drifting, 0)["status"] == "phase_sensitive_to_crop"
+    assert compare_grids(reference, drifting, 60)["status"] == "phase_sensitive_to_crop"
 
 
 def test_frame_addressing_never_roundtrips_through_seconds(tmp_path):
