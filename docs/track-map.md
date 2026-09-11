@@ -27,6 +27,7 @@ The function returns a JSON-serializable dictionary with schema `pocket.track-ma
 | `duration_seconds` | Finite positive duration, at most 600 seconds; default `30`. The requested end must be within the source. |
 | `bpm_hint` | Optional counting preference, 20–400 BPM. It can select between measured alternatives; a hint alone cannot supply periodicity evidence. |
 | `beats_per_bar` | Integer 2–12; default `4`. This defines competing bar hypotheses, not a detected time signature. |
+| `start_frame`, `frames` | Optional keyword-only pair of strict integers. Both are required together; booleans are rejected. These bypass seconds rounding and require the default `start_seconds=0`, `duration_seconds=30`. Bounds and the 600-second maximum still apply. |
 
 Invalid values, out-of-bounds crops, nonfinite samples, changed files, and unreadable media raise `PocketError`. A crop that is too short for rhythm inference still returns source and signal evidence. The analyzer never silently extends a request to obtain more context.
 
@@ -37,6 +38,14 @@ Invalid values, out-of-bounds crops, nonfinite samples, changed files, and unrea
 Every onset includes `source_frame`, `source_seconds`, and `region_seconds`. A frame coordinate is exact bookkeeping; the detected attack itself has finite resolution. The default spectral hop is 10 ms, followed by a bounded original-waveform envelope search. These are acoustic attack candidates, not guaranteed kick starts or musical downbeats. Attacks at crop boundaries can be missed.
 
 Source identity is read once through the shared asset provider. Device, inode, size, and modification time are checked across identification and analysis. This catches ordinary concurrent changes; it is not an adversarial file-integrity protocol. `peak_dbfs` is a sample peak, not an oversampled true peak or a loudness measurement.
+
+For a source interval supplied by Set Map, retain its integer frames directly:
+
+```python
+report = analyze_region("source.wav", start_frame=11515, frames=44107, bpm_hint=120)
+```
+
+`region.addressing` is `source_frames` and `rounding` is `none_explicit_source_frames` in this case. The seconds fields describe those exact frames; no conversion to seconds and back selects the audio. With seconds inputs, `region.addressing` is `source_seconds` and the existing inward rounding applies.
 
 ## Report fields
 
@@ -50,8 +59,11 @@ Source identity is read once through the shared asset provider. Device, inode, s
 | `rhythm.counting_alternatives` | Half-rate, selected-rate, and double-rate interpretations. These remain possible counting conventions, not three independently verified tempos. |
 | `rhythm.local_windows` | Eight-second fits at four-second steps, with original-source bounds and origins. Short crops use their available duration. |
 | `rhythm.local_counting_ambiguities` | Windows whose dominant rate resembles half/double the reference. They are kept explicit instead of being silently folded or called tempo changes. |
-| `rhythm.drift` | Local BPM range and linear trend when at least three sufficiently supported windows use comparable counting. No warp is authorized, even when the clock appears stable. |
-| `rhythm.bar_interpretations` | Every candidate bar rotation, with full-band and band-specific accent shares. `bar_phase_status` always remains `unresolved`. |
+| `rhythm.drift` | Local BPM range and linear trend when at least three sufficiently supported windows use comparable counting. Its explicit scope is pulse rate only: a stable BPM does not establish phase or count continuity. |
+| `rhythm.acoustic_phase_candidates` | Persistent circular phase modes from independent low/body/high attack peaks at the selected rate. Each carries a band, source origin and nearest source frame, inlier/occupancy evidence and local support. They can be fractions of a pulse apart; these are not bar rotations. |
+| `rhythm.crop_stability` | Two independently refitted overlapping inward crops, with exact source bounds, rates and phase differences at their common midpoint. Distinguishes phase sensitivity, counting sensitivity, stable tested crops and insufficient evidence. |
+| `rhythm.phase_count_continuity` | Band-resolved sliding-window phase modes, sustained displacement intervals, scattered evidence and explicit uncertainty. Stable attack layers can coexist with competing syncopations. Integer musical pulse count remains unverified. |
+| `rhythm.bar_interpretations` | Every bar rotation **of the selected grid**, with full-band and band-specific accent shares. This does not enumerate all acoustic-phase/bar combinations. `bar_phase_status` always remains `unresolved`. |
 | `harmony.windows` | Four-second pitch-class energy profiles and prominent classes, or explicit abstention. Each window also carries flatness, entropy, and level evidence. |
 | `repetitions.candidates` | Similar ordered four-second band-energy fingerprints. Similar timbre can produce matches; these are not confirmed repeated phrases. |
 | `provenance`, `limitations` | Algorithm version, library versions, analysis parameters, absence of learned models/human feedback, and scope limits. |
@@ -59,6 +71,21 @@ Source identity is read once through the shared asset provider. Device, inode, s
 ## How to use the evidence
 
 Inspect local windows before relying on a crop-wide grid. `local_grids_only` means some short windows support a pulse lattice while the entire crop does not. Large variation may represent real tempo drift, a changed rhythmic pattern, or an analysis failure. Half/double switches are explicitly separated from the drift calculation.
+
+Always inspect `phase_count_continuity` and `crop_stability` alongside `drift`. A short acceleration or a displaced rhythmic layer can leave a nearly identical average BPM before and after the event. The analyzer does not silently use that average to assert a count through the event.
+
+The phase pass detects attacks independently in 35–180 Hz, 180–1500 Hz and 1500–5500 Hz bands on a nominal 2 ms spectral clock. Circular phase modes need at least five attacks and measurable concentration/coverage. Eight-pulse local windows, bounded to 4–8 seconds, advance by a quarter-window. A phase-change interval requires three supported windows on each flank, concentrated flanks and at least 0.18 pulse displacement. Full parameters are in the report. Overlapping detections retain the union of their evidence windows; those bounds are not exact musical event boundaries. A source-frame address is bookkeeping for a predicted phase or window, not sample-exact proof of an attack.
+
+These tests can distinguish:
+
+- **`locally_stable_acoustic_phase`:** at least two attack bands have sustained local phase support. This is positive acoustic evidence, limited to the analyzed crop and counting rate.
+- **`competing_acoustic_phases`:** persistent attack layers are separated by at least 0.18 pulse. A half-pulse-separated body/high pattern can make a single strongest-grid choice sensitive to the crop.
+- **`phase_or_count_continuity_unresolved`:** a band has displaced sustained flanks. This could be a timing change, syncopation, changed instrumentation or detector error. The tool exposes the affected band/window and modulo-phase displacement; it does not claim an exact corrected count or a new warp anchor.
+- **`insufficient_evidence`:** no supported whole-crop rate, insufficient duration, or too little sustained band agreement. Natural/free timing is not forced onto a grid merely because a hint was provided.
+
+The crop check re-runs onset detection and fitting after moving both boundaries inward by 125 ms and 375 ms. Reusing the original onset list would miss STFT-origin sensitivity. It reads no audio outside the original request and reuses the complete-file identity. Crops shorter than eight seconds abstain. `stable_in_tested_crops` means only these probes agreed; it does not imply stability under every crop, solve half/double counting, or establish a downbeat. An onset-band clock may be stable at a subdivision rate while the half-rate interpretation has competing phases.
+
+All support scores and thresholds are heuristic, not calibrated probabilities. The attack bands are different observations from one deterministic method, not independent learned models. A sustained instrument shift can trigger a warning without the musical clock changing, while an integer number of missing pulses can be invisible to modulo-phase analysis. `integer_pulse_count` remains `null` and `automatic_edit_authorized` remains `false` even for stable controls.
 
 Retain all bar hypotheses for subsequent musical review. Accent shares alone cannot establish beat one, phrase length, an entry role, or the relationship between two records. A later tool can compare hypotheses and produce controlled listening alternatives; Track Map does not turn its scores into an automatic clip shift.
 
@@ -71,9 +98,9 @@ The processing averages channel power rather than summing channel samples, so an
 Run generated-fixture checks with:
 
 ```sh
-python -m pytest tests/test_track_map.py
+python -m pytest tests/test_track_map.py tests/test_rhythm_continuity.py
 ```
 
-The fixtures cover original-source offsets and file identity, strict crop bounds, stable click tempo with and without a hint, unresolved half/double and bar interpretations, accelerating clicks, silence, broadband-noise tonal abstention, a known local pitch class, anti-phase stereo, nonfinite input, and source-coordinate preservation for repeated textures.
+The generated fixtures cover original-source offsets and file identity, strict seconds/frame bounds, stable click tempo with and without a hint, unresolved half/double and bar interpretations, accelerating clicks, silence, broadband-noise tonal abstention, a known local pitch class, anti-phase stereo, nonfinite input, and source-coordinate preservation for repeated textures. Additional fixtures exercise persistent half-pulse-separated attack layers under shifted crops, a brief phase displacement against a steady periodic bed, stable multiband controls, and an irregular sparse passage. Exact frame addressing is tested at a sample rate whose frame boundaries are fractional seconds.
 
-Bounded development checks on three existing 30-second music passages recovered pulse rates near 120 BPM in two passages. Another favored approximately 246 BPM, retaining approximately 123 BPM as a half-rate counting alternative despite the supplied 123 BPM hint. Musical bar position remained unresolved throughout. Some local windows also favored a doubled pulse rate; that is exposed as ambiguity. These checks establish that the tool runs on real media, not that it understands the recordings or solves their previously disputed alignments. Source-specific reports and recordings remain outside this repository.
+Private development checks retain the known crop-sensitive percussion passage, a documented brief count event, crop-stable opening controls, natural timing and previously unused passages. The percussion's competing half-pulse layers and inward-crop sensitivity are exposed. The count-event passage can still select approximately 246 BPM despite a 123 BPM hint, but now reports a localized band-phase/count uncertainty instead of letting stable rate evidence stand alone. The tight event-only crop abstains for insufficient sustained flanks. These are diagnostic improvements, not solved musical downbeats or corrected pulse counts. Source-specific calls, timings, reference limits and reports remain outside this repository; no recordings or models are committed.

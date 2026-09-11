@@ -8,16 +8,16 @@ from typing import Any
 
 import numpy as np
 import scipy
+import soundfile as sf
 from scipy import signal
 from scipy.ndimage import median_filter
-import soundfile as sf
 
 from pocket_music.assets import identify_audio
 from pocket_music.errors import PocketError
-
+from pocket_music.rhythm_continuity import analyze_phase_continuity, compare_grids
 
 SCHEMA = "pocket.track-map/v1"
-ANALYSIS_VERSION = "1.0.0"
+ANALYSIS_VERSION = "1.1.0"
 MAX_REGION_SECONDS = 600.0
 _RATE = 12000
 _HOP = 120
@@ -198,7 +198,8 @@ def _rhythm(events: list[dict], novelty: np.ndarray, times: np.ndarray, duration
     base = {"status": "insufficient_evidence", "bpm_hint": hint,
             "selected_pulse_grid": None, "tempo_candidates": candidates,
             "counting_alternatives": [], "local_windows": [], "local_counting_ambiguities": [], "drift": None,
-            "bar_phase_status": "unresolved", "bar_interpretations": []}
+            "bar_phase_status": "unresolved", "bar_interpretations": [],
+            "bar_interpretations_reference": "selected_pulse_grid_only_not_all_acoustic_phases"}
     # A failed whole-crop lattice must not suppress evidence of a changing
     # local clock. Analyze windows independently before judging a global fit.
     window = min(8., duration)
@@ -248,6 +249,7 @@ def _rhythm(events: list[dict], novelty: np.ndarray, times: np.ndarray, duration
                           "local_bpm_range": [float(bpms.min()), float(bpms.max())],
                           "bpm_per_minute_linear_trend": slope * 60,
                           "window_count": len(reliable),
+                          "scope": "pulse_rate_only_not_phase_or_count_continuity",
                           "constant_grid_authorized": False}
     if selected is None:
         if reliable:
@@ -283,6 +285,47 @@ def _rhythm(events: list[dict], novelty: np.ndarray, times: np.ndarray, duration
         for offset in range(bar_size)
     ]
     return base
+
+
+def _crop_stability(rate: int, original: np.ndarray, original_rate: int,
+                    start_frame: int, grid: dict | None) -> dict:
+    result = {"status": "insufficient_evidence", "checks": [],
+              "method": "independent_onset_and_grid_refits_on_overlapping_inward_crops",
+              "inset_seconds": [.125, .375], "automatic_edit_authorized": False,
+              "limitation": "Only these two smaller crops are checked; matching clocks do not certify beat one."}
+    if grid is None or len(original) / original_rate < 8:
+        result["reason"] = "Requires a supported reference lattice and at least eight seconds."
+        return result
+    for inset in result["inset_seconds"]:
+        first = math.ceil(inset * original_rate)
+        last = len(original) - first
+        # Recompute the resampler and STFT origins as a real cropped call would;
+        # subsetting the first report's events would hide crop-dependent attacks.
+        inner = original[first:last]
+        divisor = math.gcd(rate, original_rate)
+        inner_audio = signal.resample_poly(inner, rate // divisor, original_rate // divisor, axis=0) \
+            if rate != original_rate else inner
+        events, novelty, times = _onsets(inner_audio, rate, inner, original_rate, start_frame + first)
+        fit, _ = _tempo(events, novelty, times, grid["bpm"])
+        row = {"source_start_frame": start_frame + first, "source_end_frame_exclusive": start_frame + last,
+               "source_start_seconds": (start_frame + first) / original_rate,
+               "source_end_seconds": (start_frame + last) / original_rate, "fit": None}
+        if fit:
+            fit = dict(fit, source_lattice_origin_seconds=(start_frame + first) / original_rate
+                       + fit["region_lattice_origin_seconds"])
+            midpoint = (2 * start_frame + first + last) / (2 * original_rate)
+            row.update(compare_grids(grid, fit, midpoint), fit=fit, comparison_source_seconds=midpoint)
+        else:
+            row["status"] = "insufficient_evidence"
+        result["checks"].append(row)
+    states = {row["status"] for row in result["checks"]}
+    if "phase_sensitive_to_crop" in states:
+        result["status"] = "phase_sensitive_to_crop"
+    elif "different_pulse_rate_or_counting" in states:
+        result["status"] = "counting_sensitive_to_crop"
+    elif states == {"similar_acoustic_phase"}:
+        result["status"] = "stable_in_tested_crops"
+    return result
 
 
 def _harmony(audio: np.ndarray, rate: int, source_start: float,
@@ -363,15 +406,26 @@ def _repetitions(audio: np.ndarray, rate: int, source_start: float, source_durat
 
 
 def analyze_region(path: str | Path, start_seconds: float = 0, duration_seconds: float = 30,
-                   bpm_hint: float | None = None, beats_per_bar: int = 4) -> dict:
+                   bpm_hint: float | None = None, beats_per_bar: int = 4, *,
+                   start_frame: int | None = None, frames: int | None = None) -> dict:
     """Analyze a bounded source crop without changing media or authorizing edits.
 
-    Region limits round inward to complete original source frames. A BPM hint
+    Seconds limits round inward; paired start_frame/frames address exact frames
+    and require default seconds arguments. A BPM hint
     selects among measured candidate pulse rates; it is not evidence of tempo.
     """
     beginning = _number(start_seconds, "start_seconds")
     duration = _number(duration_seconds, "duration_seconds")
-    if beginning < 0 or duration <= 0 or duration > MAX_REGION_SECONDS:
+    frame_addressing = start_frame is not None or frames is not None
+    if frame_addressing:
+        if (isinstance(start_frame, bool) or not isinstance(start_frame, int)
+                or isinstance(frames, bool) or not isinstance(frames, int)):
+            raise PocketError("start_frame and frames must both be integers, not booleans")
+        if beginning != 0 or duration != 30:
+            raise PocketError("Frame addressing cannot be mixed with nondefault seconds arguments")
+        if start_frame < 0 or frames <= 0:
+            raise PocketError("start_frame must be nonnegative and frames must be positive")
+    elif beginning < 0 or duration <= 0 or duration > MAX_REGION_SECONDS:
         raise PocketError(f"Region must start at or after zero and last >0 to {MAX_REGION_SECONDS:g} seconds")
     hint = None if bpm_hint is None else _number(bpm_hint, "bpm_hint")
     if hint is not None and not 20 <= hint <= 400:
@@ -385,13 +439,19 @@ def analyze_region(path: str | Path, start_seconds: float = 0, duration_seconds:
         raise PocketError(f"Cannot read audio: {exc}") from exc
     asset = identify_audio(source)
     rate = int(asset["sample_rate"])
-    end = beginning + duration
-    if not math.isfinite(end) or end > asset["frames"] / rate:
-        raise PocketError("Requested region exceeds the source; crops are never silently widened or truncated")
-    # ULP tolerance prevents a decimal representation of an exact frame from
-    # losing that frame; it does not permit a whole sample outside the request.
-    start_frame = math.ceil(np.nextafter(beginning * rate, -np.inf))
-    end_frame = math.floor(np.nextafter(end * rate, np.inf))
+    if frame_addressing:
+        end_frame = start_frame + frames
+        if end_frame > asset["frames"] or frames / rate > MAX_REGION_SECONDS:
+            raise PocketError("Frame region exceeds the source or maximum duration")
+        beginning, duration = start_frame / rate, frames / rate
+    else:
+        end = beginning + duration
+        if not math.isfinite(end) or end > asset["frames"] / rate:
+            raise PocketError("Requested region exceeds the source; crops are never silently widened or truncated")
+        # ULP tolerance prevents a decimal representation of an exact frame from
+        # losing that frame; it does not permit a whole sample outside the request.
+        start_frame = math.ceil(np.nextafter(beginning * rate, -np.inf))
+        end_frame = math.floor(np.nextafter(end * rate, np.inf))
     if end_frame <= start_frame:
         raise PocketError("Requested region contains no complete source frames")
     try:
@@ -419,6 +479,16 @@ def analyze_region(path: str | Path, start_seconds: float = 0, duration_seconds:
         harmony, _, _ = _harmony(audio, analysis_rate, source_start, actual_duration)
         repeats = _repetitions(audio, analysis_rate, source_start, actual_duration)
     rhythm = _rhythm(events, novelty, times, actual_duration, source_start, hint, beats_per_bar)
+    rhythm.update(analyze_phase_continuity(audio, analysis_rate, source_start, rate, end_frame,
+                                           rhythm["selected_pulse_grid"]))
+    rhythm["crop_stability"] = _crop_stability(analysis_rate, original, rate, start_frame,
+                                               rhythm["selected_pulse_grid"])
+    continuity = rhythm["phase_count_continuity"]
+    if rhythm["crop_stability"]["status"] in ("phase_sensitive_to_crop", "counting_sensitive_to_crop"):
+        continuity["crop_sensitivity"] = rhythm["crop_stability"]["status"]
+        if continuity["status"] == "locally_stable_acoustic_phase":
+            continuity["status"] = "crop_sensitive_acoustic_grid"
+            continuity["reason"] = "The overlapping crop refits disagree despite stable band phases."
     latest = source.stat()
     if (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns) != (
             latest.st_dev, latest.st_ino, latest.st_size, latest.st_mtime_ns):
@@ -429,7 +499,9 @@ def analyze_region(path: str | Path, start_seconds: float = 0, duration_seconds:
                    "start_frame": start_frame, "end_frame_exclusive": end_frame,
                    "start_seconds": source_start, "end_seconds": end_frame / rate,
                    "frames": len(original), "duration_seconds": actual_duration,
-                   "rounding": "inward_to_complete_original_source_frames"},
+                   "addressing": "source_frames" if frame_addressing else "source_seconds",
+                   "rounding": "none_explicit_source_frames" if frame_addressing
+                   else "inward_to_complete_original_source_frames"},
         "signal": {"peak_dbfs": _db(peak), "rms_dbfs": _db(rms),
                    "silence_or_near_silence": silent, "nonfinite_samples": 0,
                    "samples_at_or_above_unity": int(np.count_nonzero(np.abs(original) >= 1))},
@@ -454,6 +526,7 @@ def analyze_region(path: str | Path, start_seconds: float = 0, duration_seconds:
             "Detected attacks have exact source coordinates but finite timing resolution and may be syncopations or subdivisions.",
             "Pulse regularity, tempo hints and strong accents do not certify beat one; all bar orientations remain hypotheses.",
             "Local tempo differences can reflect detector errors or rhythm changes; no automatic warp or edit is authorized.",
+            "A stable pulse rate does not establish phase or count continuity; band changes and crop alternatives are reported separately.",
             "Pitch-class evidence includes overtones and mixed instruments, assumes A440 equal temperament, and is not a global key or note transcription.",
             "Only the requested crop is analyzed; boundary attacks and structure outside it may be missed.",
         ],
