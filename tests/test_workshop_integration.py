@@ -74,3 +74,35 @@ def test_slot_contours_are_explicit_position_intent_not_imputed_measurements(tmp
     override = plan_set_routes(bag, {'track_count': 5, 'setting': setting, 'intent': {'target_energy': .6}},
                                str(tmp_path / 'override'), route_count=1)['routes'][0]
     assert all(p['target_energy'] == .6 and p['basis'] == 'caller_explicit_target' for p in override['position_targets'])
+
+
+def test_annotation_baseline_tracks_contour_and_zero_creativity_is_deterministic(tmp_path):
+    rows = [{'track_id': f'e{i:02d}', 'title': f'Generated energy {i}', 'artists': [],
+             'profile': {'energy': i / 20, 'provenance': 'user'}} for i in range(21)]
+    bag = create_record_bag(rows, str(tmp_path / 'bag'), 'Generated gradient')['handle']
+    brief = {'setting': 'warm_up', 'track_count': 5, 'intent': {'creativity': 0}}
+    a = plan_set_routes(bag, brief, str(tmp_path / 'a'), seed=1)
+    b = plan_set_routes(bag, brief, str(tmp_path / 'b'), seed=999)
+    assert [r['track_ids'] for r in a['routes']] == [r['track_ids'] for r in b['routes']]
+    route = a['routes'][0]
+    assert route['origin'] == 'annotation_baseline'
+    energy = {t['track_id']: t['profile']['energy'] for t in rows}
+    selected = [energy[key] for key in route['track_ids']]
+    targets = [p['target_energy'] for p in route['position_targets']]
+    forward = sum(abs(x - y) for x, y in zip(selected, targets))
+    reverse = sum(abs(x - y) for x, y in zip(reversed(selected), targets))
+    assert selected[0] < selected[-1] and forward < reverse / 2
+    assert len({tuple(r['track_ids']) for r in a['routes']}) == 3
+    assert all(s['score_perturbation_scale'] == 0 for s in load_set_plan(a['handle'])['provenance']['searches'])
+
+
+def test_baseline_stays_fixed_while_exploratory_seeds_change_close_alternatives(tmp_path):
+    rows = [{'track_id': f'e{i:02d}', 'title': f'Generated near-neighbor {i}', 'artists': [],
+             'profile': {'energy': .30 + i * .003, 'provenance': 'user'}} for i in range(20)]
+    bag = create_record_bag(rows, str(tmp_path / 'bag'), 'Generated close scores')['handle']
+    brief = {'setting': 'warm_up', 'track_count': 5, 'intent': {'creativity': .6}}
+    a = plan_set_routes(bag, brief, str(tmp_path / 'a'), seed=1)
+    b = plan_set_routes(bag, brief, str(tmp_path / 'b'), seed=29)
+    assert a['routes'][0]['track_ids'] == b['routes'][0]['track_ids']
+    assert [r['track_ids'] for r in a['routes'][1:]] != [r['track_ids'] for r in b['routes'][1:]]
+    assert load_set_plan(a['handle'])['provenance']['searches'][1]['score_perturbation_scale'] < .02

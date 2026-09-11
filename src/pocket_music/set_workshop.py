@@ -21,7 +21,7 @@ from .record_bag import (
 )
 from .selection_types import BagHandle, PlanHandle, SetBrief
 
-WORKSHOP_VERSION = '1.1.0'
+WORKSHOP_VERSION = '1.1.1'
 SETTINGS = frozenset({'warm_up', 'peak_time', 'after_hours', 'open'})
 DIRECTIONS = frozenset({'hold', 'lift', 'left_turn', 'explore'})
 INTENT_KEYS = frozenset({'setting', 'direction', 'target_energy', 'tags', 'creativity',
@@ -226,7 +226,7 @@ def _sequence_valid(sequence, eligible, brief, forbidden):
             and not any((a, b) in forbidden for a, b in pairwise(sequence)))
 
 
-def _search(tracks, brief, intent, rng, forbidden, preferred_pairs, blocked_routes, rank):
+def _search(tracks, brief, intent, rng, forbidden, preferred_pairs, blocked_routes, rank, *, explore=True):
     ids = {t['track_id'] for t in tracks}
     anchors, count = brief['anchor_track_ids'], brief['track_count']
     nodes = 0
@@ -256,9 +256,10 @@ def _search(tracks, brief, intent, rng, forbidden, preferred_pairs, blocked_rout
         if remaining_anchors and remaining_anchors[0] in allowed and not any(o['track_id'] == remaining_anchors[0] for o in options):
             anchor_tracks = [t for t in ranking_tracks if t['track_id'] in {current, remaining_anchors[0]}]
             options += rank(anchor_tracks, current, played_ids=prefix, intent=position_intent, limit=1)
-        # Weighted sampling without replacement; seed and provider version are
-        # preserved. Score is a heuristic annotation fit, never a probability.
-        temperature = .15 + .55 * (intent.get('creativity') if intent.get('creativity') is not None else .5)
+        # Preserve score differences. Variant one is a deterministic baseline;
+        # later variants perturb only on the provider's small score scale.
+        creativity = intent.get('creativity') if intent.get('creativity') is not None else .5
+        score_scale = .004 + .035 * creativity ** 2 if explore and creativity > 0 else 0
         ordered = []
         for option in options:
             score = option.get('score', 0)
@@ -267,9 +268,10 @@ def _search(tracks, brief, intent, rng, forbidden, preferred_pairs, blocked_rout
             bonus = .35 if (current, option['track_id']) in preferred_pairs else 0
             if remaining_anchors and option['track_id'] == remaining_anchors[0] and remaining <= len(remaining_anchors) * 3:
                 bonus += .2
-            key = (score + bonus) / temperature - math.log(-math.log(max(1e-12, min(1 - 1e-12, rng.random()))))
+            perturbation = -math.log(-math.log(max(1e-12, min(1 - 1e-12, rng.random())))) * score_scale if score_scale else 0
+            key = score + bonus + perturbation
             ordered.append((key, option['track_id']))
-        for _, key in sorted(ordered, reverse=True):
+        for _, key in sorted(ordered, key=lambda item: (-item[0], item[1])):
             if nodes >= MAX_SEARCH_NODES:
                 break
             result = search([*prefix, key])
@@ -302,7 +304,8 @@ def _route(sequence, lookup, bag_handle, brief, intent, rank, index, seed, from_
              'transitions': transitions, 'duration': _durations(sequence, lookup, brief),
              'position_targets': [dict(_position_intent(intent, brief, p)[1], track_id=key)
                                   for p, key in enumerate(sequence)],
-             'origin': 'preferred_ordering_retained' if from_preference else 'seeded_exploration',
+             'origin': ('preferred_ordering_retained' if from_preference else
+                        'annotation_baseline' if index == 0 else 'seeded_exploration'),
              'seed': seed, 'status': 'musical_hypothesis_not_performance',
              'anchor_semantics': 'Must appear in the given relative order; no fixed time or position is implied.'}
     route['route_id'] = 'route-' + _digest_json({'bag': bag_handle['sha256'], 'brief': brief,
@@ -338,9 +341,13 @@ def plan_set_routes(bag_handle: BagHandle, brief: SetBrief, output_dir: str, *, 
             nodes, from_preference = 0, True
         else:
             rng = random.Random(f'{seed}:{index}:' + _digest_json(normalized)[1])
-            sequence, nodes = _search(eligible_tracks, normalized, intent, rng, forbidden, preferred, used, rank)
+            sequence, nodes = _search(eligible_tracks, normalized, intent, rng, forbidden, preferred, used, rank,
+                                      explore=index > 0)
             from_preference = False
-        searches.append({'variant_index': index, 'visited_nodes': nodes, 'limit': MAX_SEARCH_NODES})
+        creativity = intent.get('creativity') if intent.get('creativity') is not None else .5
+        searches.append({'variant_index': index, 'visited_nodes': nodes, 'limit': MAX_SEARCH_NODES,
+                         'score_perturbation_scale': .004 + .035 * creativity ** 2
+                         if index > 0 and creativity > 0 and not from_preference else 0})
         if sequence is None:
             continue
         if not _sequence_valid(sequence, lookup, normalized, forbidden) or sequence in used:

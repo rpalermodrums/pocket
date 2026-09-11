@@ -64,7 +64,13 @@ plan is written. Each route contains unique tracks, with a maximum of 100.
 
 The same bag, brief, seed, feedback history and provider version yield the same
 route contents. Creation timestamps identify separate saved attempts. Different
-seeds or intent can explore other orders. `explore` assigns hold, lift and
+seeds or intent can explore other orders. The first variant is a deterministic
+annotation-fit baseline with constraint backtracking. Later variants use small,
+score-scale perturbations (`0.004 + 0.035 × creativity²`); creativity zero removes
+all stochastic perturbation and remains deterministic across seeds. Distinct
+alternatives can still result from backtracking around an already-returned order.
+The actual perturbation scale is saved with each search. This preserves ranking
+support while exploring nearby alternatives; it is not a learned musical model. `explore` assigns hold, lift and
 left-turn directions across variants; explicit directions are retained. Scores
 are annotation-fit heuristics, not probabilities or audible approval.
 
