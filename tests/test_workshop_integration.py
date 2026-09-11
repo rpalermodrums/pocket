@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from itertools import pairwise
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip('pocket_music.on_deck')
 
+from pocket_music.on_deck import ON_DECK_VERSION
 from pocket_music.record_bag import create_record_bag
 from pocket_music.set_workshop import load_set_plan, plan_set_routes, record_plan_feedback, replan_set
 
@@ -28,7 +30,7 @@ def test_three_briefs_actual_provider_constraints_and_reproduction(tmp_path, set
     b = plan_set_routes(bag, brief, str(tmp_path / 'b'), seed=3)
     assert a['routes'] == b['routes']
     assert len({tuple(r['track_ids']) for r in a['routes']}) == 3
-    assert load_set_plan(a['handle'])['provenance']['ranking_version'] == '1.0.0'
+    assert load_set_plan(a['handle'])['provenance']['ranking_version'] == ON_DECK_VERSION
     for route in a['routes']:
         ids = route['track_ids']
         assert ids.index('t1') < ids.index('t8') and 't10' not in ids
@@ -52,3 +54,23 @@ def test_unknown_profiles_remain_unknown_across_providers(tmp_path):
     for route in result['routes']:
         assert route['duration']['unknown_full_track_count'] == 4
         assert all(t['unknowns'] and t['tempo_options'] == [] for t in route['transitions'])
+
+
+@pytest.mark.parametrize('setting,expected', [
+    ('warm_up', [.22, .285, .35, .425, .5]),
+    ('peak_time', [.62, .85, .85, .85, .72]),
+    ('after_hours', [.55, .475, .4, .325, .25]),
+])
+def test_slot_contours_are_explicit_position_intent_not_imputed_measurements(tmp_path, setting, expected):
+    bag = create_record_bag(tracks(), str(tmp_path / 'bag'), 'Generated contour')['handle']
+    before = Path(bag['path']).read_bytes()
+    result = plan_set_routes(bag, {'track_count': 5, 'setting': setting}, str(tmp_path / 'plan'), route_count=1)
+    route = result['routes'][0]
+    assert [p['target_energy'] for p in route['position_targets']] == expected
+    assert all(p['basis'] == 'pocket_slot_planning_preset' for p in route['position_targets'])
+    assert [t['selection_intent']['target_energy'] for t in route['transitions']] == expected[1:]
+    assert [t['planning_target']['target_energy'] for t in route['transitions']] == expected[1:]
+    assert Path(bag['path']).read_bytes() == before
+    override = plan_set_routes(bag, {'track_count': 5, 'setting': setting, 'intent': {'target_energy': .6}},
+                               str(tmp_path / 'override'), route_count=1)['routes'][0]
+    assert all(p['target_energy'] == .6 and p['basis'] == 'caller_explicit_target' for p in override['position_targets'])

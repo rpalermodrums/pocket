@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .errors import PocketError
 
-ON_DECK_VERSION = "1.0.0"
+ON_DECK_VERSION = "1.0.1"
 _SESSION = "pocket.on-deck-session/v1"
 _INTENT_FIELDS = {"setting", "direction", "target_energy", "tags", "creativity", "max_stretch_percent",
                   "require_local_audio", "avoid_track_ids", "avoid_pairs"}
@@ -161,13 +161,15 @@ def rank_next_tracks(tracks, current_track_id=None, *, played_ids=(), intent=Non
     current = _profile(current_track)
     excluded = played | set(intent.get("avoid_track_ids", [])) | {current_track_id}
     excluded |= {p[1] for p in intent.get("avoid_pairs", []) if p[0] == current_track_id}
+    direction = intent.get("direction", "explore")
     target = intent.get("target_energy")
+    if target is None and current.get("energy") is not None and direction in {"hold", "lift"}:
+        target = min(1, current["energy"] + (0.15 if direction == "lift" else 0))
     if target is None:
         target = {"warm_up": 0.35, "peak_time": 0.8, "after_hours": 0.45}.get(intent.get("setting"))
     if target is None and current.get("energy") is not None:
-        target = min(1, current["energy"] + (0.15 if intent.get("direction") == "lift" else 0))
+        target = current["energy"]
     tags = {s.casefold() for s in intent.get("tags", [])}
-    direction = intent.get("direction", "explore")
     max_stretch = intent.get("max_stretch_percent")
     max_stretch = 6 if max_stretch is None else max_stretch
     options = []

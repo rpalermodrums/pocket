@@ -75,6 +75,17 @@ repeating an order. It does not prove exhaustive impossibility or global musical
 optimality. If no valid route is found, it raises a clear error without a partial
 published plan.
 
+Default slot contours provide a transparent beginning, middle and ending. On the
+0–1 intent scale, warm-up rises 0.22 → 0.35 → 0.50; peak time rises 0.62 → 0.85,
+holds through the middle half, then releases to 0.72; after-hours tapers
+0.55 → 0.40 → 0.25. Targets interpolate by route position, not clock time. A
+single-record route uses the midpoint. `open` supplies no default contour, and an
+explicit `intent.target_energy` overrides the entire contour. Every position and
+transition records its target and basis. These are Pocket planning presets, not
+measurements assigned to unknown tracks, promises of audible energy, or a check
+that the selected order realizes the contour. Constraints and exploration can
+still produce candidates with weak or missing supporting annotations.
+
 ## Duration and feedback
 
 The ledger separates full recording duration from estimated performance time.
