@@ -91,11 +91,17 @@ class _Workspace:
         session = session_snapshot(self.session_path(state)) if state["session_dir"] else None
         current = next((t for t in bag["tracks"] if session and t["track_id"] == session["current_track_id"]),
                        None) if bag else None
+        lookup = {track["track_id"]: track for track in bag["tracks"]} if bag else {}
+        history = [{**entry, "track": {key: lookup[entry["track_id"]][key]
+                                     for key in ("track_id", "title", "artists")}
+                    if entry.get("track_id") in lookup else None}
+                   for entry in (session["history"][-15:] if session else [])]
         return {"revision": state["revision"], "csrf_token": self.csrf,
                 "bag": {"title": bag["title"], "summary": bag["summary"]} if bag else None,
                 "plan_handle": state["plan"],
                 "plan": load_set_plan(state["plan"]) if state["plan"] else None,
-                "session": session, "current_track": {k: current[k] for k in ("track_id", "title", "artists")}
+                "session": session, "history": history,
+                "current_track": {k: current[k] for k in ("track_id", "title", "artists")}
                 if current else None}
 
     def mutate(self, endpoint, data):

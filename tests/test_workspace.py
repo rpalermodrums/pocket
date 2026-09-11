@@ -183,3 +183,56 @@ def test_initialized_bag(server, tmp_path):
         assert other.workspace.snapshot()["bag"]["title"] == "Initialized"
     finally:
         other.server_close()
+
+
+def test_snapshot_resolves_bounded_history_without_changing_session(server):
+    from pocket_music.on_deck import session_snapshot, update_session
+    state = mutate(server, "/api/session", imported(server), track_id="r0")
+    session = state["session"]
+    for index in range(17):
+        session = update_session(session["session_dir"], expected_revision=session["revision"],
+                                 expected_sha256=session["sha256"], action="choose", track_id=f"r{index % 7}")
+    _, state, _ = call(server, "/api/state")
+    assert len(state["history"]) == 15
+    last = state["history"][-1]
+    assert last["track"] == {"track_id": "r2", "title": "Record 2", "artists": ["Fixture artist"]}
+    assert state["session"] == session_snapshot(session["session_dir"])
+    assert state["session"]["sha256"] == session["sha256"]
+
+
+def test_route_and_history_ui_copy_uses_actual_fields():
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Optional JavaScript unit check requires Node")
+    script = (Path(__file__).parents[1] / "src/pocket_music/web/app.js").read_text()
+    # Load the actual view functions without booting the browser event listeners.
+    functions = script.split('$("tab-workshop").addEventListener')[0]
+    fixture = r'''
+const assert = require('node:assert/strict');
+const dom = new Map();
+const element = () => ({textContent:'', children:[], append(...values){this.children.push(...values);},
+  replaceChildren(...values){this.children=values;}, addEventListener(){}});
+global.document = {createElement:element, getElementById(id){if(!dom.has(id))dom.set(id,element());return dom.get(id);}};
+'''
+    expectations = r'''
+assert.equal(timingNote({target_seconds:5400, estimate_minus_target_seconds:-2700}),
+  'About 45 min short of 90 min target — add records or revise the plan.');
+assert.equal(timingNote({target_seconds:5400, estimate_minus_target_seconds:120}),
+  'About 2 min over 90 min target — use fewer records or revise the plan.');
+assert.equal(timingNote({target_seconds:null, estimate_minus_target_seconds:null}), null);
+assert.equal(historyText({action:'choose',track_id:'opaque',track:{title:'Actual record',artists:['An artist']}}),
+  'Chose · Actual record — An artist');
+assert.equal(historyText({action:'skip',track_id:'opaque'}), 'Skipped · Unknown record');
+ui.snapshot = {plan:{routes:['annotation_baseline','seeded_exploration'].map(origin=>({origin,
+  duration:{estimated_performance_seconds:2700,target_seconds:5400,estimate_minus_target_seconds:-2700},
+  tracks:[],transitions:[]}))}};
+renderRoutes();
+assert.equal(dom.get('routes').children[0].children[0].textContent,'Baseline');
+assert.equal(dom.get('routes').children[1].children[0].textContent,'Alternative 1');
+assert.match(dom.get('routes').children[0].children[2].textContent,/45 min short/);
+'''
+    result = subprocess.run([node, '-'], input=fixture + functions + expectations, text=True,
+                            capture_output=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
