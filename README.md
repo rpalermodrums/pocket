@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/pocket.svg" alt="Pocket — Pip the field mouse in a record sleeve. Map the parts. Keep the groove." width="960"></p>
+<p align="center"><img src="assets/pocket.svg" alt="Pocket — Pip the field mouse in a terracotta record sleeve, with an audio waveform below the wordmark." width="960"></p>
 
 **Music tools for agents and the people listening with them.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
 
