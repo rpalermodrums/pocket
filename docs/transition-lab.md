@@ -2,14 +2,15 @@
 
 Transition Lab turns a specific musical question into a small comparison with traceable audio. Start with completed renders, choose the passage, and attach a listening note to the exact version and time span reviewed. It does not decide which version sounds better.
 
-The CLI and MCP call the same four Python providers in `pocket_music.transition_lab`:
+The CLI and MCP call the same Python providers in `pocket_music.transition_lab`:
 
 | Provider | Result |
 |---|---|
 | `create_trial` | Exact excerpts, a sealed trial manifest and per-variant source/output hashes |
 | `record_feedback` | A new timestamped note bound to one variant, output hash and local frame interval |
 | `prepare_native_trial` | A separate Ableton candidate with one media-only clip translation |
-| `attach_completed_render` | A verified copy of a completed, explicitly declared native export |
+| `validate_native_trial` | Collected-file and candidate verification after relocation; no claim that Live loaded it |
+| `attach_completed_render` | Immutable native output, separate artifact/signal/operator-readiness outcomes |
 
 ## Compare existing renders
 
@@ -85,11 +86,26 @@ candidate = prepare_native_trial(
 )
 ```
 
-Use the canonical ID from Set Map. An ambiguous track/clip pair is rejected. The adapter translates only that AudioClip's `Time`, `CurrentStart` and `CurrentEnd`, then reads the candidate back and proves that reversing those three edits restores all original XML fields. Host automation remains fixed. Source bounds, negative pickups, warp anchors, gains, pitch, tempo and clip-fade settings are unchanged. Clip-attached content and its unchanged fades move with the clip.
+Use the canonical ID from Set Map. An ambiguous track/clip pair is rejected. The adapter translates only that AudioClip's `Time`, `CurrentStart` and `CurrentEnd`, then collects the active media and reads the candidate back. Reversing the three placement edits and the declared active FileRef changes restores all original XML fields. Host automation remains fixed. Source bounds, negative pickups, warp anchors, gains, pitch, tempo and clip-fade settings are unchanged. Clip-attached content and its unchanged fades move with the clip.
 
 The supported scope is deliberately small: audio-only hosts, a non-looping warped Arrangement AudioClip with `StartRelative=0`, no clip automation, no external `PluginDevice`, a nonzero shift of at most 16 beats, and a constant-tempo named export interval of at most five minutes. The candidate and export range cannot extend beyond the existing Arrangement audio boundary. Unknown tempo curves and child curve nodes are rejected. This does not infer bar one or move the associated track automation for you.
 
-The new `candidate.als` retains verified absolute audio and Max patch references, so `portability` is false. It does not duplicate an entire record collection. Existing conflicting project-relative references at either the original or candidate location are rejected; attachment checks the candidate location again. Historical preset pointers are not treated as active load dependencies. Stock device behavior, Max internals and dependencies hidden inside devices remain outside this adapter's validation.
+**New native trials are collected by default.** The new trial directory is an Ableton Project: `candidate.als`, `Ableton Project Info`, `Samples/Imported` and `Devices`. Pocket copies all active audio and Max patch files byte-for-byte, plus an adjacent same-stem `.maxpat` when present. Content-based subdirectories/names prevent collisions. Source files and the original set remain untouched. The sealed receipt lists each original path/hash, copied relative path/hash and exact before/after FileRef XML. Only the selected media translation and those explicit reference fields change; host controls stay fixed.
+
+This collection scope is **active audio/Max references and adjacent same-stem MAXPAT only**. It does not discover arbitrary transitive assets inside opaque Max patches, certify stock-device behavior or package external plugins. Historical preset pointers are not active load dependencies. `portability:true` is qualified by this scope and its limitations.
+
+Move or copy the whole trial directory, including its marker and media. Then call:
+
+```python
+from pocket_music.transition_lab import validate_native_trial
+
+readiness = validate_native_trial(
+    relocated_trial_dir,
+    expected_candidate_sha256=candidate_hash,
+)
+```
+
+The validator reopens the actual ALS, checks its sealed identity, validates every canonical project-relative file against the copied hashes, and reports any now-stale absolute path hints without rewriting the immutable candidate. It never assumes a missing relative file will fall back to an absolute path. Missing or changed collected files fail. Filesystem success leaves `native_loading: "unverified"` and `ready_to_compare: false`: only an actual check in Live can establish what Live loaded. New trials use `pocket.native-trial/v2`; old uncollected v1 trials remain preserved but require a new preparation for this attachment path.
 
 Open the candidate in Live manually and render the **named range in the manifest**. Pocket does not change the saved loop range, operate Live, select export settings, or observe an export. Keep the generated candidate unchanged; use Save As elsewhere if Live needs to save. A saved/edited candidate fails the original-hash precondition and requires a new reviewed trial.
 
@@ -117,12 +133,29 @@ attachment = attach_completed_render(
         "dither": "none",
     },
     export_completed=True,
+    native_observation={
+        "observer": operator_name,
+        "observed_at": observed_iso8601_timestamp_with_timezone,
+        "candidate_sha256": candidate_hash,
+        "no_missing_media": True,
+        "export_completed": True,
+    },
 )
 ```
 
 The explicit completion/range/settings statements are **user-supplied export evidence**. They are not proof that Live rendered this candidate. Pocket independently verifies the unchanged candidate and dependencies, the actual floating-point stereo WAV header, complete finite decoded frame count, stable audio hash, and byte-identical attachment copy. Duration must be within two frames of the constant-tempo modeled interval, with the exact discrepancy recorded. A larger difference is rejected for review, not excused as ordinary native rounding.
 
-The attachment is a new immutable subdirectory under `renders/`. No gain or fades are applied. Create a normal trial from its `render.wav` and the comparable baseline render to gather scoped feedback. Full-set rendering, arbitrary native normalization/readback, automatic source mapping across tempo changes, true-peak mastering and promotion of a winner remain later work.
+The attachment is a new immutable subdirectory under `renders/`. No gain or fades are applied. Its three outcomes are intentionally separate:
+
+- `artifact.status: "verified"` means the declared frame/rate/format, file identity, complete decode and byte-copy checks passed.
+- `signal` records nonzero and non-finite sample counts, RMS, sample peak, the explicit expectation, a disposition and reasons. Music is the default expectation. Digital silence, whole-excerpt RMS at or below **−60dBFS**, non-finite samples or sample-level overload do not pass. This conservative threshold is a screening rule, not a loudness target or a reason to normalize quiet music. It is not true-peak metering.
+- `native_readiness` distinguishes filesystem verification, declared completion and optional **operator-reported** loading/export observations. Pocket checks the observation's exact candidate hash, timestamp and booleans but does not independently observe Live or prove the operator's statement. No observation, reported missing media or incomplete export keeps `ready_to_compare:false` even when audio is nonzero.
+
+`ready_to_compare:true` requires a verified artifact, signal consistent with the declared expectation, and a supplied observation reporting no missing media and completed export. It is technical readiness, never a musical verdict. Silent, near-silent, overloaded or non-finite outputs are **preserved** with their failed signal disposition rather than deleted or called ready.
+
+For a deliberately silent experiment, specify `signal_expectation="intentional_silence"` and a nonempty `expectation_note` when preparing the candidate, before rendering. Quiet output then has a separate `intentional_silence` disposition; unexpected audible output fails that expectation. This cannot be switched after hearing a failed export without preparing a new immutable trial.
+
+ Create a normal trial from its `render.wav` and the comparable baseline render to gather scoped feedback. Full-set rendering, arbitrary native normalization/readback, automatic source mapping across tempo changes, true-peak mastering and promotion of a winner remain later work.
 
 ## Generated-data demonstration
 
@@ -152,4 +185,4 @@ restored = sf.read(folder / "trial" / "v01.wav", dtype="float64")[0]
 assert np.array_equal(restored, samples)
 ```
 
-The generated-fixture tests additionally cover stale identities, bounds, destination collisions, exact no-fade samples, separately mapped windows, rate/channel rejection, scoped feedback, changed dependencies, actual Ableton clip-envelope layout, unsupported tempo curves, XML declarations and the two-frame native-attachment limit. Real local comparison receipts and listener notes belong outside Git.
+The generated-fixture tests additionally cover stale identities, bounds, destination collisions, exact no-fade samples, separately mapped windows, rate/channel rejection, scoped feedback, changed dependencies, actual Ableton clip-envelope layout, unsupported tempo curves, XML declarations the two-frame native-attachment limit, missing relative-path reproduction, collection corruption, full-directory relocation, Max companion scope, silence/near-silence and explicit intentional silence. Real local comparison receipts and listener notes belong outside Git.

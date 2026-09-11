@@ -2,6 +2,7 @@
 
 import copy
 import gzip
+import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from pocket_music.transition_lab import (
     create_trial,
     prepare_native_trial,
     record_feedback,
+    validate_native_trial,
 )
 
 
@@ -232,7 +234,7 @@ def _path_parts():
     return ["DeviceChain", "MainSequencer", "Sample", "ArrangerAutomation", "Events"]
 
 
-def prepare(tmp_path):
+def prepare(tmp_path, **options):
     path, root = als_fixture(tmp_path)
     result = prepare_native_trial(
         path,
@@ -242,6 +244,7 @@ def prepare(tmp_path):
         export_start_beat=0,
         export_length_beats=8,
         expected_als_sha256=sha256_file(path),
+        **options,
     )
     return result, path, root
 
@@ -257,8 +260,14 @@ def test_native_only_translates_selected_media_preserves_controls_and_original(t
         new.set(key, old.get(key))
     for key in ("CurrentStart", "CurrentEnd"):
         new.find(key).set("Value", old.find(key).get("Value"))
+    for kind in ("SampleRef", "MxPatchRef"):
+        for saved_parent, original_parent in zip(
+            saved.findall(".//" + kind), root.findall(".//" + kind), strict=True
+        ):
+            saved_parent[:] = [copy.deepcopy(child) for child in original_parent]
     assert ET.tostring(root) == ET.tostring(saved)
-    assert result["controls_fixed"] is True and result["portability"] is False
+    assert result["controls_fixed"] is True and result["portability"] is True
+    assert result["native_readiness"]["native_loading"] == "unverified"
     assert result["readback"]["native_save"] is False
     assert result["dependencies"][0]["sha256"] == sha256_file(tmp_path / "source.wav")
 
@@ -351,8 +360,9 @@ def test_attach_requires_completion_identity_and_exact_declared_range(tmp_path, 
 def test_attach_rejects_changed_dependencies_and_candidate(tmp_path):
     result, _, _ = prepare(tmp_path)
     rendered, _ = audio(tmp_path, "rendered.wav")
-    source = tmp_path / "source.wav"
-    source.write_bytes(b"changed dependency")
+    source = Path(result["trial_dir"]) / result["dependencies"][0]["relative_path"]
+    original_bytes = source.read_bytes()
+    source.write_bytes(original_bytes[:-1] + bytes([original_bytes[-1] ^ 1]))
     with pytest.raises(PocketError, match="dependency changed"):
         attach(result, rendered)
     candidate = Path(result["trial_dir"]) / "candidate.als"
@@ -453,53 +463,60 @@ def test_source_mutation_between_validation_and_extraction_is_rejected(tmp_path,
     assert not (tmp_path / "trial").exists()
 
 
-def test_native_candidate_rejects_conflicting_project_relative_media(tmp_path):
+def test_collection_repairs_missing_relative_and_ignores_unrelated_outer_project(tmp_path):
     path, root = als_fixture(tmp_path)
     for ref in root.findall(".//SampleRef/FileRef"):
         ET.SubElement(ref, "RelativePathType", Value="3")
         ET.SubElement(ref, "RelativePath", Value="Samples/Imported/same-name.wav")
     path.write_bytes(gzip.compress(ET.tostring(root)))
-    other_project = tmp_path / "Other Project"
-    (other_project / "Ableton Project Info").mkdir(parents=True)
-    media = other_project / "Samples/Imported"
+    other = tmp_path / "Other Project"
+    (other / "Ableton Project Info").mkdir(parents=True)
+    media = other / "Samples/Imported"
     media.mkdir(parents=True)
     audio(media, "same-name.wav")
-    with pytest.raises(PocketError, match="Conflicting project-relative"):
-        prepare_native_trial(
-            path,
-            other_project / "trial",
-            clip_id="track:100/clip:0",
-            shift_beats=1,
-            export_start_beat=0,
-            export_length_beats=8,
-            expected_als_sha256=sha256_file(path),
-        )
-    assert not (other_project / "trial").exists()
-
-
-def test_native_attachment_rechecks_new_relative_conflict(tmp_path):
-    path, root = als_fixture(tmp_path)
-    for ref in root.findall(".//SampleRef/FileRef"):
-        ET.SubElement(ref, "RelativePathType", Value="3")
-        ET.SubElement(ref, "RelativePath", Value="Samples/Imported/same-name.wav")
-    path.write_bytes(gzip.compress(ET.tostring(root)))
-    project = tmp_path / "Other Project"
-    (project / "Ableton Project Info").mkdir(parents=True)
     result = prepare_native_trial(
         path,
-        project / "trial",
+        other / "trial",
         clip_id="track:100/clip:0",
         shift_beats=1,
         export_start_beat=0,
         export_length_beats=8,
         expected_als_sha256=sha256_file(path),
     )
-    media = project / "Samples/Imported"
+    folder = Path(result["trial_dir"])
+    assert (folder / "Ableton Project Info").is_dir()
+    saved = ET.fromstring(gzip.decompress((folder / "candidate.als").read_bytes()))
+    for ref in saved.findall(".//SampleRef/FileRef"):
+        relative = ref.find("RelativePath").get("Value")
+        assert relative != "Samples/Imported/same-name.wav"
+        assert (folder / relative).samefile(Path(ref.find("Path").get("Value")))
+        assert sha256_file(folder / relative) == sha256_file(tmp_path / "source.wav")
+    ready = validate_native_trial(folder, expected_candidate_sha256=result["candidate_sha256"])
+    assert ready["native_readiness"]["copied_files_verified"] == 1
+    assert ready["ready_to_compare"] is False
+
+
+def test_collection_rejects_actual_source_relative_conflict(tmp_path):
+    path, root = als_fixture(tmp_path)
+    for ref in root.findall(".//SampleRef/FileRef"):
+        ET.SubElement(ref, "RelativePathType", Value="3")
+        ET.SubElement(ref, "RelativePath", Value="Samples/Imported/same-name.wav")
+    path.write_bytes(gzip.compress(ET.tostring(root)))
+    media = tmp_path / "Samples/Imported"
     media.mkdir(parents=True)
-    audio(media, "same-name.wav")
-    rendered, _ = audio(tmp_path, "rendered.wav")
+    conflicting, _ = audio(media, "same-name.wav")
+    assert conflicting != tmp_path / "source.wav"
     with pytest.raises(PocketError, match="Conflicting project-relative"):
-        attach(result, rendered)
+        prepare_native_trial(
+            path,
+            tmp_path / "bad",
+            clip_id="track:100/clip:0",
+            shift_beats=1,
+            export_start_beat=0,
+            export_length_beats=8,
+            expected_als_sha256=sha256_file(path),
+        )
+    assert not (tmp_path / "bad").exists()
 
 
 def test_feedback_rejects_manifest_mutation_between_read_and_use(tmp_path, monkeypatch):
@@ -531,7 +548,13 @@ def test_public_inputs_have_discoverable_nested_types():
 
     from pocket_music.transition_lab import NativeExportSettings, TrialVariant
 
-    for provider in (create_trial, record_feedback, prepare_native_trial, attach_completed_render):
+    for provider in (
+        create_trial,
+        record_feedback,
+        prepare_native_trial,
+        attach_completed_render,
+        validate_native_trial,
+    ):
         hints = get_type_hints(provider)
         assert set(inspect.signature(provider).parameters) <= hints.keys()
     assert get_args(get_type_hints(create_trial)["variants"]) == (TrialVariant,)
@@ -540,3 +563,178 @@ def test_public_inputs_have_discoverable_nested_types():
     assert get_type_hints(NativeExportSettings)["sample_rate"] is int
     assert get_type_hints(attach_completed_render)["expected_frames"] is int
     assert get_type_hints(attach_completed_render)["export_completed"] is bool
+
+
+def observed(result, **overrides):
+    return {
+        "observer": "generated-fixture-operator",
+        "observed_at": "2026-01-01T00:00:00+00:00",
+        "candidate_sha256": result["candidate_sha256"],
+        "no_missing_media": True,
+        "export_completed": True,
+        **overrides,
+    }
+
+
+def test_collected_trial_survives_relocation_and_original_removal(tmp_path):
+    result, source_als, _ = prepare(tmp_path)
+    old_folder = Path(result["trial_dir"])
+    moved = tmp_path / "Moved Project"
+    shutil.move(old_folder, moved)
+    source_als.unlink()
+    (tmp_path / "source.wav").unlink()
+    result["trial_dir"] = str(moved)
+    validation = validate_native_trial(moved, expected_candidate_sha256=result["candidate_sha256"])
+    assert validation["native_readiness"]["stale_absolute_hints_after_relocation"] == 2
+    assert validation["native_readiness"]["native_loading"] == "unverified"
+    rendered, _ = audio(tmp_path, "rendered.wav")
+    receipt = attach(result, rendered, native_observation=observed(result))
+    assert receipt["ready_to_compare"] is True
+    assert (
+        receipt["native_readiness"]["observation_provenance"]
+        == "operator_reported_not_independently_observed"
+    )
+    assert receipt["native_save_verified"] is False
+
+
+def test_collection_includes_adjacent_maxpat_and_does_not_claim_transitive_scope(tmp_path):
+    path, root = als_fixture(tmp_path)
+    patch = tmp_path / "Utility.amxd"
+    companion = tmp_path / "Utility.maxpat"
+    patch.write_bytes(b"generated Max fixture")
+    companion.write_text('{"patcher": {}}')
+    ref = ET.SubElement(ET.SubElement(root.find("LiveSet/MainTrack"), "MxPatchRef"), "FileRef")
+    ET.SubElement(ref, "Path", Value=str(patch))
+    path.write_bytes(gzip.compress(ET.tostring(root)))
+    result = prepare_native_trial(
+        path,
+        tmp_path / "trial",
+        clip_id="track:100/clip:0",
+        shift_beats=1,
+        export_start_beat=0,
+        export_length_beats=8,
+        expected_als_sha256=sha256_file(path),
+    )
+    assert len(result["dependencies"]) == 3
+    scope = result["native_readiness"]["scope"]
+    assert "adjacent_same_stem_MAXPAT" in scope
+    assert "Opaque Max" in result["native_readiness"]["limitations"][0]
+    copied = next(d for d in result["dependencies"] if d["kind"] == "adjacent_same_stem_MAXPAT")
+    assert sha256_file(Path(result["trial_dir"]) / copied["relative_path"]) == sha256_file(companion)
+
+
+@pytest.mark.parametrize(
+    "amplitude,disposition",
+    [
+        (0, "unexpected_silence"),
+        (0.000001, "unexpected_near_silence"),
+        (1.2, "sample_overload"),
+        (float("nan"), "nonfinite_audio"),
+    ],
+)
+def test_failed_signal_is_preserved_but_never_ready(tmp_path, amplitude, disposition):
+    result, _, _ = prepare(tmp_path)
+    rendered = tmp_path / "rendered.wav"
+    sf.write(rendered, np.full((32000, 2), amplitude, dtype="float64"), 8000, subtype="DOUBLE")
+    receipt = attach(result, rendered, native_observation=observed(result))
+    assert receipt["artifact"]["status"] == "verified"
+    assert receipt["signal"]["disposition"] == disposition
+    assert receipt["signal"]["reasons"]
+    assert receipt["ready_to_compare"] is False
+    assert sha256_file(Path(receipt["attachment_dir"]) / "render.wav") == sha256_file(rendered)
+
+
+def test_nonzero_without_native_observation_stays_unverified(tmp_path):
+    result, _, _ = prepare(tmp_path)
+    rendered, _ = audio(tmp_path, "rendered.wav")
+    receipt = attach(result, rendered)
+    assert receipt["signal"]["usable_for_expectation"] is True
+    assert receipt["native_readiness"]["operator_observation"] is None
+    assert receipt["ready_to_compare"] is False
+
+
+@pytest.mark.parametrize("flag", ["no_missing_media", "export_completed"])
+def test_negative_native_observation_is_preserved_without_readiness(tmp_path, flag):
+    result, _, _ = prepare(tmp_path)
+    rendered, _ = audio(tmp_path, "rendered.wav")
+    receipt = attach(result, rendered, native_observation=observed(result, **{flag: False}))
+    assert receipt["ready_to_compare"] is False
+    assert receipt["native_readiness"]["operator_observation"][flag] is False
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"candidate_sha256": "0" * 64},
+        {"no_missing_media": "true"},
+        {"observed_at": "2026-01-01T00:00:00"},
+        {"observer": ""},
+    ],
+)
+def test_bad_observation_rejected_before_attachment(tmp_path, override):
+    result, _, _ = prepare(tmp_path)
+    rendered, _ = audio(tmp_path, "rendered.wav")
+    with pytest.raises(PocketError):
+        attach(result, rendered, native_observation=observed(result, **override))
+    assert not (Path(result["trial_dir"]) / "renders").exists()
+
+
+def test_intentional_silence_requires_preparation_note_and_is_separate(tmp_path):
+    with pytest.raises(PocketError, match="expectation_note"):
+        prepare(tmp_path, signal_expectation="intentional_silence")
+    assert not (tmp_path / "native").exists()
+    result, _, _ = prepare(
+        tmp_path, signal_expectation="intentional_silence", expectation_note="Declared silent fixture"
+    )
+    rendered = tmp_path / "silence.wav"
+    sf.write(rendered, np.zeros((32000, 2)), 8000, subtype="FLOAT")
+    receipt = attach(result, rendered, native_observation=observed(result))
+    assert receipt["ready_to_compare"] is True
+    assert receipt["signal"]["disposition"] == "intentional_silence"
+    assert receipt["signal"]["expectation_note"] == "Declared silent fixture"
+    audible, _ = audio(tmp_path, "audible.wav")
+    unexpected = attach(result, audible, native_observation=observed(result))
+    assert unexpected["signal"]["disposition"] == "unexpected_audio"
+    assert unexpected["ready_to_compare"] is False
+
+
+def test_collection_failure_leaves_no_published_trial(tmp_path, monkeypatch):
+    import pocket_music.transition_lab as lab
+
+    path, _ = als_fixture(tmp_path)
+    copy_file = lab.shutil.copyfile
+
+    def corrupt_copy(source, target):
+        copy_file(source, target)
+        Path(target).write_bytes(b"corrupt")
+
+    monkeypatch.setattr(lab.shutil, "copyfile", corrupt_copy)
+    with pytest.raises(PocketError, match="changed during collection"):
+        prepare_native_trial(
+            path,
+            tmp_path / "trial",
+            clip_id="track:100/clip:0",
+            shift_beats=1,
+            export_start_beat=0,
+            export_length_beats=8,
+            expected_als_sha256=sha256_file(path),
+        )
+    assert not (tmp_path / "trial").exists()
+    assert not list(tmp_path.glob(".trial.*"))
+
+
+def test_candidate_mutation_during_attachment_is_not_published(tmp_path, monkeypatch):
+    from pocket_music import transition_lab as lab
+
+    result, _, _ = prepare(tmp_path)
+    rendered, _ = audio(tmp_path, "rendered.wav")
+    copy_file = lab.shutil.copyfile
+
+    def copy_and_change(source, target):
+        copy_file(source, target)
+        (Path(result["trial_dir"]) / "candidate.als").write_bytes(b"changed while attaching")
+
+    monkeypatch.setattr(lab.shutil, "copyfile", copy_and_change)
+    with pytest.raises(PocketError, match="changed during attachment"):
+        attach(result, rendered, native_observation=observed(result))
+    assert not list((Path(result["trial_dir"]) / "renders").glob("render-*"))
