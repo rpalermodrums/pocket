@@ -149,4 +149,6 @@ The [selection plan](docs/selection-plan.md) defines this cycle, and the [0.3 fi
 
 Pip is Pocket's field mouse: curious ears, a record sleeve for a pocket, and a tail curled like a groove. The [SVG mark](assets/pip.svg) and [README logo](assets/pocket.svg) are original, editable vectors with no external fonts or image dependencies.
 
-Pocket is private while we test and assemble it. A public release and its license are later owner decisions.
+## License
+
+Pocket is licensed under the [MIT License](LICENSE). Bundled third-party code retains its accompanying license notices.
