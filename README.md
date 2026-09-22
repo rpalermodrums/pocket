@@ -126,29 +126,6 @@ Configure that local process only for agents you trust with your audio and proje
 
 The [name compatibility guide](docs/compatibility.md) maps the previous names to these tools. Old commands and imports remain accepted; serialized formats, field keys, flags, caches and output artifacts are unchanged.
 
-## The musical rules
-
-- A tempo match does not identify beat one. Keep pulse, bar and phrase hypotheses separate.
-- A key label does not prove a melodic overlap works. Inspect the local parts and listen to the handoff.
-- A listener can approve one aspect of a trial while rejecting another. Preserve the exact scope of the correction.
-- No implicit fades, normalization or crop expansion. Use the **phrase handoff approach** when the musical experiment calls for it; there is no universal crossfade recipe.
-- An openable project, a successful export and a good transition are different results. Report each honestly.
-
-## Development and next decisions
-
-```sh
-python -m pytest
-node --test tests/baste_reader.test.cjs
-```
-
-Tests generate small signals and saved-project fixtures. Full recordings, renders, model weights and real listener notes stay outside the repository. [Architecture](docs/architecture.md) describes the shared contracts and extraction from earlier production work. [Evaluation](docs/evaluation.md) records the production field checks and what still needs listening tests. The [implementation plan](docs/implementation-plan.md) records scope, ownership and acceptance gates.
-
-The [selection plan](docs/selection-plan.md) defines this cycle, and the [0.3 field notes](docs/selection-field-notes.md) record what actual library, model, acquisition and shared-session tests changed. Reproducible proposals, validated recording identity and successful model execution are different from a good set. Use listening feedback to decide what to keep; optional embeddings remain an experiment, with their observed limitations documented beside the provider.
-
-## Meet Pip
-
-Pip is Pocket's field mouse: curious ears, a record sleeve for a pocket, and a tail curled like a groove. The [SVG mark](assets/pip.svg) and [README logo](assets/pocket.svg) are original, editable vectors with no external fonts or image dependencies.
-
 ## License
 
 Pocket is licensed under the [MIT License](LICENSE). Bundled third-party code retains its accompanying license notices.
