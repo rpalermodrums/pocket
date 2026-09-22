@@ -1,0 +1,6 @@
+{
+  "store_root": "./pocket-midi-demo",
+  "request_id": "example-sound-v1",
+  "brief": "Prepare the documented dry stock fixture for a later supervised comparison; no sound has been heard.",
+  "recipe": "operator_sine_pluck"
+}

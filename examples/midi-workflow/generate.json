@@ -1,0 +1,60 @@
+{
+  "store_root": "./pocket-midi-demo",
+  "request_id": "example-generate-v1",
+  "brief": {
+    "role": "synthetic pitched-percussion response",
+    "pitch": 60,
+    "cell_qn": {
+      "n": 4,
+      "d": 1
+    },
+    "cell": [
+      {
+        "n": 0,
+        "d": 1
+      },
+      {
+        "n": 3,
+        "d": 2
+      },
+      {
+        "n": 3,
+        "d": 1
+      }
+    ],
+    "length_qn": {
+      "n": 32,
+      "d": 1
+    },
+    "enter_qn": {
+      "n": 8,
+      "d": 1
+    },
+    "exit_qn": {
+      "n": 28,
+      "d": 1
+    },
+    "gate_qn": {
+      "n": 1,
+      "d": 4
+    },
+    "velocities": [
+      64,
+      76
+    ],
+    "variation_qn": {
+      "n": 1,
+      "d": 8
+    },
+    "channel": 1,
+    "intentions": [
+      "Synthetic fixture only; choose pitch and cell by listening in actual use."
+    ]
+  },
+  "seeds": {
+    "structure": 17,
+    "timing": 23,
+    "velocity": 29
+  },
+  "alternatives": 2
+}

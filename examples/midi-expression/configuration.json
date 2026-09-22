@@ -1,0 +1,63 @@
+{
+  "lifecycle": {
+    "clip_id": "clip:external",
+    "initial_state": {
+      "active_notes": "none",
+      "sustain": [
+        {
+          "channel": 1,
+          "value": 0
+        }
+      ]
+    },
+    "horizon_qn": 9,
+    "release_tail_qn": 1,
+    "equal_time_order": "note_off_cc_note_on",
+    "source_basis": "canonical_notes_retained_cc64"
+  },
+  "receiver_assumption": {
+    "label": "Declared fixture receiver",
+    "zone": "lower",
+    "manager_channel": 1,
+    "member_channels": [
+      2,
+      3
+    ],
+    "member_bend_range_semitones": 48,
+    "manager_pitch_policy": "neutral_no_pitch_messages",
+    "configuration_policy": "assume_preconfigured_no_setup_messages",
+    "configuration_status": "declared_unverified",
+    "instrument_state": null,
+    "attribution": {
+      "actor": "Test fixture",
+      "actor_kind": "agent",
+      "statement": "Assume a configured receiver for symbolic testing only.",
+      "evidence": []
+    }
+  },
+  "encoding": {
+    "source_channel_policy": "single_source_channel_to_zone",
+    "sustain_route": "manager_cc64",
+    "allocation": "lowest_available_zone_order",
+    "exhaustion": "reject_no_stealing",
+    "reservation": "through_symbolic_release_plus_declared_tail",
+    "same_pitch_policy": "new_per_note_channel_realization",
+    "tuning": "tuning:12tet-a440",
+    "neutral": {
+      "pitch_cents": 0,
+      "pressure_7bit": 0,
+      "slide_7bit": 64
+    },
+    "curve_mode": "step_only",
+    "rounding": "nearest_ties_even",
+    "max_pitch_error_cents": {
+      "n": 1,
+      "d": 8
+    },
+    "max_control_error_normalized": {
+      "n": 1,
+      "d": 254
+    },
+    "reuse_order": "old_expression_then_declared_off_cc_then_reset_setup_on"
+  }
+}

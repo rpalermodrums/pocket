@@ -120,7 +120,7 @@ def _brief(brief, tracks):
     if count < len(anchors) or count > len(eligible):
         raise PocketError('track_count cannot omit mandatory anchors or exceed eligible unique tracks')
     result['track_count'] = count
-    return result, eligible
+    return _canonical_brief_numbers(result), eligible
 
 
 # Editorial planning targets, never measurements assigned to a recording.
@@ -198,10 +198,57 @@ def _binding(track):
             'audio_sha256': track.get('audio', {}).get('identity', {}).get('sha256')}
 
 
+def _canonical_brief_numbers(brief):
+    """Normalize declared float fields in a copy; never rewrite sealed history."""
+    result = deepcopy(brief)
+    for record, keys in ((result, ('target_minutes', 'performance_fraction', 'overlap_seconds')),
+                         (result.get('intent', {}), ('target_energy', 'creativity', 'max_stretch_percent'))):
+        for key in keys:
+            value = record.get(key)
+            if type(value) in (int, float):
+                record[key] = float(value) if value else 0.0
+    return result
+
+
 def _feedback_effects(parent, bag_handle, brief):
     brief_sha = _digest_json(brief)[1]
-    applicable = [f for f in (parent or {}).get('feedback', [])
-                  if f['bag_sha256'] == bag_handle['sha256'] and f['brief_sha256'] == brief_sha]
+    legacy_same_brief = bool(parent) and _digest_json(_canonical_brief_numbers(parent['brief']))[1] == brief_sha
+    applicable = []
+    for feedback in (parent or {}).get('feedback', []):
+        if feedback['bag_sha256'] != bag_handle['sha256']:
+            continue
+        if feedback['brief_sha256'] == brief_sha:
+            applicable.append(feedback)
+            continue
+        if not legacy_same_brief:
+            continue
+        # Legacy integer JSON must keep its original binding. Only a verified
+        # source plan with an otherwise identical brief can bridge numeric spelling.
+        source = load_set_plan(feedback['source_plan'])
+        if _digest_json(_canonical_brief_numbers(source['brief']))[1] != brief_sha:
+            continue
+        route = next((r for r in source['routes'] if r['route_id'] == feedback['route_id']), None)
+        if (source['bag']['sha256'] != feedback['bag_sha256']
+                or _digest_json(source['brief'])[1] != feedback['brief_sha256']
+                or route is None or route['route_sha256'] != feedback['route_sha256']):
+            raise PocketError('Legacy feedback does not match its exact source plan binding')
+        pair = feedback.get('pair')
+        scope = feedback.get('scope')
+        if (feedback.get('track_ids') != route['track_ids']
+                or feedback.get('disposition') not in ('prefer', 'avoid')
+                or scope not in ('route', 'pair')
+                or (scope == 'route' and pair is not None)
+                or (scope == 'pair' and pair not in [list(p) for p in pairwise(route['track_ids'])])):
+            raise PocketError('Legacy feedback target does not match its exact source route')
+        source_tracks = {t['track_id']: t for t in load_record_bag(source['bag'])['tracks']}
+        binding_ids = pair if scope == 'pair' else route['track_ids']
+        if (any(key not in source_tracks for key in binding_ids)
+                or feedback.get('track_bindings') != [_binding(source_tracks[key]) for key in binding_ids]):
+            raise PocketError('Legacy feedback track bindings do not match its source bag')
+        feedback_body = {key: value for key, value in feedback.items() if key != 'feedback_id'}
+        if feedback.get('feedback_id') != 'feedback-' + _digest_json(feedback_body)[1][:20]:
+            raise PocketError('Legacy feedback identity does not match its retained fields')
+        applicable.append(feedback)
     avoid_pairs, prefer_pairs, avoid_routes, prefer_routes = set(), set(), set(), []
     # The most recent feedback on the exact same scoped target wins; history
     # remains retained and applicability is explicit.

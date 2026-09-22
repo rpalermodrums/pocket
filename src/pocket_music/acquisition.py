@@ -294,9 +294,18 @@ def acquire_source(
         decoded = stage / "decoded.wav"
         conversion = ["-ar", str(plan["sample_rate"])] if plan["sample_rate"] is not None else []
         conversion += ["-ac", str(plan["channels"])] if plan["channels"] is not None else []
+        # Matroska supplies complete Opus packets. FFmpeg 8.0.1's redundant
+        # AVParser reports a packet error on its empty EOF flush. Keep the
+        # actual decoder and every diagnostic gate strict; do not suppress logs.
+        packet_framed_opus = (probe["codec"] == "opus"
+                             and probe["container"] in ("matroska,webm", "matroska", "webm"))
+        input_options = ["-fflags", "+noparse+nofillin"] if packet_framed_opus else []
         args = [ffmpeg_executable, "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror",
-                "-err_detect", "explode", "-n", "-i", str(original), "-map", "0:a:0", "-vn",
+                "-err_detect", "explode", *input_options, "-n", "-i", str(original), "-map", "0:a:0", "-vn",
                 *conversion, "-c:a", "pcm_f32le", str(decoded)]
+        result["decode_configuration"] = ("packet_framed_matroska_opus_v1" if packet_framed_opus
+                                          else "strict_default_v1")
+        result["decode_command"] = args
         decode = _run(args, timeout=600)
         result["decode_exit_code"] = decode.returncode
         result["decode_diagnostic"] = _diagnostic(decode.stderr)

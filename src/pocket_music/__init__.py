@@ -1,5 +1,7 @@
 """Pocket: evidence-linked musical tools with lazy, offline-capable providers."""
+import sys
 from importlib import import_module
+from types import ModuleType
 
 __version__ = "0.4.0"
 
@@ -28,15 +30,46 @@ _PUBLIC = {
     "build_embedding_index": "music_embeddings", "load_embedding_index": "music_embeddings",
     "rank_embedding_query": "music_embeddings", "start_workspace": "workspace",
 }
+from .capabilities import PUBLIC_CAPABILITIES
+
+_PUBLIC.update({row[0]: row[1] for row in PUBLIC_CAPABILITIES})
+_PUBLIC['capabilities_list'] = 'capabilities'
 _MODULES = ("peek", "thread", "stitch", "weave", "whisker", "baste", "pipette")
 __all__ = ["__version__"] + list(_PUBLIC) + list(_MODULES)
+
+
+class _CallableProviderModule(ModuleType):
+    """Keep same-name provider calls and normal submodule imports compatible."""
+
+    def __call__(self, *args, **kwargs):
+        return getattr(self, self.__name__.rsplit('.', 1)[-1])(*args, **kwargs)
+
+    @property
+    def __signature__(self):
+        from inspect import signature
+        return signature(getattr(self, self.__name__.rsplit('.', 1)[-1]))
+
+
+class _PocketModule(ModuleType):
+    def __setattr__(self, name, value):
+        # Import machinery publishes submodules on their parent after loading.
+        # Several public providers deliberately share that submodule's name.
+        # Preserve the module (including monkeypatchable provider attributes)
+        # while making package-level calls independent of import order.
+        if _PUBLIC.get(name) == name and isinstance(value, ModuleType):
+            value.__class__ = _CallableProviderModule
+        super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _PocketModule
 
 
 def __getattr__(name):
     if name in _MODULES:
         value = import_module(f".{name}", __name__)
     elif name in _PUBLIC:
-        value = getattr(import_module(f".{_PUBLIC[name]}", __name__), name)
+        provider = import_module(f".{_PUBLIC[name]}", __name__)
+        value = provider if _PUBLIC[name] == name else getattr(provider, name)
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     globals()[name] = value

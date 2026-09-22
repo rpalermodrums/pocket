@@ -136,7 +136,9 @@ def test_all_mcp_aliases_share_callable_schema_annotations_and_transport():
         server = build_server()
         listed = await server.list_tools()
         tools = {tool.name: tool for tool in listed}
-        assert len(tools) == 59
+        from pocket_music.capabilities import PUBLIC_CAPABILITIES
+        # The 59 established tools/aliases remain, with additive MIDI surfaces.
+        assert len(tools) == 59 + len(PUBLIC_CAPABILITIES) + 1
         assert {'baste', 'baste_build_device', 'pipette', 'pipette_validate'} <= tools.keys()
         names = [tool.name for tool in listed]
         assert min(names.index(old) for old in MCP_PAIRS.values()) >= 39

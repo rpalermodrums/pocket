@@ -1,0 +1,226 @@
+{
+  "schema": "pocket.material/v1",
+  "material_id": "example:two-note-expression",
+  "revision_sha256": "35fc764111d0da13fe4356020eb8132fc9cf9038bff861361b9b875c04bda656",
+  "parent_revision": null,
+  "sources": [],
+  "tracks": [
+    {
+      "id": "track:external",
+      "name": "Synthetic two-note expression"
+    }
+  ],
+  "clips": [
+    {
+      "id": "clip:external",
+      "track_id": "track:external",
+      "origin": {
+        "space": "phrase_qn",
+        "n": 0,
+        "d": 1
+      },
+      "length_qn": {
+        "n": 8,
+        "d": 1
+      },
+      "loop": false,
+      "note_ids": [
+        "note:0",
+        "note:1"
+      ],
+      "event_ids": [],
+      "curve_ids": [
+        "curve:pressure",
+        "curve:pressure-a"
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note:0",
+      "voice_id": "voice:external",
+      "role_ref": "user:fixture",
+      "onset": {
+        "space": "clip_qn",
+        "n": 0,
+        "d": 1
+      },
+      "duration_qn": {
+        "n": 8,
+        "d": 1
+      },
+      "pitch": {
+        "midi_note": 60,
+        "cents_offset": 0,
+        "tuning_ref": "tuning:12tet-a440"
+      },
+      "velocity": {
+        "value": 80,
+        "domain": "midi1_7bit"
+      },
+      "release_velocity": {
+        "value": 37,
+        "domain": "midi1_7bit"
+      },
+      "channel": 1,
+      "mute": false,
+      "expression_refs": [
+        "curve:pressure",
+        "curve:pressure-a"
+      ],
+      "source_binding": null,
+      "derived_from": []
+    },
+    {
+      "id": "note:1",
+      "voice_id": "voice:external",
+      "role_ref": "user:fixture",
+      "onset": {
+        "space": "clip_qn",
+        "n": 0,
+        "d": 1
+      },
+      "duration_qn": {
+        "n": 8,
+        "d": 1
+      },
+      "pitch": {
+        "midi_note": 67,
+        "cents_offset": 0,
+        "tuning_ref": "tuning:12tet-a440"
+      },
+      "velocity": {
+        "value": 80,
+        "domain": "midi1_7bit"
+      },
+      "release_velocity": {
+        "value": 37,
+        "domain": "midi1_7bit"
+      },
+      "channel": 1,
+      "mute": false,
+      "expression_refs": [],
+      "source_binding": null,
+      "derived_from": []
+    }
+  ],
+  "events": [],
+  "curves": [
+    {
+      "schema": "pocket.curve/v1",
+      "id": "curve:pressure",
+      "curve_id": "curve:pressure",
+      "target": {
+        "kind": "per_note_pitch",
+        "target_id": "pressure:note:0",
+        "scope": "note",
+        "unit": "cents",
+        "value_min": -10000,
+        "value_max": 10000,
+        "quantized": false,
+        "values": [],
+        "ownership": "none",
+        "value_mode": "additive",
+        "note_id": "note:0",
+        "resize_policy": "stretch_with_gate"
+      },
+      "space": "note_relative_qn",
+      "interpolation": "step",
+      "points": [
+        {
+          "time": {
+            "n": 0,
+            "d": 1
+          },
+          "value": 0,
+          "order": 0
+        },
+        {
+          "time": {
+            "n": 3,
+            "d": 1
+          },
+          "value": 30,
+          "order": 1
+        },
+        {
+          "time": {
+            "n": 8,
+            "d": 1
+          },
+          "value": 0,
+          "order": 2
+        }
+      ],
+      "parent": null,
+      "context": null,
+      "executable": false,
+      "provenance": {
+        "provider": "external-fixture"
+      }
+    },
+    {
+      "schema": "pocket.curve/v1",
+      "id": "curve:pressure-a",
+      "curve_id": "curve:pressure-a",
+      "target": {
+        "kind": "per_note_pressure",
+        "target_id": "pressure:note:0",
+        "scope": "note",
+        "unit": "normalized",
+        "value_min": 0,
+        "value_max": 1,
+        "quantized": false,
+        "values": [],
+        "ownership": "none",
+        "value_mode": "absolute",
+        "note_id": "note:0",
+        "resize_policy": "stretch_with_gate"
+      },
+      "space": "note_relative_qn",
+      "interpolation": "step",
+      "points": [
+        {
+          "time": {
+            "n": 0,
+            "d": 1
+          },
+          "value": 0.15,
+          "order": 0
+        },
+        {
+          "time": {
+            "n": 3,
+            "d": 1
+          },
+          "value": 0.4,
+          "order": 1
+        },
+        {
+          "time": {
+            "n": 8,
+            "d": 1
+          },
+          "value": 0.15,
+          "order": 2
+        }
+      ],
+      "parent": null,
+      "context": null,
+      "executable": false,
+      "provenance": {
+        "provider": "external-fixture"
+      }
+    }
+  ],
+  "tempo_map_ref": null,
+  "meter_map_ref": null,
+  "coverage": {
+    "editing_allowed": true,
+    "issues": []
+  },
+  "provenance": {
+    "provider": "independently-authored-example",
+    "musical_judgment": "none"
+  }
+}

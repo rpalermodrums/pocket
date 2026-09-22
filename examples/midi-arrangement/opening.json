@@ -1,0 +1,113 @@
+{
+  "schema": "pocket.material/v1",
+  "material_id": "material:6fbbcef5-bdb5-5d1f-a344-3fd56a1cb5a5",
+  "revision_sha256": "7daedbbd965ee76ecbaaf07236a815a06cbef25ce1b79a7abb8bbb824f21daae",
+  "parent_revision": null,
+  "sources": [],
+  "tracks": [
+    {
+      "id": "track:authored",
+      "name": "Synthetic opening"
+    }
+  ],
+  "clips": [
+    {
+      "id": "clip:authored",
+      "track_id": "track:authored",
+      "origin": {
+        "space": "phrase_qn",
+        "n": 0,
+        "d": 1
+      },
+      "length_qn": {
+        "n": 8,
+        "d": 1
+      },
+      "loop": false,
+      "note_ids": [
+        "note:0",
+        "note:1"
+      ],
+      "event_ids": [],
+      "curve_ids": []
+    }
+  ],
+  "notes": [
+    {
+      "id": "note:0",
+      "voice_id": "voice:authored",
+      "role_ref": "author:synthetic-layer",
+      "onset": {
+        "space": "clip_qn",
+        "n": 0,
+        "d": 1
+      },
+      "duration_qn": {
+        "n": 1,
+        "d": 1
+      },
+      "pitch": {
+        "midi_note": 60,
+        "cents_offset": 0,
+        "tuning_ref": "tuning:12tet-a440"
+      },
+      "velocity": {
+        "value": 76,
+        "domain": "midi1_7bit"
+      },
+      "release_velocity": {
+        "value": 37,
+        "domain": "midi1_7bit"
+      },
+      "channel": 1,
+      "mute": false,
+      "expression_refs": [],
+      "source_binding": null,
+      "derived_from": []
+    },
+    {
+      "id": "note:1",
+      "voice_id": "voice:authored",
+      "role_ref": "author:synthetic-layer",
+      "onset": {
+        "space": "clip_qn",
+        "n": 3,
+        "d": 1
+      },
+      "duration_qn": {
+        "n": 1,
+        "d": 1
+      },
+      "pitch": {
+        "midi_note": 64,
+        "cents_offset": 0,
+        "tuning_ref": "tuning:12tet-a440"
+      },
+      "velocity": {
+        "value": 84,
+        "domain": "midi1_7bit"
+      },
+      "release_velocity": {
+        "value": 37,
+        "domain": "midi1_7bit"
+      },
+      "channel": 1,
+      "mute": false,
+      "expression_refs": [],
+      "source_binding": null,
+      "derived_from": []
+    }
+  ],
+  "events": [],
+  "curves": [],
+  "tempo_map_ref": null,
+  "meter_map_ref": null,
+  "coverage": {
+    "editing_allowed": true,
+    "issues": []
+  },
+  "provenance": {
+    "provider": "independently-authored-example",
+    "musical_judgment": "none"
+  }
+}

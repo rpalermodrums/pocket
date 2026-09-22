@@ -178,6 +178,11 @@ def parser() -> argparse.ArgumentParser:
             output_help = ("New index JSON path (never overwrite)" if destination == "output_path" else
                            "New artifact directory (never overwrite)") if destination else "New response JSON file; otherwise stdout"
             action.add_argument("--output", required=destination is not None, help=output_help)
+    from .capabilities import PUBLIC_CAPABILITIES
+    for name in ['capabilities_list'] + [row[0] for row in PUBLIC_CAPABILITIES]:
+        command = commands.add_parser(name.replace('_', '-'), help=name.replace('_', ' '))
+        command.add_argument('--spec', required=True, help='JSON arguments for this public capability')
+        command.add_argument('--output', help='New response JSON file; artifact destinations belong in --spec')
     workspace = commands.add_parser("workspace", help="Serve the local human workspace; Ctrl-C stops it")
     workspace.add_argument("--workspace-dir", required=True)
     workspace.add_argument("--bag-handle", help="JSON file containing a bag handle or create result")
@@ -186,6 +191,13 @@ def parser() -> argparse.ArgumentParser:
 
 
 def _dispatch(args: argparse.Namespace):
+    from .capabilities import PUBLIC_CAPABILITIES, capabilities_list
+    public = {row[0].replace('_', '-'): row for row in PUBLIC_CAPABILITIES}
+    if args.command == 'capabilities-list':
+        return capabilities_list(**_read_object(args.spec))
+    if args.command in public:
+        name, module, *_ = public[args.command]
+        return getattr(importlib.import_module(f'.{module}', __package__), name)(**_read_object(args.spec))
     if args.command == "baste":
         from .baste import observe_live
         return observe_live(timeout_seconds=args.timeout_seconds, bridge_dir=args.bridge_dir)

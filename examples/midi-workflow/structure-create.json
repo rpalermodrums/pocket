@@ -1,0 +1,252 @@
+{
+  "operation": "create",
+  "store_root": "./pocket-midi-demo",
+  "request_id": "example-structure-v1",
+  "definition": {
+    "label": "Explicit synthetic phrase relationships",
+    "materials": [
+      {
+        "key": "external",
+        "material": {
+          "schema": "pocket.material/v1",
+          "material_id": "external:example",
+          "parent_revision": null,
+          "sources": [],
+          "tracks": [
+            {
+              "id": "track:external",
+              "name": "Synthetic external phrase"
+            }
+          ],
+          "clips": [
+            {
+              "id": "clip:external",
+              "track_id": "track:external",
+              "origin": {
+                "space": "phrase_qn",
+                "n": 0,
+                "d": 1
+              },
+              "length_qn": {
+                "n": 4,
+                "d": 1
+              },
+              "loop": false,
+              "note_ids": [
+                "note:external-0",
+                "note:external-1",
+                "note:external-2"
+              ],
+              "event_ids": [],
+              "curve_ids": []
+            }
+          ],
+          "notes": [
+            {
+              "id": "note:external-0",
+              "voice_id": "voice:external",
+              "role_ref": "synthetic-example",
+              "onset": {
+                "space": "clip_qn",
+                "n": 0,
+                "d": 1
+              },
+              "duration_qn": {
+                "n": 1,
+                "d": 4
+              },
+              "pitch": {
+                "midi_note": 60,
+                "cents_offset": 0,
+                "tuning_ref": "tuning:12tet-a440"
+              },
+              "velocity": {
+                "value": 80,
+                "domain": "midi1_7bit"
+              },
+              "release_velocity": {
+                "value": 37,
+                "domain": "midi1_7bit"
+              },
+              "channel": 1,
+              "mute": false,
+              "expression_refs": [],
+              "source_binding": null,
+              "derived_from": []
+            },
+            {
+              "id": "note:external-1",
+              "voice_id": "voice:external",
+              "role_ref": "synthetic-example",
+              "onset": {
+                "space": "clip_qn",
+                "n": 1,
+                "d": 3
+              },
+              "duration_qn": {
+                "n": 1,
+                "d": 4
+              },
+              "pitch": {
+                "midi_note": 64,
+                "cents_offset": 0,
+                "tuning_ref": "tuning:12tet-a440"
+              },
+              "velocity": {
+                "value": 80,
+                "domain": "midi1_7bit"
+              },
+              "release_velocity": {
+                "value": 37,
+                "domain": "midi1_7bit"
+              },
+              "channel": 1,
+              "mute": false,
+              "expression_refs": [],
+              "source_binding": null,
+              "derived_from": []
+            },
+            {
+              "id": "note:external-2",
+              "voice_id": "voice:external",
+              "role_ref": "synthetic-example",
+              "onset": {
+                "space": "clip_qn",
+                "n": 10,
+                "d": 7
+              },
+              "duration_qn": {
+                "n": 1,
+                "d": 4
+              },
+              "pitch": {
+                "midi_note": 67,
+                "cents_offset": 0,
+                "tuning_ref": "tuning:12tet-a440"
+              },
+              "velocity": {
+                "value": 80,
+                "domain": "midi1_7bit"
+              },
+              "release_velocity": {
+                "value": 37,
+                "domain": "midi1_7bit"
+              },
+              "channel": 1,
+              "mute": false,
+              "expression_refs": [],
+              "source_binding": null,
+              "derived_from": []
+            }
+          ],
+          "events": [],
+          "curves": [],
+          "tempo_map_ref": null,
+          "meter_map_ref": null,
+          "coverage": {
+            "editing_allowed": true,
+            "issues": []
+          },
+          "provenance": {
+            "provider": "independently-authored-example",
+            "listening": "not_performed"
+          },
+          "revision_sha256": "ce725677ba5f7d3586c3001888f29edb13a1f6cc52be5a494516080a75c17cc9"
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "node_id": "entrance",
+        "kind": "phrase",
+        "label": "Two early notes",
+        "material_key": "external",
+        "material_revision": "ce725677ba5f7d3586c3001888f29edb13a1f6cc52be5a494516080a75c17cc9",
+        "clip_id": "clip:external",
+        "space": "clip_qn",
+        "span_qn": {
+          "start": {
+            "n": 0,
+            "d": 1
+          },
+          "end": {
+            "n": 1,
+            "d": 1
+          }
+        },
+        "note_ids": [
+          "note:external-0",
+          "note:external-1"
+        ],
+        "attribution": {
+          "actor": "Pocket example author",
+          "actor_kind": "agent",
+          "statement": "Synthetic phrase boundaries for demonstrating exact retrieval; no listening judgment.",
+          "uncertainty": [
+            "These declared boundaries do not assert musical usefulness."
+          ],
+          "evidence": []
+        }
+      },
+      {
+        "node_id": "later",
+        "kind": "phrase",
+        "label": "Later note",
+        "material_key": "external",
+        "material_revision": "ce725677ba5f7d3586c3001888f29edb13a1f6cc52be5a494516080a75c17cc9",
+        "clip_id": "clip:external",
+        "space": "clip_qn",
+        "span_qn": {
+          "start": {
+            "n": 1,
+            "d": 1
+          },
+          "end": {
+            "n": 4,
+            "d": 1
+          }
+        },
+        "note_ids": [
+          "note:external-2"
+        ],
+        "attribution": {
+          "actor": "Pocket example author",
+          "actor_kind": "agent",
+          "statement": "Synthetic phrase boundaries for demonstrating exact retrieval; no listening judgment.",
+          "uncertainty": [
+            "These declared boundaries do not assert musical usefulness."
+          ],
+          "evidence": []
+        }
+      }
+    ],
+    "relations": [
+      {
+        "relation_id": "declared-response",
+        "from_node": "entrance",
+        "to_node": "later",
+        "kind": "call_response",
+        "identity_claims": [],
+        "attribution": {
+          "actor": "Pocket example author",
+          "actor_kind": "agent",
+          "statement": "Synthetic phrase boundaries for demonstrating exact retrieval; no listening judgment.",
+          "uncertainty": [
+            "These declared boundaries do not assert musical usefulness."
+          ],
+          "evidence": []
+        }
+      }
+    ],
+    "attribution": {
+      "actor": "Pocket example author",
+      "actor_kind": "agent",
+      "statement": "Synthetic phrase boundaries for demonstrating exact retrieval; no listening judgment.",
+      "uncertainty": [
+        "These declared boundaries do not assert musical usefulness."
+      ],
+      "evidence": []
+    },
+    "cycle_policy": "reject"
+  }
+}

@@ -2,6 +2,8 @@
 
 `pocket_music.acquisition` discovers source candidates and acquires one explicitly chosen HTTP(S) recording URL. It does not download Spotify streams, select the first search result, infer an edition from a title, install tools, read browser cookies or normalize audio. Original recordings and private receipts belong outside Git.
 
+For authorized recording acquisition, the default is **yt-dlp with the best available audio** (`bestaudio/best`). This is already the provider's selection policy. Keep the downloaded original codec; create any WAV or MP3 listening exports separately. Selecting the best encoding does not establish that a candidate is the requested performance, mix or edition.
+
 ## Providers
 
 - `discover_sources(query, *, limit=5, executable='yt-dlp')` performs a flat metadata-only YouTube search for at most ten candidates. Returns selected metadata and `version_identity:unverified`; nothing is downloaded or automatically chosen.
@@ -12,6 +14,8 @@
 The receipt reports yt-dlp/ffmpeg/ffprobe versions, selected sanitized source metadata, original byte hash/probe, decoded byte hash/header, full finite/signal scan and exact container-versus-decoded duration discrepancy. Full extractor dumps are not published as canonical metadata because they can include signed URLs and request details. Sanitized diagnostics omit URLs. Failed staging can retain partial files for inspection; it is not a completed asset.
 
 The original container/codec bytes are retained. Decode uses strict error handling and `pcm_f32le`, with no gain, fades or normalization. Resampling/channel conversion happens only when explicitly requested. A float WAV does not improve a compressed recording. `bestaudio` is the extractor's available-format ranking, not a measured fidelity score; codec bitrate alone is not quality evidence.
+
+For a single unambiguous audio stream probed as Opus in Matroska/WebM, decode explicitly uses input `-fflags +noparse+nofillin`: the container already supplies complete packets, and FFmpeg 8.0.1's additional Opus parser reports an error on an empty EOF flush. Other codec/container combinations keep the default strict configuration. New receipts retain `decode_configuration` and the exact `decode_command`; earlier receipts remain unchanged. Decoder errors and any nonempty error diagnostic still fail, including invalid Opus packets and truncated containers. No warnings are filtered and no failed receipt is retroactively promoted. These paired flags are documented in the [FFmpeg format options](https://ffmpeg.org/ffmpeg-formats.html#Format-Options).
 
 For example, if an Opus source emits a packet error even with process exit code zero, it remains failed. Inspect the formats, explicitly select another available encoding in a new plan, and retry into a new directory. The retry does not erase the original failure or certify the alternate's listening fidelity.
 

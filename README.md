@@ -32,6 +32,18 @@ pocket --help
 
 Core analysis and selection use NumPy, SciPy and soundfile. Record selection works without a model installation. The optional `agent` extra supplies the MCP interface. Audio support follows the installed libsndfile build; decoded WAV/FLAC are recommended for exact comparisons. Live is needed to render a native project trial, not to inspect its saved arrangement.
 
+Canonical material import, analysis, generation and selected edits work without
+Live, Serum or Mido. SMF import/export uses the optional `midi` extra
+(`python -m pip install -e '.[midi]'`), including explicit CC1/CC11 step encoding.
+[MIDI and sound tools](docs/midi.md) expose the same public providers
+through CLI and MCP, with [composable examples](examples/midi-workflow/README.md)
+and an explicit [capability and acceptance matrix](docs/midi-capabilities.md).
+The [Tunji acceptance scenario](docs/tunji-acceptance.md) connects these tools
+to an editable musical handover, with source uncertainty and listening gates explicit.
+Native stock candidates support supervised import and a separately qualified
+ordinary-note writer, followed by save/reopen/render evidence;
+Serum catalog and planning do not imply a working native Serum installation.
+
 ## Plan and choose records
 
 Create a sealed bag from a user list or observed Spotify catalogue, then open its

@@ -1,0 +1,19 @@
+{
+  "operation": "create",
+  "store_root": "./pocket-midi-demo",
+  "request_id": "example-time-v1",
+  "definition": {
+    "source_context": {
+      "schema": "pocket.time-context/v1",
+      "context_id": "synthetic-declared-clock",
+      "attribution": "Synthetic declared clock; no native observation or musical judgment"
+    },
+    "domain_qn": {"start": {"n": -1, "d": 1}, "end": {"n": 9, "d": 1}},
+    "host_origin": {"arrangement_qn": {"n": 2, "d": 1}, "host_seconds": {"n": 5, "d": 7}},
+    "tempo": [
+      {"at_qn": {"n": -1, "d": 1}, "bpm": {"n": 90, "d": 1}, "interpolation": "step"},
+      {"at_qn": {"n": 3, "d": 1}, "bpm": {"n": 144, "d": 1}, "interpolation": "step"},
+      {"at_qn": {"n": 7, "d": 1}, "bpm": {"n": 75, "d": 1}, "interpolation": "step"}
+    ]
+  }
+}

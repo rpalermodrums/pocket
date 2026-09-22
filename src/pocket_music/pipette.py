@@ -253,6 +253,18 @@ def promote_trial(
             shutil.rmtree(stage)
 
 
+def __getattr__(name):
+    """Expose additive v2 promotion records through the same audited providers."""
+    if name not in {"promote_candidate", "validate_candidate_promotion"}:
+        raise AttributeError(name)
+    from . import auditions
+    return getattr(auditions, name)
+
+
+def __dir__():
+    return sorted(set(globals()) | {"promote_candidate", "validate_candidate_promotion"})
+
+
 def validate_promotion(promotion_dir: str, *, expected_lineage_sha256: str) -> dict:
     """Verify a promoted project's seal, copied evidence and normal Thread handle.
 

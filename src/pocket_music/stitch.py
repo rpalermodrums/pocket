@@ -73,6 +73,26 @@ MAX_VARIANTS = 8
 SCOPES = frozenset({"timing", "bar_phase", "flow", "tonal_overlap", "level", "preference", "other"})
 _AUDIO_PATH = "DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events/AudioClip"
 
+# Additive v3 surfaces share the public providers. The v2 API and wire records
+# retain their original semantics and MIDI/plugin restrictions.
+_V3_PROVIDERS = {
+    "candidate_prepare": "native_candidates", "candidate_inspect": "native_candidates",
+    "candidate_cancel": "native_candidates", "candidate_seal": "native_candidates",
+    "validate_candidate": "native_candidates", "audition_plan": "auditions",
+    "attach_candidate_render": "auditions", "audition_feedback": "auditions",
+}
+
+
+def __getattr__(name):
+    if name not in _V3_PROVIDERS:
+        raise AttributeError(name)
+    from importlib import import_module
+    return getattr(import_module(f".{_V3_PROVIDERS[name]}", __package__), name)
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_V3_PROVIDERS))
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()

@@ -134,7 +134,8 @@ def test_mcp_selection_schema_and_real_typed_calls(tmp_path):
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
             tools = {t.name: t for t in (await session.list_tools()).tools}
-            assert len(tools) == 59
+            from pocket_music.capabilities import PUBLIC_CAPABILITIES
+            assert len(tools) == 59 + len(PUBLIC_CAPABILITIES) + 1
             assert tools['whisker'].inputSchema['properties']['limit']['type'] == 'integer'
             assert tools['whisker_update'].inputSchema['properties']['action']['enum'] == ['choose', 'skip', 'intent']
             assert tools['execute_spotify_playlist'].annotations.openWorldHint

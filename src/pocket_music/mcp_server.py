@@ -115,9 +115,17 @@ def build_server():
         from mcp.types import ToolAnnotations
     except ImportError as exc:
         raise SystemExit("Install Pocket's agent extra: python -m pip install -e '.[agent]'") from exc
+    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.types import TextContent
+
+    # Validate new public contracts before SDK convenience coercion/pre-parsing.
+    # Legacy tools retain their established transport behavior.
+    from pydantic import TypeAdapter
+
     from .acquisition import acquire_source, discover_sources, inspect_source_formats, plan_acquisition
     from .assets import identify_audio
     from .baste import build_baste_device, observe_live
+    from .errors import PocketError
     from .feedback import query_feedback
     from .music_embeddings import build_embedding_index, model_preflight, rank_embedding_query
     from .peek import analyze_region
@@ -141,7 +149,37 @@ def build_server():
     from .weave import plan_set_routes, record_plan_feedback, replan_set
     from .whisker import prepare_session, session_options, session_snapshot, update_session
 
-    server = FastMCP("Pocket", instructions=(
+    class PocketServer(FastMCP):
+        strict_providers: dict
+
+        async def call_tool(self, name, arguments):
+            function = self.strict_providers.get(name)
+            if function is not None:
+                try:
+                    signature = inspect.signature(function)
+                    bound = signature.bind(**arguments)
+                    hints = get_type_hints(function, include_extras=True)
+                    for key, value in bound.arguments.items():
+                        TypeAdapter(hints[key]).validate_python(value, strict=True)
+                except (TypeError, ValueError) as error:
+                    raise ToolError(f'Invalid {name} arguments: {error}') from error
+                # Validation must not rewrite the original JSON before hashing:
+                # the SDK's convenience parser coerces integers to floats even
+                # after strict validation, changing content-addressed identities.
+                try:
+                    return [TextContent(type='text', text=_compact_response(function)(**arguments))]
+                except PocketError as error:
+                    raise ToolError(str(error)) from error
+            return await super().call_tool(name, arguments)
+
+        async def list_tools(self):
+            result = await super().list_tools()
+            for tool in result:
+                if tool.name in self.strict_providers:
+                    tool.inputSchema['additionalProperties'] = False
+            return result
+
+    server = PocketServer("Pocket", instructions=(
         "Use Peek for bounded source evidence, Thread for saved arrangement/source intent, "
         "Stitch for controlled transition trials, Weave for set routes and Whisker for next-record options. "
         "Baste reads fresh live state without saving; runtime IDs are not durable handles. "
@@ -235,6 +273,20 @@ def build_server():
         server.add_tool(transport, name=compatibility,
                         description=f"Compatibility alias for {primary}. {description}",
                         structured_output=structured, annotations=annotations)
+    from importlib import import_module
+
+    from .capabilities import PUBLIC_CAPABILITIES, capabilities_list
+    server.strict_providers = {'capabilities_list': capabilities_list}
+    server.add_tool(_compact_response(capabilities_list), name='capabilities_list', structured_output=False,
+                    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+                                                idempotentHint=True, openWorldHint=False))
+    for name, module, _, _, read_only, description in PUBLIC_CAPABILITIES:
+        function = getattr(import_module(f'.{module}', __package__), name)
+        server.strict_providers[name] = function
+        server.add_tool(_compact_response(function), name=name, description=description,
+                        structured_output=False,
+                        annotations=ToolAnnotations(readOnlyHint=read_only, destructiveHint=False,
+                                                    idempotentHint=True, openWorldHint=False))
     return server
 
 
