@@ -48,7 +48,9 @@ and input warnings. `practice_compare_processed` compares those derivatives;
 For a browser player, `practice_preview` creates a declared original-rate PCM16
 copy of an exact render (nearest-even rounding, no dither; unrepresentable
 samples are refused, never clamped). Its bytes are the player's input, not proof
-of device output or listening.
+of device output or listening. When someone reviewed that preview, pass it as
+`preview` to `practice_feedback`: the v2 report keeps the exact preview and the
+interval heard, plus the mapped render interval.
 See the [installed contracts guide](../../docs/contracts.md) for generated current
 Python/CLI/MCP schemas and opt-in versioned errors. The design package's proposed
 HTTP facade is not implemented.

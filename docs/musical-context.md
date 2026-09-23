@@ -48,6 +48,7 @@ native promotion stay in their adapter.
 | `pocket.practice-render/v1` | Context revision, selected occurrences, original-source/output mappings, exact output audio handle, processing profile and measured signal. |
 | `pocket.practice-comparison/v1` | Explicit baseline, alternatives, question, duration policy and signal readiness. No inferred winner. |
 | `pocket.practice-feedback/v1` | Exact comparison/render, audio hash, frame interval, actor, actor kind, note and optional decision. |
+| `pocket.practice-feedback/v2` | A v1-style report on a declared preview: exact comparison/render, the preview and its audio hash, the reviewed preview interval and the mapped render interval. |
 | `pocket.practice-preview/v1` | Declared PCM16 browser copy of one exact render: parent and audio identities, one-to-one frame mapping, conversion, quantization error and signal evidence. |
 
 Every position is scoped by the **context artifact handle plus clock ID**. Local
@@ -95,7 +96,7 @@ registrations. Existing editable installations pick up the Python/CLI changes.
 | `context_resolve` | `context`, `target_clock_id`, `target_space`, exactly one `position` or `anchor_id`; optional `occurrence_id` | Exact output coordinate and the occurrence used. |
 | `practice_render` | `request_id`, `context`, ordered `occurrence_ids` | New audio and render handles with source mappings. |
 | `practice_compare` | `request_id`, `baseline`, `variants`, `question`; optional `allow_duration_mismatch` | Verified comparison handle. |
-| `practice_feedback` | `request_id`, `comparison`, `render`, `interval_frames`, `actor`, `actor_kind`, `note`; optional `decision` | Attributed feedback handle. |
+| `practice_feedback` | `request_id`, `comparison`, `render`, `interval_frames`, `actor`, `actor_kind`, `note`; optional `decision`, `preview` | Attributed feedback handle (v2 when a preview was reviewed). |
 | `interpretation_create`, `interpretation_query`, `context_bind_interpretation` | Exact context/source clock, tagged claim, attribution; selected evidence when applicable | Immutable interpretation and v2 context binding. |
 | `context_edit`, `context_edit_query` | Explicit operations, locks, attribution or exact edit handle | Child context and revalidated preservation proof. |
 | `practice_compare_revisions` | Baseline/variants, edit receipts, full occurrence correspondence, question | Explicit cross-revision comparison. |
@@ -277,6 +278,11 @@ include an exact `render` handle, `actor`, `actor_kind`, `decision` and
 `interval_frames`; an interval requires the render handle. An audio hash alone
 cannot distinguish identical PCM belonging to different context revisions.
 
+Version 1 and version 2 reports can be mixed in one query. A v2 row adds
+`report_schema` and `reviewed_audio` (the exact preview, its audio hash and the
+preview interval); v1 rows keep their original fields, because the playback bytes
+behind a v1 report were never recorded. Filters use render frames for both.
+
 Queries validate all supplied reports before filtering. Pages retain input order,
 original intervals, text and contradictory decisions. An overlap match does not
 extend a keep decision. Cursors bind the exact input/filter identities; changed
@@ -367,3 +373,29 @@ slightly from Pocket's `k/32768` on positive samples, although every integer is
 recovered exactly. The optional `tests/test_practice_preview_browser.py`
 qualification checks this for every declared rate. Other browsers have not been
 qualified. Creating or querying a preview records no listening.
+
+### Reports about a preview
+
+Pass `preview` to `practice_feedback` when the person or agent reviewed a declared
+preview rather than the retained render. The preview must derive from the exact
+`render` named in the call, and that render must belong to the comparison; a
+preview of another variant is refused with `source_mismatch`, so a stale
+selection cannot be reported against the wrong audio. `interval_frames` then
+address the preview. The new `pocket.practice-feedback/v2` record keeps:
+
+- the comparison, render and render audio hash, as in v1;
+- `interval_frames`: the mapped render interval (identical under the one-to-one
+  preview mapping);
+- `reviewed_audio`: `kind: "declared_preview"`, the preview handle, its audio
+  hash, profile, the preview interval and `frame_mapping: "identity"`.
+
+Calls without `preview` still create v1 records with unchanged request identity,
+fields and receipt. `practice_query` on a v2 report reports the preview profile,
+the parent render's profile as `parent_profile` and `reviewed_audio`. Reading a
+v2 report revalidates the comparison, the preview and its parent; a rehashed
+record with a changed preview, interval, attribution or evidence kind is refused.
+
+`actor_kind="agent"` remains an agent report even when it names a preview. The
+provider records what the caller states about an interval; it never infers that
+anyone listened from playback, and saving a report never changes a render,
+preview or comparison.

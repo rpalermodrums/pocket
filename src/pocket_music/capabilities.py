@@ -161,9 +161,9 @@ _HANDLE_FAMILIES = {
     'practice_compare': (['pocket.practice-render/v1'], ['pocket.practice-comparison/v1']),
     'practice_envelope': (['pocket.practice-render/v1'], ['pocket.practice-envelope/v1', 'pocket.render-audio/v1']),
     'practice_compare_processed': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-processed-comparison/v1']),
-    'practice_feedback': (['pocket.practice-processed-comparison/v1', 'pocket.practice-envelope/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-render/v1'], ['pocket.practice-feedback/v1']),
-    'practice_query': (['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1'],
-                       ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1']),
+    'practice_feedback': (['pocket.practice-processed-comparison/v1', 'pocket.practice-envelope/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-preview/v1'], ['pocket.practice-feedback/v1', 'pocket.practice-feedback/v2']),
+    'practice_query': (['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2'],
+                       ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2']),
     'practice_preview': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-preview/v1', 'pocket.practice-preview-audio/v1']),
     'interpretation_create': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.audio-region-hypotheses/v1'], ['pocket.interpretation/v1']),
     'interpretation_query': (['pocket.interpretation/v1'], ['pocket.interpretation/v1']),
@@ -171,7 +171,7 @@ _HANDLE_FAMILIES = {
     'context_edit': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.interpretation/v1'], ['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.context-edit/v1']),
     'context_edit_query': (['pocket.context-edit/v1'], ['pocket.context-edit/v1']),
     'practice_compare_revisions': (['pocket.practice-render/v1', 'pocket.context-edit/v1'], ['pocket.practice-revision-comparison/v1']),
-    'practice_feedback_query': (['pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1']),
+    'practice_feedback_query': (['pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-envelope/v1', 'pocket.practice-feedback/v2'], ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v2', 'pocket.practice-preview/v1']),
     'instrument_inspect': ([], ['pocket.instrument-state/v1', 'pocket.instrument-inventory/v1', 'pocket.environment/v1']),
     'instrument_parameters': (['pocket.instrument-state/v1'], ['pocket.instrument-state/v1']),
     'preset_catalog': (['pocket.preset-catalog/v1'], ['pocket.preset-catalog/v1']),
@@ -237,7 +237,8 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
             prerequisites = ['Verified retained source regions and explicit authored coordinates; no model, instrument or DAW']
         if name == 'practice_feedback':
             profile = None
-            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1 and linear-loop-join-envelope/v1; no model, instrument or DAW']
+            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1 and linear-loop-join-envelope/v1; no model, instrument or DAW',
+                             'Optional declared browser-pcm16-original-rate/v1 preview of the selected render records the reviewed preview and interval as practice-feedback/v2']
         if name == 'practice_query':
             profile = None
             prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1, linear-loop-join-envelope/v1 and browser-pcm16-original-rate/v1 previews; no model, instrument or DAW']
