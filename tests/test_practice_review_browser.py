@@ -117,6 +117,7 @@ def test_keyboard_selection_preview_and_explicit_report(review):
         in receipt.inner_text()
     wait_until(page, "document.activeElement.id === 'receipt'")
     listed = page.locator("#reports li")
+    listed.filter(has_text="late snare more").wait_for()  # the list refreshes just after the receipt
     assert listed.count() == 1 and HOSTILE + " more" in listed.first.inner_text()
     assert page.locator("#reports img").count() == 0 and page.evaluate("window.__pwned") is None
     assert report_count(server) == 1
@@ -357,3 +358,54 @@ def test_failed_initial_verification_leaves_nothing_actionable(tmp_path, browser
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_lost_save_explanation_survives_an_unreachable_server(review):
+    server, page, _, _ = review
+    prepare(page)
+    fill_report(page)
+
+    def gone(route):
+        if route.request.method == "POST":
+            route.fetch()  # the save completes on the server
+        route.abort()  # but nothing reaches the page any more
+    page.route("**/api/review**", gone)
+    page.get_by_role("button", name="Save report").click()
+    page.locator("#error").get_by_text("may already exist").wait_for()
+    page.wait_for_timeout(300)
+    assert "may already exist" in page.locator("#error").inner_text()
+    assert report_count(server) == 1
+
+
+def test_failed_save_unlocks_the_form_before_the_refresh_returns(review):
+    from test_practice_review import preview as prepare_over_http
+    server, page, _, _ = review
+    prepare(page)
+    prepare_over_http(server, "baseline")  # the page's revision is now stale
+    fill_report(page)
+    held = hold(page, "**/api/review", "GET")
+    page.get_by_role("button", name="Save report").click()
+    page.locator("#error").get_by_text("Report not saved").wait_for()
+    wait_for_held(page, held)
+    assert not page.locator("#report-fields").is_disabled()
+    assert "Saving and verifying" not in page.locator("#save-problem").inner_text()
+    held[0].continue_()
+
+
+def test_manual_seek_or_switch_cancels_interval_playback(review):
+    _, page, _, _ = review
+    prepare(page, "Baseline")
+    prepare(page)
+    page.get_by_label("Start (seconds)").fill("0.1")
+    page.get_by_label("End (seconds)").fill("0.4")
+    page.get_by_role("button", name="Play this interval").click()
+    wait_until(page, "!document.querySelector('audio').paused")
+    page.evaluate("document.querySelector('audio').currentTime = 0.05")  # a manual seek
+    wait_until(page, "document.querySelector('audio').currentTime > 0.6")
+    page.evaluate("document.querySelector('audio').pause()")
+    page.get_by_role("button", name="Play this interval").click()
+    wait_until(page, "!document.querySelector('audio').paused")
+    page.get_by_role("radio", name="Baseline").click()  # synchronized switch pauses and cues
+    page.evaluate("document.activeElement.blur()")
+    page.keyboard.press(" ")
+    wait_until(page, "document.querySelector('audio').currentTime > 0.6")

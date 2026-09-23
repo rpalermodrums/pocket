@@ -403,3 +403,45 @@ def test_shutdown_waits_for_in_flight_preview_and_report_work(review):
     assert server.review.drain(timeout=5) is True
     assert time.monotonic() - started >= 0.3
     worker.join()
+
+
+def test_replayed_save_never_overfills_the_session_index(tmp_path, monkeypatch):
+    import pocket_music.practice_review as review_module
+    store, handle = comparison(tmp_path)
+    first, thread = serve(store, handle, tmp_path / "a")
+    try:
+        preview(first)
+        assert report(first, client_request_id="a" * 32, note="First session's words")[0] == 200
+    finally:
+        first.shutdown()
+        first.server_close()
+        thread.join(timeout=2)
+    monkeypatch.setattr(review_module, "MAX_REPORTS", 1)
+    second, thread = serve(store, handle, tmp_path / "b")
+    try:
+        preview(second)  # replays the store's completed preview for this session's index
+        assert report(second, client_request_id="b" * 32, note="Second session's words")[0] == 200
+        code, result, _ = report(second, client_request_id="a" * 32,  # a completed save from another session
+                                 note="First session's words")
+        assert code == 409 and "holds 1 reports" in result["error"], result
+        assert state(second)["report_count"] == 1  # the index is still valid
+    finally:
+        second.shutdown()
+        second.server_close()
+        thread.join(timeout=2)
+
+
+def test_preview_refusals_have_no_lifetime_attempt_limit(tmp_path):
+    import pocket_music.practice_review as review_module
+    store = str(tmp_path / "store")
+    review = review_module._Review.__new__(review_module._Review)
+    review.store = store
+    render = {"sha256": "0" * 64}
+    base = "review-preview-" + "0" * 40
+    for attempt in range(1, 41):  # simulate forty earlier failed attempts for one render
+        folder = Path(store) / "requests" / (base if attempt == 1 else f"{base}-{attempt}")
+        folder.mkdir(parents=True)
+        (folder / "journal.json").write_text(json.dumps({
+            "schema": "pocket.request-journal/v1", "request_id": folder.name, "operation": "practice_preview",
+            "input_sha256": "0" * 64, "state": "failed", "error": "synthetic refusal"}))
+    assert review._preview_request(render) == f"{base}-41"

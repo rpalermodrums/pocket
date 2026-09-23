@@ -17,6 +17,7 @@ let intervalEnd = null;    // seconds; set only by "Play this interval"
 let intervalFrame = null;  // requestAnimationFrame handle watching intervalEnd
 let ownSeek = false;       // the next seek is ours, so it must not cancel interval playback
 let provenanceToken = 0;
+let previewPending = false;
 const positions = {};
 
 class NetworkError extends Error {}
@@ -132,7 +133,7 @@ function renderPlayer() {
     + `${current.frames} frames at ${current.sample_rate} Hz.`;
   $("preview-missing").hidden = Boolean(current.preview);
   $("preview-ready").hidden = !current.preview;
-  $("make-preview").disabled = saving;
+  $("make-preview").disabled = saving || previewPending;
   const audio = $("audio");
   if (current.preview) {
     $("preview-label").textContent = `Browser preview ${current.preview.short_id}: ${current.preview.label}.`;
@@ -295,6 +296,7 @@ async function makePreview() {
   clearError();
   const requested = selectedId;
   const button = $("make-preview");
+  previewPending = true;
   button.disabled = true;
   announce("Preparing a declared browser preview…");
   try {
@@ -313,18 +315,19 @@ async function makePreview() {
   } catch (error) {
     showError(`Preview not created: ${error.message}`);
   } finally {
+    previewPending = false;
     button.disabled = saving;
   }
 }
 
-async function refresh() {
+async function refresh({quiet = false} = {}) {
   try {
     state = await api("/api/review");
     render();
   } catch {
     // The error already shown explains what happened; keep the last verified state.
   }
-  await loadReports();
+  await loadReports({quiet});
 }
 
 async function save(event) {
@@ -357,13 +360,14 @@ async function save(event) {
     await loadReports();
   } catch (error) {
     saving = false;
-    if (error instanceof NetworkError) {
-      showError("The connection dropped before Pocket confirmed this save, so the report may already exist. "
-        + "Your draft is kept: saving it again unchanged returns the same report, never a duplicate.");
-    } else {
-      showError(`Report not saved: ${error.message}`);
-    }
-    await refresh();
+    render();  // unlock the form now; the refresh below may be slow or fail
+    const explanation = error instanceof NetworkError
+      ? "The connection dropped before Pocket confirmed this save, so the report may already exist. "
+        + "Your draft is kept: saving it again unchanged returns the same report, never a duplicate."
+      : `Report not saved: ${error.message}`;
+    showError(explanation);
+    await refresh({quiet: true});
+    showError(explanation);  // a failed refresh must not replace what happened to the save
   } finally {
     saving = false;
     if (state) render();
@@ -379,7 +383,7 @@ function showReceipt(row) {
   receipt.hidden = false;
 }
 
-async function loadReports(cursor = null) {
+async function loadReports({cursor = null, quiet = false} = {}) {
   const list = $("reports");
   try {
     const page = await api(`/api/review/reports${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
@@ -397,10 +401,10 @@ async function loadReports(cursor = null) {
     }
     const more = $("more-reports");
     more.hidden = !page.next_cursor;
-    more.onclick = () => loadReports(page.next_cursor);
+    more.onclick = () => loadReports({cursor: page.next_cursor});
     if (!page.total) list.replaceChildren(element("li", "No reports saved yet."));
   } catch (error) {
-    showError(`Reports could not be verified: ${error.message}`);
+    if (!quiet) showError(`Reports could not be verified: ${error.message}`);
   }
 }
 
@@ -495,6 +499,10 @@ function wire() {
   audio.addEventListener("pause", () => {
     positions[selectedId] = audio.currentTime;
     stopInterval();
+  });
+  audio.addEventListener("timeupdate", () => {
+    // Fallback when animation frames are suspended (hidden tabs); normally watchInterval stops first.
+    if (intervalEnd !== null && audio.currentTime >= intervalEnd) audio.pause();
   });
   audio.addEventListener("seeking", () => {
     if (ownSeek) ownSeek = false;

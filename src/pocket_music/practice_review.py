@@ -29,7 +29,6 @@ SESSION_SCHEMA = "pocket.practice-review-session/v1"
 PREVIEW_PROFILE = "browser-pcm16-original-rate/v1"
 MAX_REPORTS = 128
 MAX_BODY = 64 * 1024
-MAX_PREVIEW_ATTEMPTS = 32
 _WEB = Path(__file__).parent / "web" / "practice-review"
 _FILES = {"/": ("index.html", "text/html; charset=utf-8"),
           "/review.js": ("review.js", "text/javascript; charset=utf-8"),
@@ -38,7 +37,7 @@ _FILES = {"/": ("index.html", "text/html; charset=utf-8"),
 _ITEM = re.compile(r"(baseline|variant-[1-8])")
 _CLIENT_REQUEST = re.compile(r"[0-9a-f]{32}")
 _RANGE = re.compile(r"bytes=(\d{0,18})-(\d{0,18})")
-_ABSOLUTE_PATH = re.compile(r"(?<![\w.-])/[^\s'\"]+")
+_ABSOLUTE_PATH = re.compile(r"(?<![\w.>-])/[^\s'\"]+")
 COMPARISON_LABELS = {"pocket.practice-comparison/v1": "Same context revision",
                      "pocket.practice-revision-comparison/v1": "Edited revisions with explicit correspondence",
                      "pocket.practice-processed-comparison/v1": "Declared processing of one exact baseline"}
@@ -275,18 +274,23 @@ class _Review:
         A failed or interrupted journal is left untouched for inspection, never
         replayed, deleted or unlocked. Because a preview is a deterministic,
         content-addressed derivative, the next numbered request ID can safely run the
-        provider again, so a refusal is explained again and an interrupted attempt
-        does not block the item forever.
+        provider again, so a refusal is explained on every attempt and an interrupted
+        attempt never blocks the item.
         """
         from .artifact_store import request_status
         base = "review-preview-" + render["sha256"][:40]
-        for attempt in range(1, MAX_PREVIEW_ATTEMPTS + 1):
-            request_id = base if attempt == 1 else f"{base}-{attempt}"
+        folder = Path(self.store) / "requests"
+        numbers = [1] if (folder / base).exists() else []
+        if folder.is_dir():
+            numbers += [int(name.rsplit("-", 1)[1]) for name in os.listdir(folder)
+                        if re.fullmatch(re.escape(base) + r"-[0-9]{1,9}", name)]
+        for number in sorted(numbers):
+            request_id = base if number == 1 else f"{base}-{number}"
             status = request_status(self.store, request_id)
-            if status["journal_state"] in ("not_found", "complete") and not status["coverage"]["lock_present"]:
+            if status["journal_state"] == "complete" and not status["coverage"]["lock_present"]:
                 return request_id
-        raise RequestRefused(409, f"This item's preview did not complete in {MAX_PREVIEW_ATTEMPTS} attempts; "
-                                  "inspect the retained request journals")
+        following = max(numbers, default=0) + 1
+        return base if following == 1 else f"{base}-{following}"
 
     def _expect(self, data):
         state = self.read()
@@ -327,6 +331,9 @@ class _Review:
                                        data.get("decision"), preview=preview[0])
             handle = result["artifacts"]["feedback"]
             if handle not in state["reports"]:
+                if len(state["reports"]) >= MAX_REPORTS:
+                    raise RequestRefused(409, f"This review session holds {MAX_REPORTS} reports; the report is "
+                                              "retained in the store but cannot be listed here")
                 state["reports"].append(handle)
                 state["revision"] += 1
                 self.write(state)
@@ -346,11 +353,13 @@ class _Review:
                 "complete": result["complete"], "status": result["status"]}
 
     def drain(self, timeout=120):
-        """Wait for in-flight preview and report work so Ctrl-C never leaves a half request."""
+        """Wait (at most `timeout` seconds in total) for in-flight preview and report work."""
+        import time
+        deadline = time.monotonic() + timeout
         if not self.preview_slot.acquire(timeout=timeout):
             return False
         self.preview_slot.release()
-        if not self.mutex.acquire(timeout=timeout):
+        if not self.mutex.acquire(timeout=max(0.0, deadline - time.monotonic())):
             return False
         self.mutex.release()
         return True
