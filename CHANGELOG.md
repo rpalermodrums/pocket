@@ -11,13 +11,21 @@ Changes are recorded from repository history. Package versions and serialized ar
 - Exact practice renders, revision comparisons, scoped attributed feedback and an explicit linear join-envelope profile.
 - Installed Python/CLI/MCP input contract export and opt-in machine-readable errors.
 - Public documentation site source, generated provider reference, contribution/conduct/security policies and an allowlisted publishing build.
+- `practice_preview`: a declared `pocket.practice-preview/v1` browser copy of an exact practice render under `browser-pcm16-original-rate/v1` (original rate, PCM16, nearest rounding with ties to even; no dither, gain, clamping or resampling). Unrepresentable samples and undeclared sample rates are refused. Restart a running MCP server to register the new tool.
+- `practice_feedback` accepts an optional `preview` and then writes `pocket.practice-feedback/v2`, recording the exact preview and interval reviewed. Calls without `preview` still write unchanged v1 reports. `practice_feedback_query` accepts mixed v1/v2 reports and adds `report_schema` and `reviewed_audio` to v2 rows only; `practice_query` also reads previews and v2 reports.
+- `pocket practice-review`: a loopback-only [practice review page](docs/practice-review.md) that plays one retained comparison through declared previews and saves explicitly attributed interval reports.
+
+### Changed
+
+- Within one practice provider call (and `context_edit_query`), artifact bytes and hash checks already verified earlier in that call are reused, within per-call memory bounds, instead of being read and hashed again. Nothing verified is trusted across calls.
 
 ### Fixed
 
 - Practice feedback queries report the processing profile of the audio actually reviewed.
 - CI installs the optional MIDI dependency used by its test suite.
+- The selection workspace refuses a non-ASCII `X-Pocket-CSRF` header with 403 instead of dropping the connection.
 
-The music-tool foundation landed in [PR #2](https://github.com/rpalermodrums/pocket/pull/2). It preserves legacy defaults; no human musical approval or new native qualification is implied. The public-site and policy entries describe the changes accompanying this changelog, pending merge/publication.
+The music-tool foundation landed in [PR #2](https://github.com/rpalermodrums/pocket/pull/2). It preserves legacy defaults; no human musical approval or new native qualification is implied. The public-site and policy entries landed in [PR #3](https://github.com/rpalermodrums/pocket/pull/3). Browser previews, v2 reports and the practice review page come from [PR #4](https://github.com/rpalermodrums/pocket/pull/4); no human listening, device-output check or native qualification has been performed with them.
 
 ## 0.4 development milestone
 

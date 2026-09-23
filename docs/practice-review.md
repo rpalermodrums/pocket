@@ -23,6 +23,21 @@ On Ctrl-C it waits for a preview or report that is still being written before
 exiting. `--port 0` chooses a free port. Add `--reports-file reports.json` (a JSON list of
 feedback handles or receipts) to show existing reports, for example an agent's
 technical report, beside new ones; every one must belong to the selected comparison.
+The server locks its session directory with POSIX `fcntl` locking, so it does not
+run on Windows.
+
+The [first experiment](getting-started.md) keeps its comparison receipt under
+`comparison` in `results.json`. To review its synthetic tones:
+
+```sh
+python -c "import json, sys; json.dump(json.load(open(sys.argv[1]))['comparison'], open(sys.argv[2], 'x'))" \
+  private/first-practice/results.json private/first-practice/comparison.json
+pocket practice-review --store-root private/first-practice/store \
+  --comparison-file private/first-practice/comparison.json \
+  --session-dir private/first-practice/review --port 0
+```
+
+A report about those tones exercises the page; it is not a musical listening test.
 
 The Python entry point is:
 

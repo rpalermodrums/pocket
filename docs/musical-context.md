@@ -84,7 +84,9 @@ remains an interpretation.
 The providers are lazy root exports from `pocket_music`. MCP uses the same
 underscore names. CLI uses hyphens and accepts the same argument object through
 `--spec path.json`. The existing `PUBLIC_CAPABILITIES` registry registers all three
-surfaces; there is no additional HTTP implementation.
+surfaces; there is no HTTP API for these providers. The loopback
+[practice review page](practice-review.md) is a separate local browser interface
+that calls them.
 
 An already-running Pocket MCP process needs a restart to load the new provider
 registrations. Existing editable installations pick up the Python/CLI changes.
