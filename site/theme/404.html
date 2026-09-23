@@ -1,0 +1,12 @@
+{% extends "main.html" %}
+{% block body_class %} not-found{% endblock %}
+{% block content %}
+<article class="not-found-page">
+  <img src="{{ 'assets/pip.svg' | url }}" width="160" height="160" alt="">
+  <p class="eyebrow">404 · Page not found</p>
+  <h1>Pip looked in every pocket</h1>
+  <p>This page isn’t here. It may have moved when a tool was renamed, or the link may have a typo.</p>
+  <p><a class="primary-link" href="{{ nav.homepage.url | url }}">Go to the home page</a> <a class="secondary-link" href="{{ 'docs/' | url }}">Browse all guides</a></p>
+  <p>You can also search the docs from the sidebar.</p>
+</article>
+{% endblock %}

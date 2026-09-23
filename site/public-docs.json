@@ -14,6 +14,10 @@
       "target": "docs/acquisition.md"
     },
     {
+      "source": "docs/agents.md",
+      "target": "docs/agents.md"
+    },
+    {
       "source": "docs/architecture.md",
       "target": "docs/architecture.md"
     },
@@ -24,6 +28,10 @@
     {
       "source": "docs/compatibility.md",
       "target": "docs/compatibility.md"
+    },
+    {
+      "source": "docs/concepts.md",
+      "target": "docs/concepts.md"
     },
     {
       "source": "docs/contracts.md",
@@ -168,6 +176,10 @@
       "target": "assets/pip.svg"
     },
     {
+      "source": "assets/social-card.png",
+      "target": "assets/social-card.png"
+    },
+    {
       "source": "assets/fonts/AtkinsonHyperlegibleNext.ttf",
       "target": "assets/fonts/AtkinsonHyperlegibleNext.ttf"
     },
@@ -179,82 +191,119 @@
   "theme": [
     "site/theme/main.html",
     "site/theme/style.css",
-    "site/theme/app.js"
+    "site/theme/app.js",
+    "site/theme/404.html"
   ],
   "nav": [
     {
       "Home": "index.md"
     },
     {
-      "Documentation": [
+      "Start here": [
         {
-          "Getting started": "docs/getting-started.md"
+          "Your first experiment": "docs/getting-started.md"
+        },
+        {
+          "Key ideas": "docs/concepts.md"
+        },
+        {
+          "Use Pocket with an agent": "docs/agents.md"
         },
         {
           "All guides": "docs/README.md"
-        },
-        {
-          "Work with an agent": "skills/pocket/SKILL.md"
         }
       ]
     },
     {
-      "Core tools": [
+      "Practice and listening": [
         {
-          "Context & practice": "docs/musical-context.md"
+          "Musical context & practice": "docs/musical-context.md"
         },
         {
           "Practice review": "docs/practice-review.md"
         },
         {
-          "Inspect audio": "docs/peek.md"
-        },
-        {
-          "MIDI & sound": "docs/midi.md"
-        },
-        {
-          "Feedback": "docs/feedback.md"
+          "Peek: inspect a recording": "docs/peek.md"
         }
       ]
     },
     {
-      "Adapters": [
+      "MIDI and sound": [
         {
-          "Selection": "docs/selection-interfaces.md"
+          "MIDI & sound tools": "docs/midi.md"
+        },
+        {
+          "What's supported": "docs/midi-capabilities.md"
+        }
+      ]
+    },
+    {
+      "Ableton Live": [
+        {
+          "Thread: read a saved set": "docs/thread.md"
+        },
+        {
+          "Stitch: compare a transition": "docs/stitch.md"
+        },
+        {
+          "Listening notes": "docs/feedback.md"
+        },
+        {
+          "Baste: observe the open set": "docs/baste.md"
+        },
+        {
+          "Pipette: keep a trial": "docs/pipette.md"
+        }
+      ]
+    },
+    {
+      "Records and sets": [
+        {
+          "Choosing records": "docs/selection-interfaces.md"
+        },
+        {
+          "Record bags": "docs/record-bag.md"
+        },
+        {
+          "Weave: plan a set": "docs/weave.md"
+        },
+        {
+          "Whisker: what's next": "docs/whisker.md"
         },
         {
           "Local workspace": "docs/workspace.md"
+        }
+      ]
+    },
+    {
+      "Optional connections": [
+        {
+          "Recording acquisition": "docs/acquisition.md"
         },
         {
-          "Saved sets": "docs/thread.md"
+          "Spotify": "docs/spotify-bridge.md"
         },
         {
-          "Native comparisons": "docs/stitch.md"
-        },
-        {
-          "Observe Live": "docs/baste.md"
-        },
-        {
-          "Keep a trial": "docs/pipette.md"
+          "Music embeddings": "docs/music-embeddings.md"
         }
       ]
     },
     {
       "Reference": [
         {
-          "Callable providers": "reference/index.md"
+          "Provider reference": "reference/index.md"
         },
         {
           "Contracts & errors": "docs/contracts.md"
         },
         {
-          "Capabilities & limits": "docs/midi-capabilities.md"
-        },
-        {
           "Architecture": "docs/architecture.md"
         },
         {
-          "Compatibility": "docs/compatibility.md"
+          "Name changes": "docs/compatibility.md"
+        },
+        {
+          "Agent skill": "skills/pocket/SKILL.md"
         }
       ]
     },
@@ -267,16 +316,22 @@
           "Changelog": "CHANGELOG.md"
         },
         {
+          "Release notes 0.4": "docs/releases/0.4.0.md"
+        },
+        {
+          "Release notes 0.2": "docs/releases/0.2.0.md"
+        },
+        {
           "Contributing": "CONTRIBUTING.md"
         },
         {
-          "Conduct": "CODE_OF_CONDUCT.md"
+          "Code of conduct": "CODE_OF_CONDUCT.md"
         },
         {
           "Security": "SECURITY.md"
         },
         {
-          "Site maintenance": "docs/site-maintenance.md"
+          "Maintaining the site": "docs/site-maintenance.md"
         },
         {
           "License": "license.md"

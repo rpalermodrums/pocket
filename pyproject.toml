@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pocket-music"
 version = "0.4.0"
-description = "The musical toolkit for agents: record selection, evidence-linked maps and transition experiments."
+description = "The musical toolkit for agents: composable tools for recordings, MIDI and arrangements."
 requires-python = ">=3.11"
 readme = "README.md"
 dependencies = ["numpy>=1.26,<3", "scipy>=1.12,<2", "soundfile>=0.12,<1", "typing_extensions>=4.9,<5"]

@@ -1,6 +1,14 @@
 # Optional local music embeddings
 
-This adapter is an experiment in semantic record/passages retrieval. It does not establish a downbeat, key, phrase boundary, isolated instrument, or a good mix. Whisker and Weave remain usable without it.
+> **In brief.** An optional, local model that turns short passages and text
+> descriptions into vectors, so you can ask for records that sound roughly like
+> "warm-up" or like another passage. It's coarse "sounds like" evidence. It
+> doesn't establish a downbeat, a key, a phrase boundary, an isolated instrument
+> or a good mix.
+>
+> **You need** a separate Python environment with the pinned model files, which
+> you set up yourself. [Weave](weave.md) and [Whisker](whisker.md) work fine
+> without it.
 
 ## Provider and preparation
 
@@ -38,10 +46,10 @@ A `pocket.music-embedding/v1` receipt records source identity/region or query ha
 
 For an isolated process, `python -m pocket_music.embedding_worker --model-dir ... --request request.json --output-dir new-directory` accepts 1–100 audio/text requests and writes receipts/index. Request audio entries use the method arguments above (`path`, `start_frame`, `frames`, `source_origin`, optional expected hash). Text entries use `query` and `text_origin`. Existing outputs are not overwritten. The worker does not download or upload anything.
 
-## Evidence and limits from the initial local pilot
+## Why this model, and its limits
 
-The first tested `larger_clap_music` checkpoint failed to discriminate even contrasting descriptive queries: text vectors clustered near cosine 0.999 despite matching the official processor path, valid masks, complete checkpoint loading and an eager-attention check. It is **not** an eligible production provider; its earlier receipts/indices fail current model-identity validation. No silent reuse across checkpoints is permitted.
+An earlier candidate, the `larger_clap_music` checkpoint, couldn't tell even contrasting descriptions apart: its text vectors clustered near cosine 0.999, even with the official processor path, valid masks, a complete checkpoint load and an eager-attention check. It is **not** an eligible provider, and receipts or indices made with it fail current model-identity validation. Results are never reused across checkpoints.
 
-The selected unfused control produced distinct descriptive text vectors (pairwise cosine approximately 0.113–0.501) and different rankings for jazz, rap, breakbeat and atmospheric descriptions across four bounded diagnostic passages. This is a useful discrimination sanity check, not a listener-rated musical recommendation pass. Agent-authored diagnostic descriptions were explicitly labeled as such in private evidence; the public text API retains its user-authored gate. The bounded production-path smoke uses eight independently sourced recordings and exact source windows. Timings, hashes and ranking outputs remain outside Git. Do not present successful tensor execution as a complete musical-quality benchmark.
+The selected unfused model produced distinct text vectors for different descriptions (pairwise cosine roughly 0.113–0.501) and ranked four short diagnostic passages differently for jazz, rap, breakbeat and atmospheric descriptions. That is a sanity check that the model discriminates at all. It is not a listener-rated recommendation test. The diagnostic descriptions were written by an agent and labeled as such; the public text API still accepts only user-authored text. The full path was also run on eight independently sourced recordings with exact source windows. Successful tensor execution is not a musical-quality benchmark.
 
 Useful next evaluation is listener-rated, descriptive intent retrieval against a metadata/annotation baseline, using held-out passages. No training, remote audio service, automatic cue edit, or global correctness claim is included in this provider.
