@@ -95,6 +95,11 @@ registrations. Existing editable installations pick up the Python/CLI changes.
 | `practice_render` | `request_id`, `context`, ordered `occurrence_ids` | New audio and render handles with source mappings. |
 | `practice_compare` | `request_id`, `baseline`, `variants`, `question`; optional `allow_duration_mismatch` | Verified comparison handle. |
 | `practice_feedback` | `request_id`, `comparison`, `render`, `interval_frames`, `actor`, `actor_kind`, `note`; optional `decision` | Attributed feedback handle. |
+| `interpretation_create`, `interpretation_query`, `context_bind_interpretation` | Exact context/source clock, tagged claim, attribution; selected evidence when applicable | Immutable interpretation and v2 context binding. |
+| `context_edit`, `context_edit_query` | Explicit operations, locks, attribution or exact edit handle | Child context and revalidated preservation proof. |
+| `practice_compare_revisions` | Baseline/variants, edit receipts, full occurrence correspondence, question | Explicit cross-revision comparison. |
+| `practice_feedback_query` | Explicit feedback handles; optional exact render, interval and report filters | Bounded original reports without consensus. |
+| `practice_envelope`, `practice_compare_processed` | Exact baseline, declared joins and attribution; or derivatives and question | Explicit processing and baseline comparison. |
 | `practice_query` | `artifact`; optional `section`, `offset`, `limit` | Revalidated render/comparison/feedback summary, or paged render mappings. |
 
 `MusicalContextDefinition` and nested transport types live in `context_types.py`.
@@ -167,7 +172,7 @@ uses `actor_kind="agent"`. Creating feedback never changes a render's stored
   match. Output uses DOUBLE WAV to preserve decoded source samples exactly.
 - Comparisons: one baseline plus 1–8 distinct render handles from one exact
   context revision. Sample rate/channel layout must match. Unequal durations
-  require explicit opt-in. Cross-revision edit comparisons need a later profile.
+  require explicit opt-in. Cross-revision edits use the explicit comparison profile described below.
 - Signal readiness: decoded samples, duration, sample peak/RMS, overload and
   silence checks. No LUFS, true-peak, musical-quality or listening claim follows.
 - Revalidation: source graphs, mapping and decoded output samples are rechecked.
@@ -279,3 +284,43 @@ truncating its note.
 The shared selection/pagination implementation also serves native
 `audition_feedback_query`; its existing fields and cursor behavior are preserved.
 Native attachment validation and standalone render validation remain separate.
+
+## Explicit join envelopes
+
+`practice_envelope(store_root, request_id, render, joins, attribution)` makes a
+new `pocket.practice-envelope/v1` derivative of an exact PCM render. Each join
+specifies `boundary_frame`, `fade_out_frames`, `fade_in_frames`, and
+`curve: "linear"`. The boundary must be an actual join between retained output
+occurrences. It is not a detected beat, phrase boundary or clip-start assumption.
+
+For three frames per side, gains across the join are `[1, 0.5, 0, 0, 0.5, 1]`.
+One-frame sides are zero. Windows are ordered, nonoverlapping, in bounds, and at
+most 250 ms per side; there are at most 32 joins. Rate, channels, sample count,
+source mapping and timing stay fixed. The profile performs no overlap mixing,
+crossfade, normalization, resampling, stretching or implicit edge processing.
+Chained derivatives are refused; every variant starts from the exact baseline.
+
+The baseline remains immutable. The derivative retains its input signal checks,
+new output checks, full parameters and attribution. Revalidation recomputes every
+gain and verifies the decoded DOUBLE output. Samples outside the windows remain
+exact; processed samples are explicitly distinguished from source-exact audio.
+
+`practice_compare_processed(store_root, request_id, baseline, variants, question)`
+compares one exact baseline with 1–8 derivatives of that exact render. It creates
+`pocket.practice-processed-comparison/v1`. Existing same-context and cross-revision
+comparison profiles keep their original contracts. `practice_query`,
+`practice_feedback` and `practice_feedback_query` also accept the new families;
+reports retain exact render identity and output intervals. Input warnings remain
+visible even when an envelope reduces an output peak. No winner is selected.
+
+For a retained output of the recording recipe, run:
+
+```sh
+python examples/exercise_join_envelope.py private/audio/practice-run private/audio/join-experiment
+```
+
+This creates a new store, 5/15 ms variants, numerical checks and `listen.html`.
+Its FLOAT32 browser previews record their rounding error separately from the
+DOUBLE evidence. These are technical repetition joins, not selected phrase loops
+or listening-approved defaults. See [contract export and errors](contracts.md) for
+machine schemas generated from the installed providers.

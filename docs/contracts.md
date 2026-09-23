@@ -2,7 +2,7 @@
 
 Python, flat CLI commands and registered MCP tools call the same providers in
 `PUBLIC_CAPABILITIES`. Discover supported artifact schemas and profiles with
-`capabilities`; a proposed architecture facade is not an installed API.
+`capabilities_list`; a proposed architecture facade is not an installed API.
 Pocket does not currently implement an HTTP server or OpenAPI surface.
 
 With the optional `agent` extra installed, generate contracts into a new folder:

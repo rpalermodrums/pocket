@@ -32,6 +32,23 @@ evidence with `practice_query`. Record actual attributed reports using
 separate from human listening. Signal readiness never establishes musical approval.
 The same public calls are available through CLI (`--spec`) and MCP.
 
+Select retained evidence with `interpretation_create`, then bind that exact
+interpretation through `context_bind_interpretation`. Keep abstention unresolved;
+an onset is not automatically bar one. Use `context_edit` for explicit source
+slips, timeline shifts and anchor rebindings, naming linked occurrences and locks.
+Read the preservation receipt with `context_edit_query`. For child revisions use
+`practice_compare_revisions` with exact edit lineage and full output occurrence
+correspondence. Retrieve original, potentially contradictory reports through
+`practice_feedback_query`; do not infer preferences from filtered notes.
+
+Only when explicitly requested, `practice_envelope` applies a declared linear
+fade-out/in at an actual occurrence join. It retains the exact baseline, timing
+and input warnings. `practice_compare_processed` compares those derivatives;
+5/15 ms example variants are technical probes, not approved musical defaults.
+See the [installed contracts guide](../../docs/contracts.md) for generated current
+Python/CLI/MCP schemas and opt-in versioned errors. The design package's proposed
+HTTP facade is not implemented.
+
 The [synthetic demo](../../examples/practice_context.py) exercises the complete
 file-only path. It does not qualify acoustic musical usefulness, native behavior
 or real-time accompaniment. Discover installed operations through `capabilities_list`;

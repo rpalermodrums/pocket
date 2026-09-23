@@ -210,7 +210,18 @@ def practice_compare(store_root: str, request_id: str, baseline: ArtifactHandle,
     return run_request(store_root, request_id, "practice_compare", inputs, work)
 
 
+def load_practice_audio(handle, store_root):
+    """Dispatch declared audio profiles without broadening the exact PCM reader."""
+    if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.practice-envelope/v1":
+        from .practice_envelopes import load_practice_envelope
+        return load_practice_envelope(handle, store_root)
+    return load_practice_render(handle, store_root)
+
+
 def load_comparison(handle, store_root):
+    if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.practice-processed-comparison/v1":
+        from .practice_envelopes import load_processed_comparison
+        return load_processed_comparison(handle, store_root)
     if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.practice-revision-comparison/v1":
         from .practice_comparisons import load_revision_comparison
         return load_revision_comparison(handle, store_root)
@@ -281,20 +292,22 @@ def practice_query(store_root: str, artifact: ArtifactHandle,
     _verify_handles(artifact, store_root)
     record = read_record(artifact, store_root)
     schema = record["schema"]
-    if schema == RENDER_SCHEMA:
-        record = load_practice_render(artifact, store_root)
-    elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1"):
+    if schema in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
+        record = load_practice_audio(artifact, store_root)
+    elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1", "pocket.practice-processed-comparison/v1"):
         record, _ = load_comparison(artifact, store_root)
     elif schema == FEEDBACK_SCHEMA:
         record, _ = load_practice_feedback(artifact, store_root)
     else:
         raise PocketError("Unknown practice artifact schema")
-    common = {"artifacts": {"artifact": artifact}, "coverage": {"profile": PROFILE, "provider_playback": False}}
+    profile = ("linear-loop-join-envelope/v1" if schema in
+               ("pocket.practice-envelope/v1", "pocket.practice-processed-comparison/v1") else PROFILE)
+    common = {"artifacts": {"artifact": artifact}, "coverage": {"profile": profile, "provider_playback": False}}
     if section == "summary":
         if offset:
             raise PocketError("Summary offset must be zero")
         return context_receipt(**common, summary={k: v for k, v in record.items() if k != "mappings"})
-    if schema != RENDER_SCHEMA:
+    if schema not in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
         raise PocketError("Only a render contains source mappings")
     rows = record["mappings"][offset:offset + limit]
     return context_receipt(**common, rows=rows, total=len(record["mappings"]), offset=offset,
