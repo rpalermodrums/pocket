@@ -87,7 +87,7 @@ def _apply(parent, parent_handle, operations, locks, author, store_root):
             anchors = _objects(definition, "anchors")
             if op["anchor_id"] not in anchors:
                 raise PocketError("Anchor rebind requires an existing exact anchor identity")
-            key = ("anchors", op["anchor_id"])
+            key = ("anchors", op["anchor_id"], "binding")
             if key in touched:
                 raise PocketError("An anchor may be rebound only once per edit")
             touched.add(key)
@@ -117,7 +117,7 @@ def _apply(parent, parent_handle, operations, locks, author, store_root):
         for identifier in op["occurrence_ids"]:
             if identifier not in objects:
                 raise PocketError("Unknown occurrence in context edit")
-            key = (identifier, field)
+            key = ("occurrences", identifier, field)
             if key in touched:
                 raise PocketError("Each occurrence field may change only once per edit")
             touched.add(key)

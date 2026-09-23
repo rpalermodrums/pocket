@@ -145,3 +145,21 @@ def test_edit_reports_unsupported_tempo_realization_without_rendering(tmp_path):
     assert result['renderability'][0]['exact_pcm_compatible'] is False
     assert 'stretch' in result['renderability'][0]['reason']
     assert not result['coverage']['audio_rendered']
+
+
+def test_edit_field_tracking_namespaces_anchor_and_occurrence_ids(tmp_path):
+    from pocket_music.musical_context import context_create
+    store, _, definition, _, _ = fixture(tmp_path)
+    definition['occurrences'][0]['occurrence_id'] = 'anchors'
+    definition['anchors'][0]['anchor_id'] = 'source_span_frames'
+    parent = context_create(store, 'namespaced', definition)['artifacts']['context']
+    author = definition['attribution']
+    choice = interpretation_create(store, 'namespace-choice', parent, 'recording',
+        {'kind': 'onset', 'status': 'authored', 'source_frame_q': q(4100)}, author)['artifacts']['interpretation']
+    edited = context_edit(store, 'namespace-edit', parent,
+        [slip(['anchors']), {'kind': 'anchor_rebind', 'anchor_id': 'source_span_frames',
+                            'interpretation': choice, 'binding_id': 'rebound'}], [], author)
+    context_edit_query(store, edited['artifacts']['edit'])
+    child = read_record(edited['artifacts']['context'], store)['definition']
+    assert child['occurrences'][0]['source_span_frames'] == [2100, 10100]
+    assert child['anchors'][0]['position']['value'] == 4100

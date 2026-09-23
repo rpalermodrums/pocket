@@ -82,6 +82,11 @@ def test_exact_render_filter_does_not_conflate_identical_pcm(tmp_path):
     baseline_context = read_record(args['baseline'], store)['context']
     moved = context_edit(store, 'same-pcm', baseline_context, [shift(['first', 'again'], q(-1))], [], definition['attribution'])
     render = practice_render(store, 'same-pcm-render', moved['artifacts']['context'], ['first', 'again'])['artifacts']['render']
+    # Container metadata may include a write timestamp. Reuse the same verified
+    # audio artifact to exercise identical bytes under distinct render identities.
+    same_audio = read_record(render, store)
+    same_audio['audio'] = read_record(args['baseline'], store)['audio']
+    render = put_record(same_audio, store)
     comparison = practice_compare_revisions(**{**args, 'request_id': 'same-pcm-compare', 'variants': [render],
         'edit_receipts': [moved['artifacts']['edit']],
         'correspondence': [{'variant': render, 'pairs': args['correspondence'][0]['pairs']}]})['artifacts']['comparison']
