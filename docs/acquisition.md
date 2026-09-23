@@ -33,6 +33,15 @@ The two optional command dependencies are yt-dlp and FFmpeg (ffmpeg/ffprobe); Po
 
 ## Testing
 
+Before a real acquisition, verify the chosen executables with `--version`, check
+that their optional JavaScript runtime is reachable, and inspect the chosen URL's
+formats through `inspect_source_formats`. Use an explicitly selected isolated
+environment when updating yt-dlp; Pocket does not upgrade a global installation.
+Pass that environment's executable to `acquire_source`, and keep its version in
+the receipt. If a download fails, retain its failed output and retry with a new
+plan/output directory after diagnosing the cause. A newer extractor resolving an
+HTTP error is operational evidence, not proof of recording identity or fidelity.
+
 Tests generate media at runtime. Injected runner cases exercise partial download, wrong source, malformed metadata, decode failure, silent output, stale plan and conversion mismatch. A real optional integration test serves a generated mono 16 kHz WAV over localhost, runs yt-dlp + ffmpeg/ffprobe, then verifies original hash, exact float samples, complete frames and unchanged rate/channel count. It skips if binaries are unavailable and never fetches a public recording. No provider test authenticates or writes Spotify.
 
 Primary documentation: [yt-dlp format selection](https://github.com/yt-dlp/yt-dlp#format-selection), [options and embedding](https://github.com/yt-dlp/yt-dlp#usage-and-options), [dependencies](https://github.com/yt-dlp/yt-dlp#dependencies), [EJS](https://github.com/yt-dlp/yt-dlp/wiki/EJS).

@@ -127,6 +127,5 @@ Thread handles. Never label Live's normalization or other edits as the same hash
 Private paths, recordings, operator observations and listener notes stay outside
 the repository.
 
-See [acceptance evidence](baste-pipette-acceptance.md), [the plan](baste-pipette-plan.md),
-[Stitch](stitch.md) and [Thread](thread.md). Generated promotion tests run with
+See [Stitch](stitch.md) and [Thread](thread.md). Generated promotion tests run with
 `python -m pytest -q tests/test_pipette.py tests/test_baste_pipette_interfaces.py`.

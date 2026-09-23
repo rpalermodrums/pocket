@@ -44,6 +44,22 @@ PUBLIC_CAPABILITIES = (
     ('job_cancel', 'audio_hypothesis_jobs', 'job', 'cancel', False, 'Request cancellation at the next analysis boundary using an exact job revision.'),
     ('curve_transform', 'curves', 'expression', 'transform', False, 'File-only control curves; native execution separately gated.'),
     ('musical_time', 'time_maps', 'time', 'map', False, 'Exact declared step-tempo clocks, meter displays and independent local cycles.'),
+    ('context_create', 'musical_context', 'context', 'create', False, 'Immutable musical context with explicit clocks, authored anchors and occurrence identities; no host required.'),
+    ('context_query', 'musical_context', 'context', 'query', True, 'Bounded pages of an exact musical context revision.'),
+    ('context_resolve', 'musical_context', 'context', 'resolve', True, 'Resolve an internal anchor or explicit position through a named occurrence; ambiguous mappings are refused.'),
+    ('practice_render', 'practice_audio', 'practice', 'render', False, 'Exact original-rate PCM passages and repetitions from declared occurrences; no implicit DSP.'),
+    ('practice_compare', 'practice_audio', 'practice', 'compare', False, 'Bind a baseline and alternatives to a question; measurements and listening remain separate.'),
+    ('practice_feedback', 'practice_audio', 'practice', 'feedback', False, 'Attributed, exact-render and interval-bound feedback without inferred listening or preferences.'),
+    ('practice_query', 'practice_audio', 'practice', 'query', True, 'Verify retained practice evidence and read bounded render, comparison or feedback records.'),
+    ('interpretation_create', 'interpretations', 'interpretation', 'create', False, 'Retain source-bound candidate selections, authored claims or unresolved questions without changing analysis or clocks.'),
+    ('interpretation_query', 'interpretations', 'interpretation', 'query', True, 'Revalidate exact evidence and original source coordinates for a musical interpretation.'),
+    ('context_bind_interpretation', 'interpretations', 'context', 'bind_interpretation', False, 'Publish an immutable v2 context with a typed selection or exact point anchor; preserve v1 parents.'),
+    ('context_edit', 'context_edits', 'context', 'edit', False, 'Apply explicit source slips, timeline shifts or anchor rebindings with locks and immutable preservation receipts.'),
+    ('context_edit_query', 'context_edits', 'context', 'edit_query', True, 'Revalidate exact parent/child changes, protected fields and declared renderability without rendering audio.'),
+    ('practice_compare_revisions', 'practice_comparisons', 'practice', 'compare_revisions', False, 'Compare immutable context edits with their exact baseline, verified edit ancestry and explicit output correspondence.'),
+    ('practice_envelope', 'practice_envelopes', 'practice', 'envelope', False, 'Declared linear fade-out/in at exact occurrence joins; baseline and timing remain unchanged.'),
+    ('practice_compare_processed', 'practice_envelopes', 'practice', 'compare_processed', False, 'Compare explicit join derivatives with their exact unchanged baseline; no inferred listening verdict.'),
+    ('practice_feedback_query', 'practice_feedback_query', 'practice', 'feedback_query', True, 'Retrieve explicit attributed reports by exact render, interval, actor and decision, preserving contradictions.'),
     ('instrument_inspect', 'instruments.core', 'instrument', 'inspect', False, 'Bounded installation and attributed state inspection.'),
     ('instrument_parameters', 'instruments.core', 'instrument', 'parameter_read', True, 'Query captured exposed descriptors without loading a patch.'),
     ('preset_catalog', 'instruments.core', 'instrument', 'catalog', False, 'Hash and query opaque local presets without loading them.'),
@@ -137,6 +153,23 @@ _HANDLE_FAMILIES = {
                        'pocket.audio-region-capture/v1', 'pocket.audio-region-hypotheses/v1', 'pocket.audio-note-hypotheses/v1']),
     'curve_transform': (['pocket.curve/v1', 'pocket.context/v1'], ['pocket.curve/v1', 'pocket.curve-edit/v1']),
     'musical_time': (['pocket.time-map/v1'], ['pocket.time-map/v1']),
+    'context_create': (['pocket.musical-context/v1', 'pocket.audio-region-capture/v1', 'pocket.time-map/v1', 'pocket.material/v1'], ['pocket.musical-context/v1']),
+    'context_query': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.musical-context/v1', 'pocket.musical-context/v2']),
+    'context_resolve': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.musical-context/v1', 'pocket.musical-context/v2']),
+    'practice_render': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.practice-render/v1', 'pocket.render-audio/v1']),
+    'practice_compare': (['pocket.practice-render/v1'], ['pocket.practice-comparison/v1']),
+    'practice_envelope': (['pocket.practice-render/v1'], ['pocket.practice-envelope/v1', 'pocket.render-audio/v1']),
+    'practice_compare_processed': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-processed-comparison/v1']),
+    'practice_feedback': (['pocket.practice-processed-comparison/v1', 'pocket.practice-envelope/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-render/v1'], ['pocket.practice-feedback/v1']),
+    'practice_query': (['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1'],
+                       ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1']),
+    'interpretation_create': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.audio-region-hypotheses/v1'], ['pocket.interpretation/v1']),
+    'interpretation_query': (['pocket.interpretation/v1'], ['pocket.interpretation/v1']),
+    'context_bind_interpretation': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.interpretation/v1'], ['pocket.musical-context/v2']),
+    'context_edit': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.interpretation/v1'], ['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.context-edit/v1']),
+    'context_edit_query': (['pocket.context-edit/v1'], ['pocket.context-edit/v1']),
+    'practice_compare_revisions': (['pocket.practice-render/v1', 'pocket.context-edit/v1'], ['pocket.practice-revision-comparison/v1']),
+    'practice_feedback_query': (['pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1']),
     'instrument_inspect': ([], ['pocket.instrument-state/v1', 'pocket.instrument-inventory/v1', 'pocket.environment/v1']),
     'instrument_parameters': (['pocket.instrument-state/v1'], ['pocket.instrument-state/v1']),
     'preset_catalog': (['pocket.preset-catalog/v1'], ['pocket.preset-catalog/v1']),
@@ -197,6 +230,27 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         prerequisites = []
         profile = None
         side_effects = [] if read_only else ['new_local_artifacts']
+        if module in ('musical_context', 'practice_audio'):
+            profile = 'authored-occurrences-exact-step/v1' if module == 'musical_context' else 'exact-pcm-occurrences/v1'
+            prerequisites = ['Verified retained source regions and explicit authored coordinates; no model, instrument or DAW']
+        if name in ('practice_query', 'practice_feedback'):
+            profile = None
+            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1 and linear-loop-join-envelope/v1; no model, instrument or DAW']
+        if module == 'practice_envelopes':
+            profile = 'linear-loop-join-envelope/v1'
+            prerequisites = ['Exact PCM parent, explicit occurrence-join frames and nonoverlapping linear envelopes; original signal warnings retained']
+        if module == 'practice_feedback_query':
+            profile = 'practice-feedback-query-v1'
+            prerequisites = ['Explicit verified report handles; interval filters require an exact render handle; no preference inference']
+        if module == 'practice_comparisons':
+            profile = 'explicit-edit-correspondence/v1'
+            prerequisites = ['Unchanged baseline, exact edit lineage, full occurrence output pairs and explicit duration policy; no automatic alignment']
+        if module == 'context_edits':
+            profile = 'literal-context-edits/v1'
+            prerequisites = ['Exact immutable parent and explicitly named linked occurrences or anchors; locked fields preserved; renderability reported separately']
+        if module == 'interpretations':
+            profile = 'source-bound-interpretations/v1'
+            prerequisites = ['Exact context source clock and retained candidate revision, or explicitly authored/unresolved claim; no implicit tempo or meter edit']
         if name == 'midi_timing_query':
             side_effects = ['temporary_local_proof_replay; caller_store_unchanged']
         if name in ('audio_region_hypotheses', 'audio_region_submit'):

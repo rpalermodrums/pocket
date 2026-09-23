@@ -7,6 +7,60 @@ description: Explore records, edit MIDI material, plan sounds, inspect Ableton s
 
 Use this skill for Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette. Read the provider documentation when an operation is unfamiliar. The [selection interfaces](../../docs/selection-interfaces.md) document matching CLI/MCP calls; the [workspace](../../docs/workspace.md) gives a local human interface.
 
+Pocket is a general music toolkit, including acoustic practice and composition.
+Its post-v1 north star includes a responsive “living band in a box” practice partner;
+a DAW, genre or fixed meter is not required for core musical context.
+
+## Standalone musical context and practice
+
+Use the [musical context guide](../../docs/musical-context.md) for explicit clocks,
+internal anchors and repeated passages. Capture an independently sourced exact
+audio region, declare a time map with `musical_time`, then call `context_create`.
+Keep original source frames distinct from crop-local frames and timeline positions.
+Anchors are attributed interpretations; bar one and phrase start are separate kinds.
+
+Use `context_query` for bounded context pages and `context_resolve` with an exact
+context handle plus clock identity. When a passage repeats, supply its occurrence
+ID; an ambiguity error requires a musical choice, not a guessed first occurrence.
+The source's internal anchor need not be at the capture or passage start.
+
+`practice_render` realizes explicitly ordered, contiguous occurrences at original
+rate. It refuses implicit stretch, gaps, mixing, fades or channel conversion.
+Compare baseline and alternatives with `practice_compare`; query revalidated
+evidence with `practice_query`. Record actual attributed reports using
+`practice_feedback`, exact render handles and frame intervals. Agent reports stay
+separate from human listening. Signal readiness never establishes musical approval.
+The same public calls are available through CLI (`--spec`) and MCP.
+
+Select retained evidence with `interpretation_create`, then bind that exact
+interpretation through `context_bind_interpretation`. Keep abstention unresolved;
+an onset is not automatically bar one. Use `context_edit` for explicit source
+slips, timeline shifts and anchor rebindings, naming linked occurrences and locks.
+Read the preservation receipt with `context_edit_query`. For child revisions use
+`practice_compare_revisions` with exact edit lineage and full output occurrence
+correspondence. Retrieve original, potentially contradictory reports through
+`practice_feedback_query`; do not infer preferences from filtered notes.
+
+Only when explicitly requested, `practice_envelope` applies a declared linear
+fade-out/in at an actual occurrence join. It retains the exact baseline, timing
+and input warnings. `practice_compare_processed` compares those derivatives;
+5/15 ms example variants are technical probes, not approved musical defaults.
+See the [installed contracts guide](../../docs/contracts.md) for generated current
+Python/CLI/MCP schemas and opt-in versioned errors. The design package's proposed
+HTTP facade is not implemented.
+
+The [synthetic demo](../../examples/practice_context.py) exercises the complete
+file-only path. It does not qualify acoustic musical usefulness, native behavior
+or real-time accompaniment. Discover installed operations through `capabilities_list`;
+local development plans are not callable tool contracts.
+
+For a real recording, the [reference exercise](../../examples/exercise_practice_recording.py)
+uses explicit twenty-second captures and declared A/B boundary probes. Retain
+abstention and competing pulse candidates; a nominal clock is not detected tempo.
+Preserve decoded overs and mark signal readiness separately. The exercise records
+agent technical reports only. Keep actual recordings and acceptance receipts
+in the ignored `private/audio/` directory.
+
 ## Selection and improvisation
 
 1. Establish the record bag from exact catalog identities or local assets. Preserve editions, duplicate appearances, unavailable entries and user changes. Spotify import is deterministic metadata transfer; independently identify acquired local audio before treating it as the same recording. Keep unknown musical fields absent or null, and attribute subjective profiles as `agent_hypothesis` or `user`.
@@ -59,8 +113,8 @@ See [Pipette](../../docs/pipette.md) for rejection rules and evidence scope.
 
 Read the [MIDI guide](../../docs/midi.md), [capability matrix](../../docs/midi-capabilities.md)
 and [composable examples](../../examples/midi-workflow/README.md) for the requested operation.
-For an audio-to-MIDI musical handover, follow the visible choices and evidence
-requirements in the [Tunji acceptance scenario](../../docs/tunji-acceptance.md).
+For an audio-to-MIDI handover, state the musical question, source uncertainty and
+listening requirements explicitly.
 Discover current availability with `capabilities_list`; a closed native gate is not a callable tool.
 Use public providers directly, through matching MCP names, or through hyphenated CLI names with `--spec`.
 

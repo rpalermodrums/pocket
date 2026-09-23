@@ -2,6 +2,15 @@
 
 Pocket begins with a local Python package. The CLI and optional MCP server invoke the same functions; they are interfaces, not separate implementations. No hosted service, model download or running Live instance is required for the maps and rendered-audio comparisons.
 
+The broader goal is an agentic toolkit for music across practice, composition and
+performance. A responsive “living band in a box” jazz practice partner is a
+post-v1 goal; DAWs, electronic music and fixed meters are not core requirements.
+The [musical context layer](musical-context.md) is an additive foundation for
+explicit clocks, authored anchors and repeated occurrences. Its original-rate
+practice renderer uses shared signal evidence with the existing native audition
+adapter. Working contracts remain distinct from proposed facade names and
+from musical acceptance; provider discovery describes the installed surface.
+
 ## Records and clocks
 
 An **asset** identifies exact file bytes and decoded sample metadata. An analysis **region** keeps its original-source frame bounds. A **Thread** describes saved clip and control intent, with separate arrangement beats and source positions. A **handle** identifies an immutable compressed snapshot and the saved project/dependency versions that make it applicable. A **trial** binds its sources, explicit variation, generated output bytes and scoped listener feedback.
@@ -42,8 +51,6 @@ Use Peek, Thread and Stitch on unfamiliar transitions. Record where the tool's r
 
 The decision criterion is whether a tool improves a musical choice or removes repeated work. A plausible MIDI file, more model confidence or more infrastructure is not sufficient on its own.
 
-The [Baste/Pipette plan](baste-pipette-plan.md) evaluates the six proposed tools
-and establishes this cycle's dependencies. Baste precedes a future guarded live
-parameter writer; Pipette provides saved promotion for a future comparison UI.
-Neither expands Stitch's editing or Max dependency collection scope. See
-[acceptance](baste-pipette-acceptance.md) for current verification boundaries.
+[Baste](baste.md) observes a live session; [Pipette](pipette.md) preserves an
+explicitly kept saved candidate. Neither expands Stitch's editing or Max
+dependency collection scope. A future live writer needs separate qualification.

@@ -94,6 +94,8 @@ def parser() -> argparse.ArgumentParser:
         "The musical toolkit for agents: Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette."
     ))
     root.add_argument("--version", action="version", version=__version__)
+    root.add_argument("--error-format", choices=("legacy", "v2"), default="legacy",
+                      help="Opt-in versioned machine errors; successful receipts are unchanged")
     commands = root.add_subparsers(dest="command", required=True)
     baste = commands.add_parser("baste", help="Read the current Live session through the Baste device")
     baste.add_argument("--timeout-seconds", type=float, default=35)
@@ -282,7 +284,9 @@ def main(argv: list[str] | None = None) -> int:
             _emit(result, response_path)
         return 0
     except (PocketError, OSError, ValueError, TypeError) as exc:
-        sys.stderr.write(json.dumps({"error": type(exc).__name__, "message": str(exc)}) + "\n")
+        from .error_contracts import error_envelope
+        error = error_envelope(exc) if args.error_format == "v2" else {"error": type(exc).__name__, "message": str(exc)}
+        sys.stderr.write(json.dumps(error) + "\n")
         return 2
 
 

@@ -28,3 +28,11 @@ models/
 *.pth
 *.ckpt
 *.safetensors
+
+# Private design/planning notes, acceptance receipts, and test recordings.
+/private/
+*.opus
+*.webm
+*.aac
+*.caf
+*.w64
