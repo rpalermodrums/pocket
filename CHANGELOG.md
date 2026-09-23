@@ -14,6 +14,7 @@ Changes are recorded from repository history. Package versions and serialized ar
 - `practice_preview`: a declared `pocket.practice-preview/v1` browser copy of an exact practice render under `browser-pcm16-original-rate/v1` (original rate, PCM16, nearest rounding with ties to even; no dither, gain, clamping or resampling). Unrepresentable samples and undeclared sample rates are refused. Restart a running MCP server to register the new tool.
 - `practice_feedback` accepts an optional `preview` and then writes `pocket.practice-feedback/v2`, recording the exact preview and interval reviewed. Calls without `preview` still write unchanged v1 reports. `practice_feedback_query` accepts mixed v1/v2 reports and adds `report_schema` and `reviewed_audio` to v2 rows only; `practice_query` also reads previews and v2 reports.
 - `pocket practice-review`: a loopback-only [practice review page](docs/practice-review.md) that plays one retained comparison through declared previews and saves explicitly attributed interval reports.
+- `examples/linked_downbeat.py`: a synthetic [linked-downbeat handover](docs/musical-context.md#land-an-internal-downbeat-on-a-handover). A linked source slip moves a repeated passage's internal bar one onto its clip boundaries while locks keep the tempo step, clip placement and anchors fixed. It writes a revision comparison for `pocket practice-review` and records no listening. It uses existing providers only.
 
 ### Changed
 

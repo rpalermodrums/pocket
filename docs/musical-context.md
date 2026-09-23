@@ -280,6 +280,55 @@ both and still binds a report to the exact render hash and interval. Signal flag
 unchanged baseline bytes and conflicting interpretations stay visible. Neither
 creating a comparison nor reading feedback supplies a listening verdict.
 
+### Land an internal downbeat on a handover
+
+A passage often begins before its own bar one: a pickup, a breath, a fill. Three
+positions then stay separate records, even when two of them share a number:
+
+| Position | Recorded as | Changed only by |
+|---|---|---|
+| Tempo-change point | A step (`at_qn`, `bpm`) in the timeline's `pocket.time-map/v1` | A new time map |
+| Clip boundary | The start of an occurrence's `timeline_span_qn` | `occurrence_shift_timeline` |
+| Source downbeat | A `bar_one` anchor at an absolute source frame | `anchor_rebind` with a new attributed interpretation |
+
+`occurrence_slip_source` changes which source frames fill an unchanged timeline
+slot. Slipping a passage by exactly its pickup length moves its bar one onto its
+clip boundary. The boundary, the tempo step and the anchor's claim stay where they
+were. The [linked-downbeat example](../examples/linked_downbeat.py) shows this on a
+generated click track:
+
+```sh
+python examples/linked_downbeat.py private/linked-downbeat
+```
+
+Passage A (120 BPM) starts on its bar one and plays twice. Passage B (96 BPM) has a
+one-beat pickup and also plays twice. The timeline steps to 96 BPM at quarter note
+16, which is also where B1 starts. B's `bar_one` anchor is source frame 90000, one
+beat after B's first frame.
+
+- **H1** slips B1 and B2 together by 10000 frames (one B beat). Locks cover A's
+  source windows and placement, B's placement and every anchor. The recomputed
+  edit proof lists only the two `source_span_frames` changes, `[80000, 170000)` to
+  `[90000, 180000)`. B's bar one now resolves to quarter notes 16 and 25 (the two
+  clip boundaries) rather than 17 and 26, and no occurrence maps the pickup any
+  more. Each B drops its pickup beat and plays one further beat at its end, so every
+  output interval keeps its length. A's output samples are unchanged.
+- A linked edit names every repeat. Nothing infers that B2 repeats B1: slipping
+  only B1 leaves B2's bar one at quarter note 26.
+- **H2** instead shifts B's placement one quarter note earlier. The context accepts
+  this as intent, and the edit reports that the exact PCM profile cannot realize it.
+  B1 now straddles the tempo step, which would need time stretch, and it overlaps
+  A2, which this renderer never mixes. Rendering either way is refused.
+- The revision comparison pairs every occurrence with itself at identical output
+  frames, so the [practice review page](practice-review.md) keeps the playhead when
+  switching between the baseline and H1. The example writes `comparison.json` and
+  prints the `pocket practice-review` command for it.
+
+The example records no report and touches no DAW. It establishes mappings, locks
+and exact samples for synthetic clicks. It does not establish whether landing on
+bar one is musically better for any real passage: that needs a musician's chosen
+passage, where they hear bar one, and their own saved report.
+
 ## Retrieve scoped reports
 
 `practice_feedback_query` takes 1–128 explicit feedback handles. Optional filters

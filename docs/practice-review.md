@@ -39,6 +39,10 @@ pocket practice-review --store-root private/first-practice/store \
 
 A report about those tones exercises the page; it is not a musical listening test.
 
+The [linked-downbeat example](musical-context.md#land-an-internal-downbeat-on-a-handover)
+writes a `comparison.json` of edited revisions and prints the matching command. Its
+baseline and variant switch at the same playhead position, and it is also synthetic.
+
 The Python entry point is:
 
 ```python
