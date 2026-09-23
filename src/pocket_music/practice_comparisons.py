@@ -8,6 +8,7 @@ from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
     canonical_bytes,
+    per_call_verification,
     put_record,
     read_record,
     run_request,
@@ -104,6 +105,7 @@ def _validate(inputs, store_root):
     return renders
 
 
+@per_call_verification
 def practice_compare_revisions(store_root: str, request_id: str, baseline: ArtifactHandle,
                                variants: list[ArtifactHandle], edit_receipts: list[ArtifactHandle],
                                correspondence: list[RevisionCorrespondence], question: str,

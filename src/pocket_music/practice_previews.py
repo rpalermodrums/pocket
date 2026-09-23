@@ -19,7 +19,9 @@ from . import __version__
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
+    per_call_verification,
     put_bytes,
     put_record,
     read_bytes,
@@ -130,6 +132,7 @@ def _encode(parent, store_root):
     return payload, described, stats, measured
 
 
+@call_memo("practice_preview")
 def load_practice_preview(handle, store_root):
     """Rebuild expected bytes from the fully revalidated parent; a rehashed manifest is not trusted."""
     _verify_handles(handle, store_root)
@@ -159,6 +162,7 @@ def load_practice_preview(handle, store_root):
     return record, parent
 
 
+@per_call_verification
 def practice_preview(store_root: str, request_id: str, render: ArtifactHandle,
                      profile: Literal["browser-pcm16-original-rate/v1"]) -> dict:
     """Create a declared original-rate PCM16 preview of an exact practice render; no other DSP."""

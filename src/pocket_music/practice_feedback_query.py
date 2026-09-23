@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from .artifact_store import ArtifactHandle
+from .artifact_store import ArtifactHandle, per_call_verification
 from .errors import PocketError
 from .feedback_selection import query_feedback_records
 from .practice_audio import FEEDBACK_SCHEMA, FEEDBACK_V2_SCHEMA, load_practice_audio, load_practice_feedback
@@ -12,6 +12,7 @@ COVERAGE = {"provider": "practice-feedback-query-v1", "execution": "retained_evi
             "provider_playback": False, "native_execution": False, "musical_preference_inference": False}
 
 
+@per_call_verification
 def practice_feedback_query(store_root: str, feedback: list[ArtifactHandle], render: ArtifactHandle | None = None,
                             actor: str | None = None, actor_kind: Literal["human", "agent"] | None = None,
                             decision: Literal["keep", "revise", "reject", "no_addition"] | None = None,

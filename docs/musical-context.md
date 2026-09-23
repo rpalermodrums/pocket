@@ -182,6 +182,13 @@ uses `actor_kind="agent"`. Creating feedback never changes a render's stored
   Moving the complete artifact store preserves references; retained practice
   reads do not need the original external recording. Recapturing/replaying the
   original capture request still validates that external original.
+- Within one practice provider call (and `context_edit_query`), an artifact that
+  appears several times in the evidence graph is read and hash-verified once, and
+  a repeated validation of the same context, render, envelope, preview or edit
+  reuses that call's result. Graph bounds are still enforced on every walk.
+  Nothing is kept between calls: the next call reads and verifies everything
+  again, so a changed file is detected. Up to 256 MiB of verified bytes may be
+  held in memory during a call.
 
 DOUBLE WAV is an evidence format and is not supported by every browser player.
 Use `practice_preview` for a declared browser copy (see

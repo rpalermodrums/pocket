@@ -5,6 +5,10 @@ and publication/retry boundaries; it never dispatches native operations.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import copy
+import functools
 import hashlib
 import json
 import os
@@ -26,6 +30,71 @@ class ArtifactHandle(TypedDict):
     artifact_uri: str
     sha256: str
     artifact_schema: str
+
+
+# Budgets for one call's verified snapshot. Past them, reads are simply verified again.
+SNAPSHOT_BYTES = 256 * 1024 * 1024
+MEMO_ENTRIES = 4096
+_SCOPE = contextvars.ContextVar("pocket_verification_scope", default=None)
+
+
+class _Snapshot:
+    __slots__ = ("loads", "payloads", "size")
+
+    def __init__(self):
+        self.payloads, self.size, self.loads = {}, 0, {}
+
+
+@contextlib.contextmanager
+def verification_scope():
+    """Bound one public call to an immutable snapshot of what it verified.
+
+    Inside the outermost scope, an identical handle in the same store returns the
+    bytes already hash-verified during this call, and a memoized domain load
+    returns a fresh copy of its already-validated result. Nothing is shared with
+    other threads or outlives the scope: the next call re-reads and re-verifies
+    everything. Graph-walk accounting, bounds and error behaviour are unchanged.
+    """
+    if _SCOPE.get() is not None:
+        yield
+        return
+    token = _SCOPE.set(_Snapshot())
+    try:
+        yield
+    finally:
+        _SCOPE.reset(token)
+
+
+def per_call_verification(function):
+    """Run a public provider inside its own verification scope."""
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        with verification_scope():
+            return function(*args, **kwargs)
+    return wrapper
+
+
+def call_memo(kind):
+    """Memoize a pure (handle, store_root) validator for the current call only."""
+    def decorate(function):
+        @functools.wraps(function)
+        def wrapper(handle, store_root, *args, **kwargs):
+            scope = _SCOPE.get()
+            if scope is None or args or kwargs or MEMO_ENTRIES <= 0:
+                return function(handle, store_root, *args, **kwargs)
+            try:
+                key = (kind, str(_root(store_root)), canonical_bytes(handle))
+            except PocketError:
+                return function(handle, store_root)
+            if key not in scope.loads:
+                result = function(handle, store_root)
+                if len(scope.loads) >= MEMO_ENTRIES:
+                    return result
+                scope.loads[key] = result
+            # Callers own their copy; the validated original is never mutated.
+            return copy.deepcopy(scope.loads[key])
+        return wrapper
+    return decorate
 
 
 def canonical_bytes(value) -> bytes:
@@ -75,13 +144,26 @@ def read_bytes(handle: ArtifactHandle, store_root: str | Path) -> bytes:
     if not isinstance(uri, str) or not re.fullmatch(
             rf"artifacts/{sha}/[A-Za-z0-9][A-Za-z0-9._-]{{0,127}}", uri):
         raise PocketError("Artifact URI must be a canonical content address")
-    path = _contained(_root(store_root), uri)
+    scope = _SCOPE.get()
+    spelled = os.fspath(store_root) if isinstance(store_root, (str, Path)) else ""
+    key = (spelled, uri) if os.path.isabs(spelled) else None
+    if scope is not None and key in scope.payloads:
+        # Already read, contained and hash-verified in this call; serve that snapshot.
+        return scope.payloads[key]
+    root = _root(store_root)
+    path = _contained(root, uri)
+    key = key or (str(root), uri)
+    if scope is not None and key in scope.payloads:
+        return scope.payloads[key]
     try:
         payload = path.read_bytes()
     except OSError as error:
         raise PocketError(f"Cannot read artifact: {error}") from error
     if hashlib.sha256(payload).hexdigest() != sha:
         raise PocketError("Artifact integrity mismatch")
+    if scope is not None and scope.size + len(payload) <= SNAPSHOT_BYTES:
+        scope.payloads[key] = payload
+        scope.size += len(payload)
     return payload
 
 

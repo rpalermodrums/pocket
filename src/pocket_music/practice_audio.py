@@ -17,7 +17,9 @@ import soundfile as sf
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
+    per_call_verification,
     put_bytes,
     put_record,
     read_bytes,
@@ -116,6 +118,7 @@ def _signal(payload, rate, channels, frames):
                          "expected_frames": frames, "frame_tolerance": 0, "signal_expectation": "audible"})
 
 
+@call_memo("practice_render")
 def load_practice_render(handle, store_root):
     """Recheck mapping, signal and decoded source samples, including after relocation."""
     _verify_handles(handle, store_root)
@@ -148,6 +151,7 @@ def load_practice_render(handle, store_root):
     return record
 
 
+@per_call_verification
 def practice_render(store_root: str, request_id: str, context: ArtifactHandle,
                     occurrence_ids: list[str]) -> dict:
     """Render exact original-rate passages/repetitions as a new immutable DOUBLE WAV."""
@@ -193,6 +197,7 @@ def _comparison(baseline, variants, question, allow_duration_mismatch, store_roo
     return renders
 
 
+@per_call_verification
 def practice_compare(store_root: str, request_id: str, baseline: ArtifactHandle,
                      variants: list[ArtifactHandle], question: str,
                      allow_duration_mismatch: bool = False) -> dict:
@@ -257,6 +262,7 @@ def _render_interval(reviewed_interval, preview):
     return [reviewed_interval[0] + offset, reviewed_interval[1] + offset]
 
 
+@per_call_verification
 def practice_feedback(store_root: str, request_id: str, comparison: ArtifactHandle, render: ArtifactHandle,
                       interval_frames: list[int], actor: str, actor_kind: Literal["human", "agent"], note: str,
                       decision: Literal["keep", "revise", "reject", "no_addition"] | None = None,
@@ -355,6 +361,7 @@ def load_practice_feedback(handle, store_root, cache=None):
     return record, render
 
 
+@per_call_verification
 def practice_query(store_root: str, artifact: ArtifactHandle,
                    section: Literal["summary", "mappings"] = "summary", offset: int = 0, limit: int = 32) -> dict:
     """Verify retained practice records; mappings use bounded pagination."""

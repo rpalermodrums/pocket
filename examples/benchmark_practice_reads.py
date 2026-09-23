@@ -283,10 +283,14 @@ LOADERS = {"practice_audio": ("load_practice_render", "load_comparison", "load_p
 
 
 class Counter:
-    """Wrap artifact reads and domain loaders everywhere they were imported by name."""
+    """Wrap artifact reads and domain loaders everywhere they were imported by name.
+
+    Logical reads count every artifact request; disk reads count only files actually
+    read from a store's artifacts directory (a per-call snapshot can serve the rest).
+    """
 
     def __init__(self):
-        self.reads = self.bytes = self.walks = 0
+        self.reads = self.bytes = self.walks = self.disk_reads = self.disk_bytes = 0
         self.unique = set()
         self.loaders = {}
         self.patched = []
@@ -294,6 +298,16 @@ class Counter:
     def install(self):
         original_read = artifact_store.read_bytes
         original_walk = artifact_store._verify_handles
+        original_path_read = Path.read_bytes
+
+        def path_read(path):
+            payload = original_path_read(path)
+            if "artifacts" in path.parts:
+                self.disk_reads += 1
+                self.disk_bytes += len(payload)
+            return payload
+        Path.read_bytes = path_read
+        self.patched.append((Path, "read_bytes", original_path_read))
 
         @functools.wraps(original_read)
         def read(handle, store_root):
@@ -333,12 +347,13 @@ class Counter:
         self.patched.clear()
 
     def reset(self):
-        self.reads = self.bytes = self.walks = 0
+        self.reads = self.bytes = self.walks = self.disk_reads = self.disk_bytes = 0
         self.unique = set()
         self.loaders = {}
 
     def snapshot(self):
         return {"artifact_reads": self.reads, "unique_artifacts": len(self.unique), "bytes_read": self.bytes,
+                "disk_reads": self.disk_reads, "disk_bytes": self.disk_bytes,
                 "graph_walks": self.walks, "loader_calls": dict(sorted(self.loaders.items()))}
 
 
@@ -373,8 +388,9 @@ def measure(operation, runs, warmup, counter):
 def environment():
     def run(*command):
         try:
+            # Describe the checkout that provided the measured package, not this script's.
             return subprocess.run(command, capture_output=True, text=True, check=True, timeout=10,
-                                  cwd=Path(__file__).resolve().parent).stdout.strip()
+                                  cwd=Path(pocket_music.__file__).resolve().parent).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
     cpu = None
@@ -383,6 +399,7 @@ def environment():
                     if line.startswith("model name")), None)
     return {"platform": platform.platform(), "machine": platform.machine(), "cpu": cpu or platform.processor(),
             "logical_cpus": os.cpu_count(), "python": sys.version.split()[0], "pocket_music": pocket_music.__version__,
+            "package_file": pocket_music.__file__,
             "numpy": np.__version__, "scipy": scipy.__version__, "soundfile": sf.__version__,
             "libsndfile": sf.__libsndfile_version__, "commit": run("git", "rev-parse", "HEAD"),
             "worktree_dirty": bool(run("git", "status", "--porcelain")) if run("git", "rev-parse", "HEAD") else None,
@@ -395,14 +412,15 @@ def summary_markdown(result):
               f"{result['environment']['cpu']} ({result['environment']['logical_cpus']} logical CPUs)"), "",
              (f"Runs {result['policy']['runs']} after {result['policy']['warmup']} warm-up; p95 is nearest-rank. "
               "OS page cache warm; no application cache."), "",
-             "| Fixture | Operation | Median ms | p95 ms | Peak MiB | Reads | Unique | MiB read | Walks | Loader calls |",
-             "|---|---|---:|---:|---:|---:|---:|---:|---:|---|"]
+             "| Fixture | Operation | Median ms | p95 ms | Peak MiB | Logical reads | Disk reads | Unique | Disk MiB | Walks | Loader calls |",
+             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
     for row in result["operations"]:
         counts = row["counts"]
         loaders = ", ".join(f"{k.removeprefix('load_')}={v}" for k, v in counts["loader_calls"].items())
         lines.append(f"| {row['fixture']} | {row['operation']} | {row['median_s'] * 1000:.1f} | "
                      f"{row['p95_s'] * 1000:.1f} | {row['tracemalloc_peak_bytes'] / 2**20:.1f} | "
-                     f"{counts['artifact_reads']} | {counts['unique_artifacts']} | {counts['bytes_read'] / 2**20:.1f} | "
+                     f"{counts['artifact_reads']} | {counts['disk_reads']} | {counts['unique_artifacts']} | "
+                     f"{counts['disk_bytes'] / 2**20:.1f} | "
                      f"{counts['graph_walks']} | {loaders} |")
     return "\n".join(lines) + "\n"
 
@@ -432,7 +450,10 @@ def main():
         started = time.perf_counter()
         store, operations, dimensions, identities = FIXTURES[name](root)
         result["fixtures"][name] = {"dimensions": dimensions, "build_s": time.perf_counter() - started,
-                                    "identity_sha256": hashlib.sha256(
+                                    # Generated source bytes are deterministic. Handle graphs are not:
+                                    # libsndfile stamps DOUBLE WAV PEAK chunks with the creation time.
+                                    "source_sha256": sha256_file(root / "source.wav"),
+                                    "handle_graph_sha256": hashlib.sha256(
                                         artifact_store.canonical_bytes(identities)).hexdigest(),
                                     "store_bytes": sum(p.stat().st_size for p in Path(store).rglob("*") if p.is_file())}
         for operation, call in operations.items():
