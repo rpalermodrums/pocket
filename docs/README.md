@@ -3,6 +3,8 @@
 Pocket is a general toolkit for musical work. Responsive ensemble practice,
 including a living jazz practice partner, remains a post-v1 goal.
 
+Start with [your first experiment](getting-started.md), or read [status and direction](status.md).
+
 ## Use the tools
 
 - [Musical context and practice](musical-context.md): clocks, internal cues,

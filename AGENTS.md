@@ -1,6 +1,6 @@
 # Working on Pocket
 
-Pocket is private during its initial testing period. Do not change repository visibility without the owner's explicit instruction.
+Pocket is public and in early development. Do not change repository visibility without the owner's explicit instruction.
 
 The current scope includes Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette. Selection has optional Spotify catalog/playlist, source-acquisition and local-embedding adapters plus a loopback browser workspace. Transcription models, a general audio editor and full-set bounce automation remain follow-up decisions, not implied dependencies.
 

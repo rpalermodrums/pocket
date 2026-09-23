@@ -1,0 +1,25 @@
+name: Capability proposal
+description: Propose a small composable musical operation
+title: "Proposal: "
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Musical question or user problem
+      description: Give a concrete example; distinguish desired behavior from today's evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Proposed operation and boundaries
+      description: Inputs, outputs, coordinates, uncertainty, size limits, side effects and optional dependencies. Which existing tools could compose it?
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: How would we know it works?
+      description: Separate technical checks, native qualification and actual listening. Include alternatives and refusal cases.
+    validations:
+      required: true

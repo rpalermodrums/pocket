@@ -1,0 +1,28 @@
+name: Bug report
+description: A reproducible problem with current Pocket behavior
+title: "Bug: "
+body:
+  - type: markdown
+    attributes:
+      value: "Use synthetic material and sanitized output. Report vulnerabilities privately through SECURITY.md. Do not upload recordings, credentials, full stores or personal paths."
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: What were you trying to do, and what happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Commands or a small synthetic example, including the error after removing private details.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Version and environment
+      description: Commit/package version, OS, Python, interface and any relevant optional adapter.
+    validations:
+      required: true
