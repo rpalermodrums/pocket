@@ -14,8 +14,8 @@ then B twice. Three positions stay distinct records even where they share a numb
 
 The exact PCM renderer refuses an occurrence whose tempo changes inside it, so the 96 BPM step
 sits on the A2|B1 clip boundary. H1 slips the source window of every B occurrence (a linked edit
-names each repeat) by one B beat. Locks keep A and the B clip placement fixed and every anchor
-claim unchanged; no context edit can change the time map. B's bar one then lands on both B clip
+names each repeat) by one B beat. Locks keep A, the B clip placement and every anchor's kind and
+position fixed; no context edit can change the time map. B's bar one then lands on both B clip
 boundaries. Each B keeps its nine-beat length, so it gains the next source beat at its end: B's
 following bar one. H2 shifts B's clip placement instead; the context accepts it as intent, and
 the edit reports that exact PCM cannot render it.
@@ -107,7 +107,7 @@ def run(destination):
     baseline = practice_render(store, "baseline", context, order)["artifacts"]["render"]
 
     # H1: slip every B occurrence's source window by one B beat. Locks refuse any change to A,
-    # to the B clip boundaries or to an anchor claim; the time map is not an edit target at all.
+    # to the B clip boundaries or to an anchor's kind or position; the time map is not an edit target.
     locks = ([{"section": "occurrences", "object_id": o, "fields": ["source_span_frames", "timeline_span_qn"]}
               for o in ("A1", "A2")]
              + [{"section": "occurrences", "object_id": o, "fields": ["timeline_span_qn"]}
@@ -137,8 +137,9 @@ def run(destination):
         store, "comparison", baseline, [variant], [h1["artifacts"]["edit"]],
         [{"variant": variant, "pairs": pairs}],
         "Should B's bar one land on its clip boundary at the A to B handover and at B's repeat (H1), "
-        "or keep its pickup there (baseline)? Both keep nine-beat B occurrences: H1 puts a one-beat bar "
-        "before the repeat, the baseline five beats between B's downbeats. Synthetic click track.")
+        "or keep its pickup there (baseline)? Both keep nine-beat B occurrences, so H1 has a one-beat bar "
+        "just before the repeat and the baseline has five beats between the downbeats either side of it. "
+        "Synthetic click track.")
 
     def resolve(ctx, anchor_id, occurrence_id):
         try:
@@ -182,4 +183,6 @@ if __name__ == "__main__":
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("destination", type=Path)
     args = parser.parse_args()
-    print(json.dumps(run(args.destination.expanduser().resolve()), indent=2))
+    result = run(args.destination.expanduser().resolve())
+    print(json.dumps(result, indent=2))
+    print(f"\nListen and save your own report with:\n{result['review_command']}")

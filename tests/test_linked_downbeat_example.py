@@ -201,6 +201,7 @@ def test_unlinked_slip_moves_only_the_named_repeat(example):
 def test_printed_review_command_opens_the_comparison_and_records_no_listening(example, tmp_path):
     from test_practice_review import call, state
 
+    from pocket_music.cli import parser
     from pocket_music.practice_review import _load_handle, _make_server
     destination, store, results, printed = example
     assert printed["listening"] == results["listening"] == "not_performed"
@@ -208,6 +209,9 @@ def test_printed_review_command_opens_the_comparison_and_records_no_listening(ex
                                  "--comparison-file", str(destination / "comparison.json"),
                                  "--session-dir", str(destination / "review"), "--port", "0"]
     assert shlex.split(printed["review_command"]) == printed["review"]
+    parsed = parser().parse_args(printed["review"][1:])   # the installed CLI accepts the printed command
+    assert (parsed.command, parsed.store_root, parsed.comparison_file, parsed.port) == \
+        ("practice-review", store, str(destination / "comparison.json"), 0)
     argv = dict(zip(printed["review"][2::2], printed["review"][3::2], strict=True))
     comparison = _load_handle(argv["--comparison-file"], "comparison")
     assert comparison == results["comparison"]["artifacts"]["comparison"]
