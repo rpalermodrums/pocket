@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ config.site_description }}">
+  <meta name="color-scheme" content="light">
+  <title>{{ page.title }} · Pocket</title>
+  <link rel="stylesheet" href="{{ 'style.css' | url }}">
+  <link rel="icon" href="{{ 'assets/pip.svg' | url }}" type="image/svg+xml">
+  <script src="{{ 'app.js' | url }}" defer></script>
+</head>
+<body data-root="{{ base_url }}" class="{% if page.is_homepage %}home{% endif %}">
+<a href="#main" class="skip-link">Skip to content</a>
+<header class="site-header">
+  <a class="brand" href="{{ nav.homepage.url | url }}"><img src="{{ 'assets/pip.svg' | url }}" width="44" height="44" alt=""><span>pocket</span></a>
+  <div class="header-links"><a href="{{ 'docs/' | url }}">Documentation</a><a href="{{ 'reference/' | url }}">Tool reference</a><a href="https://github.com/rpalermodrums/pocket">GitHub</a></div>
+</header>
+<div class="layout">
+<aside class="sidebar">
+  <div class="search-box"><label for="site-search">Search the docs</label><input type="search" id="site-search" placeholder="Try cues, MIDI, feedback…" autocomplete="off"><p id="search-status" role="status"></p><ul id="search-results"></ul><noscript>Use the navigation or your browser’s Find command; search needs JavaScript.</noscript></div>
+  <details class="navigation" open>
+    <summary>Browse documentation</summary>
+    <nav aria-label="Documentation">
+    {% for group in nav %}
+      {% if group.children %}
+        <div class="nav-group"><h2>{{ group.title }}</h2>
+        {% for item in group.children %}<a href="{{ item.url | url }}"{% if item.active %} aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}</div>
+      {% else %}<a href="{{ group.url | url }}"{% if group.active %} aria-current="page"{% endif %}>{{ group.title }}</a>{% endif %}
+    {% endfor %}
+    </nav>
+  </details>
+
+</aside>
+<main id="main" tabindex="-1">
+  {% if page.is_homepage %}<div class="home-art"><img src="{{ 'assets/pocket.svg' | url }}" alt="Pip in a record sleeve beside Pocket: the musical toolkit for agents." width="1200" height="400"></div>{% endif %}
+  {% if not page.is_homepage and page.toc %}<details class="page-outline"><summary>On this page</summary><ul>{% for item in page.toc %}{% for child in item.children %}<li><a href="{{ child.url }}">{{ child.title }}</a></li>{% endfor %}{% endfor %}</ul></details>{% endif %}
+  <article>{{ page.content }}</article>
+  <footer><p>Composable music tools. Open source, early development.</p><p><a href="{{ 'CONTRIBUTING/' | url }}">Contribute</a> <a href="{{ 'SECURITY/' | url }}">Security</a> <a href="{{ 'license/' | url }}">MIT license</a> <a href="{{ 'publication-manifest.json' | url }}">Build manifest</a></p><p class="build-info">{% if config.extra.dirty %}Local preview · {% endif %}Package {{ config.extra.package_version }} · <a href="https://github.com/rpalermodrums/pocket/tree/{{ config.extra.revision }}">Source {{ config.extra.revision[:8] }}</a></p></footer>
+</main>
+</div>
+</body></html>

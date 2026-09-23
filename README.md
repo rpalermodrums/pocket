@@ -1,134 +1,61 @@
-<p align="center"><img src="assets/pocket.svg" alt="Pocket — Pip the field mouse in a terracotta record sleeve, with an audio waveform below the wordmark." width="960"></p>
+<p align="center"><img src="assets/pocket.svg" alt="Pocket — Pip the field mouse in a record sleeve, beside the Pocket wordmark." width="960"></p>
 
-**The musical toolkit for agents.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
+**The musical toolkit for agents.** Pocket is a Python toolkit with CLI and MCP interfaces for audio analysis, musical coordinates, MIDI operations and evidence-linked edits. Its operations are small and composable; you decide what to build with them.
 
-Pocket's broader goal spans musical practice, composition and performance across
-instruments and genres. After v1, that includes a responsive “living band in a box”
-practice partner. The [musical context and standalone practice tools](docs/musical-context.md)
-now connect explicit clocks, internal cues, repeated passages, exact audio and
-listening reports without requiring a DAW. The [documentation index](docs/README.md)
-links to the current usage and API guides.
+Pocket is public, open source and in early development.
 
-Private, early development. Version 0.4 adds **Baste** and **Pipette**: observe an open Live session, then preserve an explicitly kept saved trial as a new project. Musical proposals, technical verification and listening judgments stay separate.
+[Documentation](docs/README.md) · [Agent skill](skills/pocket/SKILL.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
-| Tool | What it does |
-|---|---|
-| **Weave** | Explore reproducible routes with anchors, exclusions, explicit transition ideas and feedback scoped to a route or pair. |
-| **Whisker** | Suggest next records for holding, lifting or changing direction; preserve manual choices in a shared session. |
-| **Peek** | Analyze exact source frames, attacks, competing pulse phases, crop sensitivity, local count uncertainty and tonal evidence. Keep musical beat one unresolved. |
-| **Thread** | Start with a compact project summary, then query a timestamp for clips, source frames and relevant controls. Reject stale saved maps. |
-| **Stitch** | Collect a native trial's media, validate after relocation, separate render identity from signal readiness, and retrieve feedback about the exact audio heard. |
-| **Baste** | Read the open, possibly unsaved Live session through an editable Max for Live device; retain fresh observation timing and explicit failures. |
-| **Pipette** | Promote an explicitly kept saved Stitch candidate with a usable render into a new collected project and sealed parent/trial/child lineage. |
+## Quick start
 
-Weave shapes a route through records. Whisker is Pip feeling out what comes next.
-Peek, Thread and Stitch support exact passage experiments. Baste observes current
-session state; Pipette preserves a saved keep decision. Record bags and the
-Spotify, acquisition and embedding adapters support these workflows.
-
-## Install
-
-Python 3.11 or later:
+Python 3.11 or later, from a checkout of this repository:
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[agent,dev]'
-pocket --help
+python -m pip install -e .
+python examples/practice_context.py private/first-practice
+pocket context-resolve --spec private/first-practice/resolve-spec.json
 ```
 
-Core analysis and selection use NumPy, SciPy and soundfile. Record selection works without a model installation. The optional `agent` extra supplies the MCP interface. Audio support follows the installed libsndfile build; decoded WAV/FLAC are recommended for exact comparisons. Live is needed to render a native project trial, not to inspect its saved arrangement.
+This generates a synthetic recording, repeats two passages, resolves an internal cue and retains an exact audio comparison. It prints the baseline and alternative WAV paths; `results.json` holds the comparison receipts. Choose a new output directory each time. No DAW, model, login or downloaded recording is needed. The tones are a technical example, not a musical listening test.
 
-Canonical material import, analysis, generation and selected edits work without
-Live, Serum or Mido. SMF import/export uses the optional `midi` extra
-(`python -m pip install -e '.[midi]'`), including explicit CC1/CC11 step encoding.
-[MIDI and sound tools](docs/midi.md) expose the same public providers
-through CLI and MCP, with [composable examples](examples/midi-workflow/README.md)
-and an explicit [capability and acceptance matrix](docs/midi-capabilities.md).
-Native stock candidates support supervised import and a separately qualified
-ordinary-note writer, followed by save/reopen/render evidence;
-Serum catalog and planning do not imply a working native Serum installation.
+Read the [getting started guide](docs/getting-started.md) for expected output and the next steps.
 
-## Plan and choose records
+## Capabilities
 
-Create a sealed bag from a user list or observed Spotify catalogue, then open its
-local workspace:
+| Capability | Documentation |
+|---|---|
+| Describe passages, internal cues and repeated material; compare exact audio | [Musical context and practice](docs/musical-context.md) |
+| Inspect timing and tonal evidence in a recording | [Peek](docs/peek.md) |
+| Create, inspect and edit MIDI material with explicit constraints | [MIDI and sound tools](docs/midi.md) |
+| Explore record routes or choose what comes next | [Weave](docs/weave.md), [Whisker](docs/whisker.md) and the [local workspace](docs/workspace.md) |
+| Inspect a saved Ableton arrangement or compare a trial | [Thread](docs/thread.md) and [Stitch](docs/stitch.md) |
+| Observe an open Live session or preserve a kept saved trial | [Baste](docs/baste.md) and [Pipette](docs/pipette.md) |
+
+Core musical contexts and practice tools work without a DAW. Native workflows have separate setup and qualification limits. Analysis, technical validation and human listening are different kinds of evidence; a successful render is not a musical verdict.
+
+## Optional interfaces
 
 ```sh
-pocket bag create --spec bag-spec.json --output new-bag-directory
-pocket workspace --workspace-dir private-session --bag-handle bag-result.json
+python -m pip install -e '.[agent]'       # MCP server
+python -m pip install -e '.[midi]'        # MIDI file import/export
+python -m pip install -e '.[agent,dev,midi]'  # Full developer test dependencies
 ```
 
-The first command prints a JSON result; save it as `bag-result.json` for the second.
-The workspace prints a loopback URL and stays open until Ctrl-C. Human and agent
-choices use the same bag, plans and session revisions. Try the three starting
-briefs—warm-up, peak time and after-hours—then respond to specific routes or pairs.
+`pocket-mcp` runs locally over standard input/output. Configure your agent to launch the executable in your virtual environment, then use [the Pocket skill](skills/pocket/SKILL.md). Composable providers share one implementation across Python, flat CLI commands and MCP. [Installed contracts](docs/contracts.md) describe discovery, actual input schemas and opt-in machine errors.
 
-See the [selection interface guide](docs/selection-interfaces.md) for a complete
-specification example, command/output meanings and MCP inputs, or read
-[record bags](docs/record-bag.md), [Weave](docs/weave.md),
-[Whisker](docs/whisker.md) and the [workspace](docs/workspace.md).
-[Spotify](docs/spotify-bridge.md) transfers deterministic catalogues and reviewed
-fresh-playlist plans. [Acquisition](docs/acquisition.md) retains an explicitly
-selected source's original codec and provenance. [Optional local embeddings](docs/music-embeddings.md)
-provide qualified retrieval evidence; they are not required for selection.
+Give the process access only to files you intend it to work with. Core workflows run locally. Optional Spotify, acquisition and model adapters have their own explicit setup and network behavior; they are not part of the first experiment. Keep recordings, credentials and listener notes outside Git.
 
-## Inspect and test music
+## Where this is going
 
-The generated demo contains only synthetic signals:
+Pocket is not limited to electronic music, a particular meter or Ableton. A responsive, living “band in a box” practice partner, including for jazz musicians, is a **post-v1 goal**. Accompaniment, following, comping and trading require separate musical and real-time qualification. See [status and direction](docs/status.md) for the distinction between current tools and future work.
 
-```sh
-python examples/make_demo.py /tmp/pocket-demo
-pocket peek /tmp/pocket-demo/pulse.wav --duration 16 --bpm-hint 120
-pocket stitch create --spec /tmp/pocket-demo/comparison.json --output /tmp/pocket-demo/trial
-```
+## Project
 
-For a saved Ableton project:
+- [Contribution rules and development setup](CONTRIBUTING.md)
+- [Community conduct and private contact](CODE_OF_CONDUCT.md)
+- [Report a security vulnerability privately](SECURITY.md)
+- [Change history](CHANGELOG.md)
 
-```sh
-pocket thread '/path/to/Your Set.als' --output /tmp/set-summary.json
-pocket thread-region /tmp/set-summary.json 2:22 --duration 32 --output /tmp/region.json
-pocket thread-find-clips /tmp/set-summary.json 'Clip name'
-pocket thread-export /tmp/set-summary.json --output /tmp/full-set-map.json
-```
-
-The summary contains an identity-bound handle for later calls. A valid region supplies `analyze_region_frame_args`; pass that exact pair to Peek. In the CLI, use `--start-frame` and `--frames` without seconds flags. `thread --full` remains available for an explicit raw inventory.
-
-See [Peek](docs/peek.md), [Thread](docs/thread.md), [Stitch](docs/stitch.md), [feedback retrieval](docs/feedback.md) and the [agent workflow](skills/pocket/SKILL.md). Output records may contain local paths: keep them in your local working area, outside Git. The [0.2 release notes](docs/releases/0.2.0.md) describe compatibility changes and limits.
-
-## Observe Live and keep a trial
-
-```sh
-pocket baste-device --output /path/to/new/Baste-device
-# Load the generated Baste.amxd in Live with its adjacent scripts, then:
-pocket baste
-pocket pipette promote --spec keep-spec.json --output '/path/to/new/Kept Project'
-```
-
-[Baste](docs/baste.md) documents setup, read scope and failures. It reads the live
-session without saving or changing it. [Pipette](docs/pipette.md) documents the
-explicit keep specification and selected render hashes. It copies a saved trial's
-evidence and media, rebinds only the child's collected reference hints, and verifies
-the result through Thread. It does not promote mutable Baste observations.
-
-## Work with an agent
-
-`pocket-mcp` serves the same provider records over standard input/output. Its `thread` tool returns a summary and handle; `thread_region`, `thread_find_clips` and `thread_export` reuse that handle. These four tools return one compact JSON text record, without a second expanded copy. `peek` analyzes a source region, and `stitch` creates a comparison trial. A local MCP configuration can point to the executable in your virtual environment:
-
-```json
-{
-  "mcpServers": {
-    "pocket": {
-      "command": "/absolute/path/to/pocket/.venv/bin/pocket-mcp"
-    }
-  }
-}
-```
-
-Configure that local process only for agents you trust with your audio and project files. Pocket does not upload recordings to a model service or change an open Live session on its own. Spotify execution and source discovery/acquisition contact external services only when explicitly invoked. Tokens remain in the local process environment, never tool arguments. Selection/model preparation stays outside the performance decision loop.
-
-The [name compatibility guide](docs/compatibility.md) maps the previous names to these tools. Old commands and imports remain accepted; serialized formats, field keys, flags, caches and output artifacts are unchanged.
-
-## License
-
-Pocket is licensed under the [MIT License](LICENSE). Bundled third-party code retains its accompanying license notices.
+Pocket is licensed under the [MIT License](LICENSE). Bundled third-party code retains its accompanying license notices. A repository license does not grant rights to recordings, models or other independently sourced material.

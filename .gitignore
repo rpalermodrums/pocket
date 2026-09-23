@@ -36,3 +36,8 @@ models/
 *.aac
 *.caf
 *.w64
+
+# Local design planning/context; public maintenance guidance lives in docs/.
+/PRODUCT.md
+/DESIGN.md
+/.impeccable/

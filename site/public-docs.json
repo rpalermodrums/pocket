@@ -1,0 +1,280 @@
+{
+  "schema": "pocket.public-docs-allowlist/v1",
+  "pages": [
+    {
+      "source": "site/home.md",
+      "target": "index.md"
+    },
+    {
+      "source": "docs/README.md",
+      "target": "docs/README.md"
+    },
+    {
+      "source": "docs/acquisition.md",
+      "target": "docs/acquisition.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "docs/architecture.md"
+    },
+    {
+      "source": "docs/baste.md",
+      "target": "docs/baste.md"
+    },
+    {
+      "source": "docs/compatibility.md",
+      "target": "docs/compatibility.md"
+    },
+    {
+      "source": "docs/contracts.md",
+      "target": "docs/contracts.md"
+    },
+    {
+      "source": "docs/feedback.md",
+      "target": "docs/feedback.md"
+    },
+    {
+      "source": "docs/getting-started.md",
+      "target": "docs/getting-started.md"
+    },
+    {
+      "source": "docs/midi-capabilities.md",
+      "target": "docs/midi-capabilities.md"
+    },
+    {
+      "source": "docs/midi.md",
+      "target": "docs/midi.md"
+    },
+    {
+      "source": "docs/music-embeddings.md",
+      "target": "docs/music-embeddings.md"
+    },
+    {
+      "source": "docs/musical-context.md",
+      "target": "docs/musical-context.md"
+    },
+    {
+      "source": "docs/on-deck.md",
+      "target": "docs/on-deck.md"
+    },
+    {
+      "source": "docs/peek.md",
+      "target": "docs/peek.md"
+    },
+    {
+      "source": "docs/pipette.md",
+      "target": "docs/pipette.md"
+    },
+    {
+      "source": "docs/record-bag.md",
+      "target": "docs/record-bag.md"
+    },
+    {
+      "source": "docs/releases/0.2.0.md",
+      "target": "docs/releases/0.2.0.md"
+    },
+    {
+      "source": "docs/releases/0.4.0.md",
+      "target": "docs/releases/0.4.0.md"
+    },
+    {
+      "source": "docs/selection-interfaces.md",
+      "target": "docs/selection-interfaces.md"
+    },
+    {
+      "source": "docs/set-map.md",
+      "target": "docs/set-map.md"
+    },
+    {
+      "source": "docs/set-workshop.md",
+      "target": "docs/set-workshop.md"
+    },
+    {
+      "source": "docs/site-maintenance.md",
+      "target": "docs/site-maintenance.md"
+    },
+    {
+      "source": "docs/spotify-bridge.md",
+      "target": "docs/spotify-bridge.md"
+    },
+    {
+      "source": "docs/status.md",
+      "target": "docs/status.md"
+    },
+    {
+      "source": "docs/stitch.md",
+      "target": "docs/stitch.md"
+    },
+    {
+      "source": "docs/thread.md",
+      "target": "docs/thread.md"
+    },
+    {
+      "source": "docs/track-map.md",
+      "target": "docs/track-map.md"
+    },
+    {
+      "source": "docs/transition-lab.md",
+      "target": "docs/transition-lab.md"
+    },
+    {
+      "source": "docs/weave.md",
+      "target": "docs/weave.md"
+    },
+    {
+      "source": "docs/whisker.md",
+      "target": "docs/whisker.md"
+    },
+    {
+      "source": "docs/workspace.md",
+      "target": "docs/workspace.md"
+    },
+    {
+      "source": "CONTRIBUTING.md",
+      "target": "CONTRIBUTING.md"
+    },
+    {
+      "source": "CODE_OF_CONDUCT.md",
+      "target": "CODE_OF_CONDUCT.md"
+    },
+    {
+      "source": "SECURITY.md",
+      "target": "SECURITY.md"
+    },
+    {
+      "source": "CHANGELOG.md",
+      "target": "CHANGELOG.md"
+    },
+    {
+      "source": "skills/pocket/SKILL.md",
+      "target": "skills/pocket/SKILL.md"
+    },
+    {
+      "source": "LICENSE",
+      "target": "license.md"
+    }
+  ],
+  "assets": [
+    {
+      "source": "assets/pocket.svg",
+      "target": "assets/pocket.svg"
+    },
+    {
+      "source": "assets/pip.svg",
+      "target": "assets/pip.svg"
+    },
+    {
+      "source": "assets/fonts/AtkinsonHyperlegibleNext.ttf",
+      "target": "assets/fonts/AtkinsonHyperlegibleNext.ttf"
+    },
+    {
+      "source": "assets/fonts/OFL.txt",
+      "target": "assets/fonts/OFL.txt"
+    }
+  ],
+  "theme": [
+    "site/theme/main.html",
+    "site/theme/style.css",
+    "site/theme/app.js"
+  ],
+  "nav": [
+    {
+      "Home": "index.md"
+    },
+    {
+      "Documentation": [
+        {
+          "Getting started": "docs/getting-started.md"
+        },
+        {
+          "All guides": "docs/README.md"
+        },
+        {
+          "Work with an agent": "skills/pocket/SKILL.md"
+        }
+      ]
+    },
+    {
+      "Core tools": [
+        {
+          "Context & practice": "docs/musical-context.md"
+        },
+        {
+          "Inspect audio": "docs/peek.md"
+        },
+        {
+          "MIDI & sound": "docs/midi.md"
+        },
+        {
+          "Feedback": "docs/feedback.md"
+        }
+      ]
+    },
+    {
+      "Adapters": [
+        {
+          "Selection": "docs/selection-interfaces.md"
+        },
+        {
+          "Local workspace": "docs/workspace.md"
+        },
+        {
+          "Saved sets": "docs/thread.md"
+        },
+        {
+          "Native comparisons": "docs/stitch.md"
+        },
+        {
+          "Observe Live": "docs/baste.md"
+        },
+        {
+          "Keep a trial": "docs/pipette.md"
+        }
+      ]
+    },
+    {
+      "Reference": [
+        {
+          "Callable providers": "reference/index.md"
+        },
+        {
+          "Contracts & errors": "docs/contracts.md"
+        },
+        {
+          "Capabilities & limits": "docs/midi-capabilities.md"
+        },
+        {
+          "Architecture": "docs/architecture.md"
+        },
+        {
+          "Compatibility": "docs/compatibility.md"
+        }
+      ]
+    },
+    {
+      "Project": [
+        {
+          "Status & direction": "docs/status.md"
+        },
+        {
+          "Changelog": "CHANGELOG.md"
+        },
+        {
+          "Contributing": "CONTRIBUTING.md"
+        },
+        {
+          "Conduct": "CODE_OF_CONDUCT.md"
+        },
+        {
+          "Security": "SECURITY.md"
+        },
+        {
+          "Site maintenance": "docs/site-maintenance.md"
+        },
+        {
+          "License": "license.md"
+        }
+      ]
+    }
+  ]
+}
