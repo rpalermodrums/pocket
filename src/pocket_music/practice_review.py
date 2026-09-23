@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import sys
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -36,7 +37,8 @@ _FILES = {"/": ("index.html", "text/html; charset=utf-8"),
           "/review.css": ("review.css", "text/css; charset=utf-8")}
 _ITEM = re.compile(r"(baseline|variant-[1-8])")
 _CLIENT_REQUEST = re.compile(r"[0-9a-f]{32}")
-_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+_RANGE = re.compile(r"bytes=(\d{0,18})-(\d{0,18})")
+_ABSOLUTE_PATH = re.compile(r"(?<![\w.-])/[^\s'\"]+")
 COMPARISON_LABELS = {"pocket.practice-comparison/v1": "Same context revision",
                      "pocket.practice-revision-comparison/v1": "Edited revisions with explicit correspondence",
                      "pocket.practice-processed-comparison/v1": "Declared processing of one exact baseline"}
@@ -264,23 +266,22 @@ class _Review:
             self.preview_slot.release()
 
     def _preview_request(self, render):
-        """Reuse a completed preview request; after a recorded refusal, evaluate afresh.
+        """Reuse a completed preview request; otherwise evaluate under a fresh request ID.
 
-        A failed journal is never replayed or deleted: the next numbered request ID
-        re-runs the provider, so a deterministic refusal is explained again. An
-        incomplete journal is never stolen.
+        A failed or interrupted journal is left untouched for inspection, never
+        replayed, deleted or unlocked. Because a preview is a deterministic,
+        content-addressed derivative, the next numbered request ID can safely run the
+        provider again, so a refusal is explained again and an interrupted attempt
+        does not block the item forever.
         """
         from .artifact_store import request_status
         base = "review-preview-" + render["sha256"][:40]
         for attempt in range(1, MAX_PREVIEW_ATTEMPTS + 1):
             request_id = base if attempt == 1 else f"{base}-{attempt}"
-            journal = request_status(self.store, request_id)["journal_state"]
-            if journal in ("not_found", "complete"):
+            status = request_status(self.store, request_id)
+            if status["journal_state"] in ("not_found", "complete") and not status["coverage"]["lock_present"]:
                 return request_id
-            if journal != "failed":
-                raise RequestRefused(409, "An earlier preview request for this item is incomplete; "
-                                          "inspect it with request_status before retrying")
-        raise RequestRefused(409, f"This item's preview was refused {MAX_PREVIEW_ATTEMPTS} times; "
+        raise RequestRefused(409, f"This item's preview did not complete in {MAX_PREVIEW_ATTEMPTS} attempts; "
                                   "inspect the retained request journals")
 
     def _expect(self, data):
@@ -333,6 +334,16 @@ class _Review:
         return {"items": rows, "total": result["total"], "next_cursor": result["next_cursor"],
                 "complete": result["complete"], "status": result["status"]}
 
+    def drain(self, timeout=120):
+        """Wait for in-flight preview and report work so Ctrl-C never leaves a half request."""
+        if not self.preview_slot.acquire(timeout=timeout):
+            return False
+        self.preview_slot.release()
+        if not self.mutex.acquire(timeout=timeout):
+            return False
+        self.mutex.release()
+        return True
+
     def audio(self, item_id):
         """Hash-verified preview bytes for one item; provenance is rechecked by summary and report calls."""
         item = self.item(item_id)
@@ -348,6 +359,12 @@ class _Review:
 
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # Browsers routinely abort media range requests when seeking; that is not a server fault.
+        if isinstance(sys.exc_info()[1], ConnectionError):
+            return
+        super().handle_error(request, client_address)
 
     def server_close(self):
         super().server_close()
@@ -369,7 +386,12 @@ class _Handler(BaseHTTPRequestHandler):
     def _refuse(self, error):
         if isinstance(error, RequestRefused):
             return send(self, error.status, {"error": str(error)})
-        return send(self, 409, {"error": str(error), "code": getattr(error, "code", "invalid_request")})
+        # Store and session locations are trusted launch arguments; never echo them to the page.
+        message = str(error)
+        for location, label in ((self.server.review.store, "<store>"), (str(self.server.review.folder), "<session>")):
+            message = message.replace(location, label)
+        message = _ABSOLUTE_PATH.sub("<path>", message)
+        return send(self, 409, {"error": message, "code": getattr(error, "code", "invalid_request")})
 
     def do_HEAD(self):
         return send(self, 405, {"error": "Use GET"})
@@ -468,4 +490,7 @@ def start_practice_review(store_root: str, comparison_file: str, session_dir: st
     except KeyboardInterrupt:
         pass
     finally:
+        if not server.review.drain():
+            print(json.dumps({"warning": "A preview or report was still running at shutdown; inspect "
+                              "request_status before retrying it"}), file=sys.stderr, flush=True)
         server.server_close()

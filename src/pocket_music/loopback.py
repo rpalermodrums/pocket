@@ -49,7 +49,9 @@ def guard(handler, authority, origin, csrf, write=False, refresh_message="Refres
     if handler.headers.get("Sec-Fetch-Site") == "cross-site":
         send(handler, 403, {"error": "Cross-site requests are not allowed"})
         return False
-    if write and (supplied != origin or not hmac.compare_digest(handler.headers.get("X-Pocket-CSRF", ""), csrf)):
+    # Compare bytes: headers arrive as latin-1 text, and str comparison rejects non-ASCII.
+    token = handler.headers.get("X-Pocket-CSRF", "").encode("latin-1", "replace")
+    if write and (supplied != origin or not hmac.compare_digest(token, csrf.encode())):
         send(handler, 403, {"error": refresh_message})
         return False
     return True

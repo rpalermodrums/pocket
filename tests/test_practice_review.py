@@ -313,7 +313,7 @@ def test_preview_refusals_explain_again_on_every_attempt(tmp_path):
     region = audio_region_capture(store_root=store, request_id="capture", source={
         "path": str(source), "expected_sha256": sha256_file(source), "start_frame": 0, "frames": 16000,
         "source_origin": "independently_acquired"})["artifacts"]["region"]
-    q = lambda n: {"n": n, "d": 1}  # noqa: E731
+    q = lambda n: {"n": n, "d": 1}
     time_map = musical_time("create", store, request_id="time", definition={
         "source_context": {"schema": "pocket.time-context/v1", "context_id": "c", "attribution": "Synthetic"},
         "domain_qn": {"start": q(0), "end": q(4)}, "tempo": [{"at_qn": q(0), "bpm": q(120), "interpolation": "step"}],
@@ -341,3 +341,65 @@ def test_preview_refusals_explain_again_on_every_attempt(tmp_path):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+
+def test_non_ascii_csrf_header_is_refused_not_crashed(review):
+    server, _, _ = review
+    status, _, _ = call(server, "/api/review/previews", {"item_id": "baseline"}, {"X-Pocket-CSRF": "\xe9"})
+    assert status == 403 and state(server)["revision"] == 0
+
+
+def test_errors_do_not_leak_store_paths_and_huge_ranges_are_416(review):
+    server, store, _ = review
+    summary = preview(server)
+    record = read_record(summary["items"][1]["preview"]["preview"], store)
+    status, _, headers = call(server, "/api/review/audio/variant-1", headers={"Range": "bytes=" + "9" * 5000 + "-"})
+    assert status == 416 and headers["Content-Range"].startswith("bytes */")
+    audio = Path(store) / record["audio"]["artifact_uri"]
+    audio.rename(audio.with_suffix(".moved"))
+    for path in ("/api/review", "/api/review/audio/variant-1", "/api/review/items/variant-1"):
+        status, result, _ = call(server, path)
+        assert status == 409, path
+        assert str(Path(store).resolve()) not in result["error"] and "/tmp/" not in result["error"], result
+
+
+def test_aborted_connections_are_not_reported_as_server_errors(review, capsys):
+    server, _, _ = review
+    try:
+        raise ConnectionResetError("peer went away")
+    except ConnectionResetError:
+        server.handle_error(None, ("127.0.0.1", 1))
+    assert "ConnectionResetError" not in capsys.readouterr().err
+    try:
+        raise RuntimeError("unexpected")
+    except RuntimeError:
+        server.handle_error(None, ("127.0.0.1", 1))
+    assert "RuntimeError" in capsys.readouterr().err
+
+
+def test_interrupted_preview_request_is_left_for_inspection_and_bypassed(review):
+    server, store, _ = review
+    render = server.review.items["variant-1"]["render"]
+    stale = Path(store) / "requests" / ("review-preview-" + render["sha256"][:40]) / "lock"
+    stale.mkdir(parents=True)  # what a killed process leaves behind
+    summary = preview(server)
+    assert summary["items"][1]["preview"] is not None
+    assert stale.is_dir()  # never stolen or deleted
+
+
+def test_shutdown_waits_for_in_flight_preview_and_report_work(review):
+    import time
+    server, _, _ = review
+    held = threading.Event()
+
+    def busy():
+        with server.review.preview_slot:
+            held.set()
+            time.sleep(0.4)
+    worker = threading.Thread(target=busy)
+    worker.start()
+    held.wait()
+    started = time.monotonic()
+    assert server.review.drain(timeout=5) is True
+    assert time.monotonic() - started >= 0.3
+    worker.join()
