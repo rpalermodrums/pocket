@@ -292,15 +292,17 @@ def practice_query(store_root: str, artifact: ArtifactHandle,
     _verify_handles(artifact, store_root)
     record = read_record(artifact, store_root)
     schema = record["schema"]
+    audio_schema = schema
     if schema in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
         record = load_practice_audio(artifact, store_root)
     elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1", "pocket.practice-processed-comparison/v1"):
         record, _ = load_comparison(artifact, store_root)
     elif schema == FEEDBACK_SCHEMA:
-        record, _ = load_practice_feedback(artifact, store_root)
+        record, render = load_practice_feedback(artifact, store_root)
+        audio_schema = render["schema"]
     else:
         raise PocketError("Unknown practice artifact schema")
-    profile = ("linear-loop-join-envelope/v1" if schema in
+    profile = ("linear-loop-join-envelope/v1" if audio_schema in
                ("pocket.practice-envelope/v1", "pocket.practice-processed-comparison/v1") else PROFILE)
     common = {"artifacts": {"artifact": artifact}, "coverage": {"profile": profile, "provider_playback": False}}
     if section == "summary":

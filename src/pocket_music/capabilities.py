@@ -233,6 +233,9 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         if module in ('musical_context', 'practice_audio'):
             profile = 'authored-occurrences-exact-step/v1' if module == 'musical_context' else 'exact-pcm-occurrences/v1'
             prerequisites = ['Verified retained source regions and explicit authored coordinates; no model, instrument or DAW']
+        if name in ('practice_query', 'practice_feedback'):
+            profile = None
+            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1 and linear-loop-join-envelope/v1; no model, instrument or DAW']
         if module == 'practice_envelopes':
             profile = 'linear-loop-join-envelope/v1'
             prerequisites = ['Exact PCM parent, explicit occurrence-join frames and nonoverlapping linear envelopes; original signal warnings retained']

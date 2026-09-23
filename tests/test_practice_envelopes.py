@@ -115,10 +115,26 @@ def test_processed_comparison_exact_parent_and_feedback(tmp_path):
                                  'Numerical oracle, no musical verdict')['artifacts']['feedback']
     page = practice_feedback_query(store, [feedback], render=handle, interval_frames=[7999, 8001])
     assert page['items'][0]['interval_frames'] == [7997, 8003]
+    assert practice_query(store, feedback)['coverage']['profile'] == 'linear-loop-join-envelope/v1'
+    baseline_feedback = practice_feedback(store, 'raw-report', compared, args['render'], [7997, 8003],
+        'Fixture', 'agent', 'Raw baseline inside processed comparison')['artifacts']['feedback']
+    assert practice_query(store, baseline_feedback)['coverage']['profile'] == 'exact-pcm-occurrences/v1'
     raw = read_record(args['render'], store)
     other = practice_render(store, 'other', raw['context'], ['again', 'alternative'])['artifacts']['render']
     with pytest.raises(PocketError, match='exact baseline'):
         practice_compare_processed(store, 'wrong-parent', other, [handle], 'Wrong source')
+
+
+def test_multi_profile_practice_discovery():
+    from pocket_music.capabilities import capabilities_list
+
+    rows = capabilities_list(domain='practice', limit=50)['capabilities']
+    for name in ('practice_query', 'practice_feedback'):
+        row = next(row for row in rows if row['public_tool'] == name)
+        assert row['required_profile'] is None
+        assert 'pocket.practice-render/v1' in row['accepted_artifact_schemas']
+        assert 'pocket.practice-envelope/v1' in row['accepted_artifact_schemas']
+        assert 'linear-loop-join-envelope/v1' in row['prerequisites'][0]
 
 
 def test_overload_outside_join_is_retained(tmp_path):

@@ -3,7 +3,9 @@
 Python, flat CLI commands and registered MCP tools call the same providers in
 `PUBLIC_CAPABILITIES`. Discover supported artifact schemas and profiles with
 `capabilities_list`; a proposed architecture facade is not an installed API.
-Pocket does not currently implement an HTTP server or OpenAPI surface.
+The general HTTP/OpenAPI facade is not implemented. The existing loopback
+workspace serves its own browser routes for Weave/Whisker; those routes are
+separate from the provider contracts exported here.
 
 With the optional `agent` extra installed, generate contracts into a new folder:
 
