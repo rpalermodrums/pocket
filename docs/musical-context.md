@@ -48,6 +48,7 @@ native promotion stay in their adapter.
 | `pocket.practice-render/v1` | Context revision, selected occurrences, original-source/output mappings, exact output audio handle, processing profile and measured signal. |
 | `pocket.practice-comparison/v1` | Explicit baseline, alternatives, question, duration policy and signal readiness. No inferred winner. |
 | `pocket.practice-feedback/v1` | Exact comparison/render, audio hash, frame interval, actor, actor kind, note and optional decision. |
+| `pocket.practice-preview/v1` | Declared PCM16 browser copy of one exact render: parent and audio identities, one-to-one frame mapping, conversion, quantization error and signal evidence. |
 
 Every position is scoped by the **context artifact handle plus clock ID**. Local
 IDs alone are not durable cross-context references. An immutable child context
@@ -100,7 +101,8 @@ registrations. Existing editable installations pick up the Python/CLI changes.
 | `practice_compare_revisions` | Baseline/variants, edit receipts, full occurrence correspondence, question | Explicit cross-revision comparison. |
 | `practice_feedback_query` | Explicit feedback handles; optional exact render, interval and report filters | Bounded original reports without consensus. |
 | `practice_envelope`, `practice_compare_processed` | Exact baseline, declared joins and attribution; or derivatives and question | Explicit processing and baseline comparison. |
-| `practice_query` | `artifact`; optional `section`, `offset`, `limit` | Revalidated render/comparison/feedback summary, or paged render mappings. |
+| `practice_preview` | `request_id`, exact `render` (raw or join envelope), `profile: "browser-pcm16-original-rate/v1"` | Declared PCM16 browser preview and its audio handle. |
+| `practice_query` | `artifact`; optional `section`, `offset`, `limit` | Revalidated render/comparison/feedback/preview summary, or paged render mappings. |
 
 `MusicalContextDefinition` and nested transport types live in `context_types.py`.
 All definition fields are explicit: `context_id`, `title`, `attribution`, `sources`,
@@ -181,9 +183,10 @@ uses `actor_kind="agent"`. Creating feedback never changes a render's stored
   original capture request still validates that external original.
 
 DOUBLE WAV is an evidence format and is not supported by every browser player.
-A browser export needs an explicit supported format and independent fidelity
-checks. Local experiments used separate FLOAT32 review copies; those exports
-are not a new public processing profile.
+Use `practice_preview` for a declared browser copy (see
+[declared browser previews](#declared-browser-previews)). Earlier local
+experiments used separate FLOAT32 review copies; those files are not a public
+processing profile.
 
 This profile does not mix overlapping layers, transpose, stretch, generate a
 count-in, infer meter, or accompany a player in real time. Existing symbolic tools
@@ -324,3 +327,43 @@ Its FLOAT32 browser previews record their rounding error separately from the
 DOUBLE evidence. These are technical repetition joins, not selected phrase loops
 or listening-approved defaults. See [contract export and errors](contracts.md) for
 machine schemas generated from the installed providers.
+
+## Declared browser previews
+
+`practice_preview(store_root, request_id, render, profile)` makes a separately
+identified `pocket.practice-preview/v1` copy of an exact practice render or
+join-envelope render for a browser player. The only profile is
+`browser-pcm16-original-rate/v1`:
+
+- Decoded parent samples are multiplied by 32768 and rounded to the nearest
+  integer, ties to even. No dither, gain, normalization, clamping, resampling,
+  channel conversion, fades or timing change is applied.
+- Every rounded value must lie in `[-32768, 32767]`. Otherwise the request is
+  refused with `unsupported_profile`, naming the first frame and channel. An
+  overloaded or near-full-scale render is never clamped to make it playable.
+- Output is a canonical 44-byte-header RIFF/WAVE PCM16 file at the parent's own
+  rate and channel count. Rates are limited to 8000, 11025, 16000, 22050, 24000,
+  32000, 44100, 48000, 88200 and 96000 Hz; other rates are refused, not resampled.
+- Frames map one-to-one to the parent (`frame_mapping.kind: "identity"`), so the
+  parent's occurrence mappings also address preview frames. A PCM16-sourced render
+  previews without any rounding; `coverage.parent_samples_exact` reports this.
+
+The record keeps the exact parent handle and audio identity, the conversion
+declaration, quantization counts and maximum error in LSB, the parent's signal
+evidence and the preview's own measured signal. Parent signal warnings stay in
+the receipt. `practice_query` rebuilds the expected bytes from the fully
+revalidated parent, so a rehashed or edited preview record is refused.
+`section="mappings"` on a preview returns the parent's occurrence mappings.
+
+A preview is a derivative for playback, not a musical edit. It cannot be a
+preview parent, an envelope parent or a comparison member. Identical replays
+return the verified receipt; changed inputs under the same request ID conflict.
+
+Verified preview bytes establish the encoded input a player receives, not the
+sound leaving a device: browsers and operating systems may resample or process
+output. In Chromium, PCM16 is decoded as `k × (1/32768)` below zero and
+`k × (1/32767)` above, using float32 reciprocals. Browser floats therefore differ
+slightly from Pocket's `k/32768` on positive samples, although every integer is
+recovered exactly. The optional `tests/test_practice_preview_browser.py`
+qualification checks this for every declared rate. Other browsers have not been
+qualified. Creating or querying a preview records no listening.

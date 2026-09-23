@@ -293,24 +293,36 @@ def practice_query(store_root: str, artifact: ArtifactHandle,
     record = read_record(artifact, store_root)
     schema = record["schema"]
     audio_schema = schema
+    extra_coverage = {}
+    mappings = None
     if schema in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
         record = load_practice_audio(artifact, store_root)
+        mappings = record["mappings"]
     elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1", "pocket.practice-processed-comparison/v1"):
         record, _ = load_comparison(artifact, store_root)
     elif schema == FEEDBACK_SCHEMA:
         record, render = load_practice_feedback(artifact, store_root)
         audio_schema = render["schema"]
+    elif schema == "pocket.practice-preview/v1":
+        from .practice_previews import load_practice_preview
+        record, parent = load_practice_preview(artifact, store_root)
+        # One-to-one frames: parent occurrence mappings address preview frames unchanged.
+        mappings = parent["mappings"]
+        extra_coverage = {"parent_profile": parent["processing"]["profile"],
+                          "frame_mapping": "identity", "device_output_verified": False}
     else:
         raise PocketError("Unknown practice artifact schema")
-    profile = ("linear-loop-join-envelope/v1" if audio_schema in
+    profile = ("browser-pcm16-original-rate/v1" if audio_schema == "pocket.practice-preview/v1" else
+               "linear-loop-join-envelope/v1" if audio_schema in
                ("pocket.practice-envelope/v1", "pocket.practice-processed-comparison/v1") else PROFILE)
-    common = {"artifacts": {"artifact": artifact}, "coverage": {"profile": profile, "provider_playback": False}}
+    common = {"artifacts": {"artifact": artifact},
+              "coverage": {"profile": profile, "provider_playback": False, **extra_coverage}}
     if section == "summary":
         if offset:
             raise PocketError("Summary offset must be zero")
         return context_receipt(**common, summary={k: v for k, v in record.items() if k != "mappings"})
-    if schema not in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
+    if mappings is None:
         raise PocketError("Only a render contains source mappings")
-    rows = record["mappings"][offset:offset + limit]
-    return context_receipt(**common, rows=rows, total=len(record["mappings"]), offset=offset,
-                           next_offset=offset + len(rows) if offset + len(rows) < len(record["mappings"]) else None)
+    rows = mappings[offset:offset + limit]
+    return context_receipt(**common, rows=rows, total=len(mappings), offset=offset,
+                           next_offset=offset + len(rows) if offset + len(rows) < len(mappings) else None)
