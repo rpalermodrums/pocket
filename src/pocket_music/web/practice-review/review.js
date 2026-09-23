@@ -545,7 +545,6 @@ function wire() {
   document.addEventListener("keydown", event => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (!shortcutAllowed(event.target.tagName, event.target.isContentEditable)) return;
-    if (event.target.closest && event.target.closest("#reports")) return;  // reading reports never plays
     if (!state || saving || !item() || !item().preview) return;
     if (event.key === " ") {
       event.preventDefault();

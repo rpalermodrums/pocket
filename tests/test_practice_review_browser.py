@@ -515,7 +515,7 @@ def test_show_more_reports_loads_each_page_once(review):
     assert more.is_hidden()
 
 
-def test_show_more_reports_keeps_keyboard_focus_and_never_plays(review):
+def test_show_more_reports_keeps_keyboard_focus_while_pages_load(review):
     from test_practice_review import report as report_over_http
     server, page, _, _ = review
     prepare(page)  # Variant 1 is selected and has a preview, so a stray Space would play it
@@ -537,7 +537,7 @@ def test_show_more_reports_keeps_keyboard_focus_and_never_plays(review):
     assert page.evaluate(active) == "more-reports"
     page.keyboard.press(" ")  # pressed again while page 2 is loading
     page.wait_for_timeout(300)
-    assert len(held) == 1
+    assert len(held) == 1 and page.evaluate("document.querySelector('audio').paused")
     held[0].continue_()
     page.unroute(cursor_page)
     wait_until(page, "document.querySelectorAll('#reports li').length === 32")
@@ -545,7 +545,7 @@ def test_show_more_reports_keeps_keyboard_focus_and_never_plays(review):
     page.keyboard.press(" ")  # page 3, the last one
     wait_until(page, "document.querySelectorAll('#reports li').length === 40")
     assert more.is_hidden()
-    assert page.evaluate("document.activeElement.closest('#reports') !== null")
-    page.keyboard.press(" ")
-    page.wait_for_timeout(300)
+    assert page.evaluate("document.activeElement.closest('#reports') !== null")  # on the reports just revealed
     assert page.evaluate("document.querySelector('audio').paused")
+    page.keyboard.press("[")  # the documented shortcuts still work outside form controls
+    assert page.get_by_label("Start (seconds)").input_value() != ""
