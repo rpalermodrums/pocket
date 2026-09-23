@@ -23,7 +23,7 @@ Run `python -m pytest -q tests/test_public_site.py` for publication boundary reg
 
 Edit existing Markdown once; do not create another editable copy for the website. Add public pages/assets explicitly to the allowlist and navigation. Links to repository code/examples resolve to the source revision used in the build. Never publish an ignored planning package to fill a missing guide.
 
-Keep text direct and musician-first. Preserve the Pocket/Pip identity and the README removals from PR #1. The site uses the artwork's blue/paper/sleeve palette, readable text and restrained navigation. Existing capabilities need concrete examples; the living practice partner remains post-v1. No invented endorsements or musical approval.
+Keep text direct and technical. The homepage explains interfaces and guarantees; it does not prescribe musical use cases. Preserve the Pocket/Pip identity and the README removals from PR #1. The site uses the artwork's blue/paper/sleeve palette, readable text and restrained navigation. Existing capabilities need concrete examples; the living practice partner remains post-v1. No invented endorsements or musical approval.
 
 ## Publish and roll back
 
@@ -31,6 +31,6 @@ The `Publish website` workflow is manually dispatched from main after this PR is
 
 The expected public address is `https://rpalermodrums.github.io/pocket/`. Treat that as a deployment target until a successful deployment is verified; a local preview is not a live website. After publishing, verify anonymous access, links, search and the manifest revision before setting the repository homepage.
 
-To roll back, select an earlier reviewed main commit using the workflow's revision input. The workflow accepts only ancestors of current main with a successful Tests run and rebuilds that revision's allowlisted content. Review the resulting artifact; never upload an arbitrary local directory. Record the deployment/commit and keep the previous accepted manifest.
+To roll back, select an earlier successfully published main commit that contains the site builder and workflows using the workflow's revision input. The workflow accepts only ancestors of current main with a successful Tests run and rebuilds that revision's allowlisted content. Review the resulting artifact; never upload an arbitrary local directory. Record the deployment/commit and keep the previous accepted manifest.
 
 No site deployment publishes a package or changes repository visibility. Releases/tags require their own owner decision.

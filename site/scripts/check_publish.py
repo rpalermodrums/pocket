@@ -22,5 +22,5 @@ if __name__=='__main__':
     if os.environ['GITHUB_REF']!='refs/heads/main':
         raise ValueError('Publishing may only be dispatched from main')
     sha=resolve_revision(os.environ.get('REQUESTED_REVISION','main'))
-    with open(os.environ['GITHUB_OUTPUT'],'a') as output:output.write('sha='+sha+'\n')
-    print('Verified main-history revision',sha)
+    # The workflow owns the runner's output channel; this script only emits the SHA.
+    print(sha)

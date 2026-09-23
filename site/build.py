@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+GENERATED_PAGES = {'reference/index.md'}
 
 
 def tracked_files(root):
@@ -50,6 +51,9 @@ def rewrite_link(url, source, target, mapping, root, tracked, revision):
     if parsed.scheme or parsed.netloc or parsed.query or url.startswith('/'):
         raise ValueError(f'Unsupported public link in {source}: {url}')
     resolved = posixpath.normpath(posixpath.join(posixpath.dirname(source), unquote(parsed.path)))
+    if resolved in GENERATED_PAGES:
+        result = posixpath.relpath(resolved, posixpath.dirname(target) or '.')
+        return result + ('#' + parsed.fragment if parsed.fragment else '')
     safe_source(root, resolved, tracked)
     if resolved in mapping:
         result = posixpath.relpath(mapping[resolved], posixpath.dirname(target) or '.')
@@ -67,7 +71,7 @@ def stage_sources(root, destination, manifest, revision):
     targets = set()
     for row in rows:
         source, target = row['source'], safe_target(row['target'])
-        if source in mapping or target in targets:
+        if source in mapping or target in targets or target in GENERATED_PAGES:
             raise ValueError('Duplicate publication source or target')
         safe_source(root, source, tracked)
         mapping[source] = target
@@ -173,7 +177,7 @@ def build(output):
         source=safe_source(ROOT,relative,tracked)
         shutil.copyfile(source,theme/source.name)
     import yaml
-    config={'site_name':'Pocket','site_description':'Small, composable music tools for musicians and agents.',
+    config={'site_name':'Pocket','site_description':'Composable music tools. Python, CLI and MCP interfaces with explicit inputs and inspectable results.',
         'site_url':'https://rpalermodrums.github.io/pocket/','docs_dir':str(stage),'site_dir':str(output/'pocket'),
         'theme':{'name':None,'custom_dir':str(theme)},'plugins':['search'],'markdown_extensions':['fenced_code','tables','toc','attr_list'],
         'nav':manifest['nav'],'extra':{'revision':revision,'dirty':dirty,**info},'strict':True,

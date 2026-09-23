@@ -154,9 +154,9 @@ nav h2 {
   font-weight:650
 }
 .search-box {
-  margin-top:2rem;
-  padding-top:1.5rem;
-  border-top:1px solid var(--line)
+  margin:0 0 1.5rem;
+  padding:0 0 1.5rem;
+  border-bottom:1px solid var(--line)
 }
 .search-box label {
   font-size:1rem;

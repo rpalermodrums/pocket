@@ -1,37 +1,47 @@
-# Music tools you can put to work
+# Composable tools for music
 
-Pocket gives a musician and an agent small, composable tools: inspect a passage, place an internal cue, try an explicit edit and compare the exact result. Practice, composition, performance and DJ preparation all belong here.
+Pocket is a Python toolkit with CLI and MCP interfaces for audio analysis, musical coordinates, MIDI operations and evidence-linked edits. Small operations, explicit inputs and inspectable results. You decide what to build with them.
 
-[Try your first experiment](../docs/getting-started.md){: .primary-link }
-[Explore the tools](../docs/README.md){: .secondary-link }
+[Read the documentation](../docs/README.md){: .primary-link }
+[Browse the API reference](../reference/index.md){: .secondary-link }
 
-## Keep the music. Try the change.
+## Python, CLI and MCP
 
-Start with a generated recording, repeat a passage and retain a baseline and an alternative. It runs locally, without a DAW, model download or account.
+The same public providers power all three interfaces. Use them directly from Python, pass a JSON specification to a CLI command, or expose them to an agent through the local MCP server.
+
+From a source checkout, with Python 3.11 or later:
 
 ```sh
-python -m pip install -e .
-python examples/practice_context.py private/first-practice
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[agent]'
+pocket --help
 ```
 
-Run these from a checkout with a virtual environment. The [first experiment](../docs/getting-started.md) walks through setup and output. The example uses synthetic tones; it is a demonstration of exact comparison, not a claim about musical taste.
+The `agent` extra supplies `pocket-mcp`. Core file operations do not require a DAW or model installation. MIDI file I/O and native/model adapters have separate dependencies and supported profiles.
 
-## Find a useful starting point
+[Installation and a synthetic example](../docs/getting-started.md) · [Contracts and errors](../docs/contracts.md)
 
-**A passage or practice loop.** Connect source frames, repeated occurrences and internal cues. Make a literal edit, compare variants and keep a report about the exact interval heard. [Musical context and practice](../docs/musical-context.md).
+## Explicit coordinates and retained evidence
 
-**Notes and musical material.** Inspect, generate and edit MIDI with explicit constraints. File export and native instruments have their own optional requirements. [MIDI and sound tools](../docs/midi.md).
+**Coordinates.** Source sample time, timeline positions, repeated occurrences and internal anchors are represented separately. Mapping between them requires the relevant clock and occurrence identities.
 
-**Records and arrangements.** Plan a route, choose what comes next, inspect saved Ableton sets or qualify a small transition experiment. [Selection](../docs/selection-interfaces.md) and [saved-set tools](../docs/thread.md).
+**Artifacts.** Operations retain exact identities, declared processing and lineage. Edits create new versions. Request replay and verification preserve the connection between inputs and results.
 
-## Small tools, shared by people and agents
+**Interpretation.** Measurements, model hypotheses, authored decisions and listening reports are different records. Uncertainty and conflicting reports remain visible.
 
-Python, CLI and MCP call the same composable providers. Exact identities and explicit coordinates keep the agent's proposal connected to the material. Measurements, interpretations and a musician's listening report remain separate.
+[Architecture](../docs/architecture.md) · [Musical context](../docs/musical-context.md) · [Capability boundaries](../docs/midi-capabilities.md)
 
-[Use Pocket with an agent](../skills/pocket/SKILL.md) or open the [installed contract guide](../docs/contracts.md). The generated reference in this site describes actual interfaces, including their limits.
+## Reference from the implementation
 
-## A bigger musical goal
+The API reference is generated from installed Python signatures, the shared provider registry and actual MCP discovery. It includes input schemas and downloadable JSON contracts, with compatibility interfaces identified separately.
 
-Pocket is public, open source and early in development. It is not limited to electronic music, a genre or a DAW. After v1, the aim includes a responsive, living “band in a box” for jazz practice: following, comping, trading and learning to play together.
+Supported profiles and limits are part of the contract. A proposed capability is not an installed tool, and a technical check is not a musical verdict.
 
-That future needs its own real-time and musical qualification. Today's tools give us a way to test smaller questions honestly. [See current status and direction](../docs/status.md).
+[Explore callable providers](../reference/index.md) · [Compatibility](../docs/compatibility.md)
+
+## Open source, early development
+
+Pocket is MIT-licensed. Its scope is music, across instruments, genres and environments; the tools do not prescribe a workflow. Current implementation and future direction are documented separately.
+
+[Project status](../docs/status.md) · [Contributing](../CONTRIBUTING.md) · [Changelog](../CHANGELOG.md) · [GitHub](https://github.com/rpalermodrums/pocket)

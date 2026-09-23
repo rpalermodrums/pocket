@@ -1,12 +1,12 @@
 <p align="center"><img src="assets/pocket.svg" alt="Pocket — Pip the field mouse in a record sleeve, beside the Pocket wordmark." width="960"></p>
 
-**The musical toolkit for agents.** Pocket gives musicians and agents small tools for inspecting material, making explicit edits and comparing what changed. Use it for practice, composition, performance or preparing a set.
+**The musical toolkit for agents.** Pocket is a Python toolkit with CLI and MCP interfaces for audio analysis, musical coordinates, MIDI operations and evidence-linked edits. Its operations are small and composable; you decide what to build with them.
 
 Pocket is public, open source and in early development. Its broader goal is a responsive, living “band in a box” practice partner, including for jazz musicians. That is a **post-v1 goal**, not a feature available today.
 
 [Documentation](docs/README.md) · [Agent skill](skills/pocket/SKILL.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
-## Try one small experiment
+## Quick start
 
 Python 3.11 or later, from a checkout of this repository:
 
@@ -20,11 +20,11 @@ pocket context-resolve --spec private/first-practice/resolve-spec.json
 
 This generates a synthetic recording, repeats two passages, resolves an internal cue and retains an exact audio comparison. It prints the baseline and alternative WAV paths; `results.json` holds the comparison receipts. Choose a new output directory each time. No DAW, model, login or downloaded recording is needed. The tones are a technical example, not a musical listening test.
 
-Read the [first experiment guide](docs/getting-started.md) for expected output and the next steps.
+Read the [getting started guide](docs/getting-started.md) for expected output and the next steps.
 
-## What works today
+## Capabilities
 
-| What you want to do | Start here |
+| Capability | Documentation |
 |---|---|
 | Describe passages, internal cues and repeated material; compare exact audio | [Musical context and practice](docs/musical-context.md) |
 | Inspect timing and tonal evidence in a recording | [Peek](docs/peek.md) |

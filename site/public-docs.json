@@ -182,9 +182,9 @@
       "Home": "index.md"
     },
     {
-      "Start": [
+      "Documentation": [
         {
-          "First experiment": "docs/getting-started.md"
+          "Getting started": "docs/getting-started.md"
         },
         {
           "All guides": "docs/README.md"
@@ -195,7 +195,7 @@
       ]
     },
     {
-      "Make and compare": [
+      "Core tools": [
         {
           "Context & practice": "docs/musical-context.md"
         },
@@ -211,7 +211,7 @@
       ]
     },
     {
-      "Records & DAWs": [
+      "Adapters": [
         {
           "Selection": "docs/selection-interfaces.md"
         },

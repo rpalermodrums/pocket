@@ -33,7 +33,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_REVISION: ${{ inputs.revision }}
-        run: python site/scripts/check_publish.py
+        run: |
+          verified_sha="$(python site/scripts/check_publish.py)"
+          printf '%s\n' "sha=$verified_sha" >> "$GITHUB_OUTPUT"
       - name: Select verified source
         env:
           PUBLISH_SHA: ${{ steps.revision.outputs.sha }}

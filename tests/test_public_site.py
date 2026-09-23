@@ -74,6 +74,17 @@ def test_output_links_and_fragments_checked(tmp_path):
     with pytest.raises(ValueError,match='fragment'):site.check_site(tmp_path)
 
 
+def test_only_known_generated_reference_links_are_supported(tmp_path):
+    root=repository(tmp_path)
+    tracked=site.tracked_files(root)
+    assert site.rewrite_link('../reference/index.md','site/home.md','index.md',{},root,tracked,'a'*40)=='reference/index.md'
+    for url in ('../reference/private.md','../reference/../../private/secret.md'):
+        with pytest.raises(ValueError):
+            site.rewrite_link(url,'site/home.md','index.md',{},root,tracked,'a'*40)
+    with pytest.raises(ValueError,match='Duplicate'):
+        site.stage_sources(root,root/'out',{'pages':[{'source':'guide.md','target':'reference/index.md'}],'assets':[]},'a'*40)
+
+
 def test_public_allowlist_has_no_private_or_media_inputs():
     root=Path(__file__).parents[1]
     manifest=json.loads((root/'site/public-docs.json').read_text())

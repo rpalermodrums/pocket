@@ -1,6 +1,8 @@
 (() => {
   const navigation = document.querySelector('.navigation');
-  if (matchMedia('(max-width: 680px)').matches) navigation.open = false;
+  const mobile = matchMedia('(max-width: 680px)');
+  navigation.open = !mobile.matches;
+  mobile.addEventListener('change', event => { navigation.open = !event.matches; });
   document.querySelectorAll('article table').forEach(table => {
     const wrapper = document.createElement('div');
     wrapper.className = 'table-scroll'; wrapper.tabIndex = 0;
