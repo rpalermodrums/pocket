@@ -6,7 +6,7 @@ from typing import Literal, NotRequired
 from typing_extensions import TypedDict
 
 from .artifact_store import ArtifactHandle
-from .material_types import Rational
+from .music_types import Rational
 
 
 class TimeContext(TypedDict):

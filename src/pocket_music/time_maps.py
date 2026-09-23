@@ -13,6 +13,12 @@ from itertools import pairwise
 from typing import Literal
 
 from .artifact_store import ArtifactHandle, digest, put_record, read_bytes, read_record, receipt, run_request
+from .coordinates import bounded_list as _list
+from .coordinates import fields as _fields
+from .coordinates import fraction as _q
+from .coordinates import integer as _int
+from .coordinates import rational_json as _json
+from .coordinates import text as _text
 from .errors import PocketError
 from .time_types import FrameQuantization, TimeMapDefinition, TimePosition
 
@@ -21,44 +27,6 @@ COVERAGE = {"tempo": "exact_rational_step", "clocks": "declared_not_native_verif
             "meter": "explicit_bar_anchors_and_partial_boundaries", "cycles": "annotation_only",
             "ramps": "unsupported", "groove": "unsupported", "warp": "unsupported",
             "loop_occurrences": "unsupported", "native_execution": False}
-
-
-def _fields(value, required, optional=()):
-    if not isinstance(value, dict) or not set(required) <= set(value) or set(value) - set(required) - set(optional):
-        raise PocketError("Unexpected or missing musical-time fields")
-
-
-def _int(value, name, low=-(2**53), high=2**53):
-    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-        raise PocketError(f"{name} must be a bounded integer")
-    return value
-
-
-def _q(value, name="time"):
-    _fields(value, {"n", "d"})
-    numerator = _int(value["n"], name + " numerator")
-    denominator = _int(value["d"], name + " denominator", 1)
-    result = Fraction(numerator, denominator)
-    if result.numerator != numerator or result.denominator != denominator:
-        raise PocketError(f"{name} requires a reduced rational")
-    return result
-
-
-def _json(value):
-    value = Fraction(value)
-    _int(value.numerator, "converted numerator")
-    _int(value.denominator, "converted denominator", 1)
-    return {"n": value.numerator, "d": value.denominator}
-
-
-def _text(value, name, limit=500):
-    if not isinstance(value, str) or not value.strip() or len(value) > limit:
-        raise PocketError(f"{name} must be nonempty bounded text")
-
-
-def _list(value, name, minimum=0, maximum=4096):
-    if not isinstance(value, list) or not minimum <= len(value) <= maximum:
-        raise PocketError(f"{name} exceeds its list bound")
 
 
 def _handle(value):

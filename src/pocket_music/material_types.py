@@ -6,6 +6,7 @@ from typing import Literal, NotRequired
 from typing_extensions import TypedDict
 
 from .artifact_store import ArtifactHandle
+from .music_types import Rational
 
 __all__ = [
     "ArtifactHandle",
@@ -39,12 +40,6 @@ class ExternalCCStepBinding(TypedDict):
 
 
 CCStepBinding = EmbeddedCCStepBinding | ExternalCCStepBinding
-
-
-class Rational(TypedDict):
-    __pydantic_config__ = {"extra": "forbid", "strict": True}  # noqa: RUF012
-    n: int
-    d: int
 
 
 class Position(Rational):
