@@ -36,14 +36,15 @@ class ArtifactHandle(TypedDict):
 # Budgets for one call's verified snapshot. Past them, reads are simply verified again.
 SNAPSHOT_BYTES = 256 * 1024 * 1024
 MEMO_ENTRIES = 4096
+VERIFIED_ENTRIES = 65536
 _SCOPE = contextvars.ContextVar("pocket_verification_scope", default=None)
 
 
 class _Snapshot:
-    __slots__ = ("loads", "open", "owner", "payloads", "roots", "size")
+    __slots__ = ("loads", "open", "owner", "payloads", "roots", "size", "walked")
 
     def __init__(self):
-        self.payloads, self.size, self.loads, self.roots = {}, 0, {}, {}
+        self.payloads, self.size, self.loads, self.roots, self.walked = {}, 0, {}, {}, set()
         self.open, self.owner = True, threading.get_ident()
 
 
@@ -61,7 +62,9 @@ def verification_scope():
 
     Inside the outermost scope, an identical handle in the same store returns the
     bytes already hash-verified during this call, and a memoized domain load
-    returns a fresh copy of its already-validated result. Only the thread that
+    returns a fresh copy of its already-validated result. A graph walk hashes each
+    opaque artifact (audio, raw bytes) once per call even when it is too large to
+    retain; any reader that uses bytes still gets them verified. Only the thread that
     opened the scope uses it, and it is closed and emptied when the scope exits,
     even if a context copied inside it survives: the next call re-reads and
     re-verifies everything. Graph-walk accounting, bounds and errors are unchanged.
@@ -78,6 +81,7 @@ def verification_scope():
         snapshot.payloads.clear()
         snapshot.loads.clear()
         snapshot.roots.clear()
+        snapshot.walked.clear()
         _SCOPE.reset(token)
 
 
@@ -278,11 +282,16 @@ def _verify_handles(value, root):
                 identity = canonical_bytes(current)
                 if identity in seen:
                     continue
+                if _walked(current, identity, root):
+                    seen.add(identity)
+                    continue
                 payload = read_bytes(current, root)
                 seen.add(identity)
                 # put_record reserves this filename. Raw MIDI, audio, presets
                 # and source bytes remain opaque; domain readers validate them.
-                if Path(current["artifact_uri"]).name == "record.json":
+                if Path(current["artifact_uri"]).name != "record.json":
+                    _remember_walked(identity, root)
+                else:
                     metadata_bytes += len(payload)
                     if metadata_bytes > 64 * 1024 * 1024:
                         raise PocketError("Artifact metadata exceeds verification bounds")
@@ -298,6 +307,34 @@ def _verify_handles(value, root):
                 pending.extend((child, depth + 1) for child in current.values())
         elif isinstance(current, list):
             pending.extend((child, depth + 1) for child in current)
+
+
+def _walk_key(scope, identity, root):
+    try:
+        return str(_scoped_root(scope, root)), identity
+    except (PocketError, OSError, RuntimeError, ValueError, TypeError):
+        return None  # read_bytes raises its own error for this root
+
+
+def _walked(handle, identity, root):
+    """Whether this call already hash-verified this exact opaque artifact in a walk.
+
+    A walk discards opaque bytes, so remembering the verification (not the bytes)
+    for the rest of the call is enough; readers that use bytes still verify them.
+    """
+    scope = _active()
+    if scope is None or Path(str(handle.get("artifact_uri", ""))).name == "record.json":
+        return False
+    key = _walk_key(scope, identity, root)
+    return key is not None and key in scope.walked
+
+
+def _remember_walked(identity, root):
+    scope = _active()
+    if scope is not None and len(scope.walked) < VERIFIED_ENTRIES:
+        key = _walk_key(scope, identity, root)
+        if key is not None:
+            scope.walked.add(key)
 
 
 def _atomic_json(path: Path, value):

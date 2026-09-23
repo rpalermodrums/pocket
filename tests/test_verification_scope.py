@@ -8,7 +8,7 @@ import pytest
 from test_musical_context import fixture
 
 from pocket_music import artifact_store
-from pocket_music.artifact_store import put_bytes, read_bytes, verification_scope
+from pocket_music.artifact_store import put_bytes, put_record, read_bytes, verification_scope
 from pocket_music.errors import PocketError
 from pocket_music.practice_audio import practice_compare, practice_query, practice_render
 from pocket_music.practice_feedback_query import practice_feedback_query
@@ -123,6 +123,7 @@ def test_optimized_calls_return_identical_receipts(tmp_path, monkeypatch):
     optimized = [call() for call in calls]
     monkeypatch.setattr(artifact_store, "SNAPSHOT_BYTES", 0)
     monkeypatch.setattr(artifact_store, "MEMO_ENTRIES", 0)
+    monkeypatch.setattr(artifact_store, "VERIFIED_ENTRIES", 0)
     assert [call() for call in calls] == optimized
 
 
@@ -218,3 +219,58 @@ def test_memoized_validators_keep_their_original_error_for_malformed_handles(tmp
     monkeypatch.chdir(tmp_path)
     with verification_scope(), pytest.raises(PocketError, match="Expected pocket.artifact-handle/v1"):
         load_practice_render({"schema": "pocket.artifact-handle/v1"}, root)
+
+
+def blob_graph(store):
+    blob = put_bytes(b"x" * 64, store, "blob.bin", "pocket.test-blob/v1")
+    outer = put_record({"schema": "pocket.test-outer/v1", "evidence": [blob, {"again": blob}]}, store)
+    return blob, outer
+
+
+def test_walks_hash_each_opaque_artifact_once_per_call_even_above_the_snapshot_budget(tmp_path, monkeypatch):
+    store = tmp_path / "store"
+    blob, outer = blob_graph(store)
+    monkeypatch.setattr(artifact_store, "SNAPSHOT_BYTES", 0)  # nothing is retained
+    calls = counted_reads(monkeypatch)
+    with verification_scope():
+        for _ in range(3):
+            artifact_store._verify_handles(outer, store)
+    assert calls.count("blob.bin") == 1
+    calls.clear()
+    for _ in range(2):  # outside a call nothing is remembered
+        artifact_store._verify_handles(outer, store)
+    assert calls.count("blob.bin") == 2
+
+
+def test_bytes_used_after_a_walk_are_still_verified_and_the_next_call_rechecks(tmp_path, monkeypatch):
+    store = tmp_path / "store"
+    blob, outer = blob_graph(store)
+    monkeypatch.setattr(artifact_store, "SNAPSHOT_BYTES", 0)
+    path = store / blob["artifact_uri"]
+    with verification_scope():
+        artifact_store._verify_handles(outer, store)
+        path.chmod(0o644)
+        path.write_bytes(b"y" * 64)
+        # A reader that uses the bytes never receives unverified content.
+        with pytest.raises(PocketError, match="integrity"):
+            read_bytes(blob, store)
+    with verification_scope(), pytest.raises(PocketError, match="integrity"):
+        artifact_store._verify_handles(outer, store)
+
+
+def test_walk_memory_is_per_store_and_bounded(tmp_path, monkeypatch):
+    first, second = tmp_path / "a", tmp_path / "b"
+    blob, outer = blob_graph(first)
+    shutil.copytree(first, second)
+    monkeypatch.setattr(artifact_store, "SNAPSHOT_BYTES", 0)
+    calls = counted_reads(monkeypatch)
+    with verification_scope():
+        artifact_store._verify_handles(outer, first)
+        artifact_store._verify_handles(outer, second)
+    assert calls.count("blob.bin") == 2
+    calls.clear()
+    monkeypatch.setattr(artifact_store, "VERIFIED_ENTRIES", 0)
+    with verification_scope():
+        artifact_store._verify_handles(outer, first)
+        artifact_store._verify_handles(outer, first)
+    assert calls.count("blob.bin") == 2
