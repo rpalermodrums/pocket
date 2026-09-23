@@ -14,6 +14,7 @@ from typing import Literal
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
     put_record,
     read_record,
@@ -153,6 +154,7 @@ def _validate(definition, store_root):
     return clocks
 
 
+@call_memo("context")
 def load_context(handle, store_root):
     """Validate bounded ancestry once, then evidence bindings in parent-first order."""
     _verify_handles(handle, store_root)

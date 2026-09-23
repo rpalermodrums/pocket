@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket · practice review</title>
+  <link rel="stylesheet" href="/review.css">
+  <script type="module" src="/review.js"></script>
+</head>
+<body>
+  <a class="skip" href="#player">Skip to the player</a>
+  <header>
+    <p class="eyebrow">Pocket practice review</p>
+    <h1 id="question">Loading the selected comparison…</h1>
+    <p id="comparison-meta" class="meta"></p>
+    <p id="listening-state" class="state">Not yet reviewed by a person. Playing audio never records a report.</p>
+  </header>
+
+  <main>
+    <p id="status" role="status" aria-live="polite"></p>
+    <p id="error" role="alert" tabindex="-1" hidden></p>
+
+    <section aria-labelledby="items-heading">
+      <h2 id="items-heading">Baseline and variants</h2>
+      <p id="alignment" class="meta"></p>
+      <div id="items" role="radiogroup" aria-labelledby="items-heading"></div>
+      <div id="switch-guard" class="guard" hidden>
+        <p id="switch-guard-text"></p>
+        <button type="button" id="discard-draft">Discard that draft</button>
+        <button type="button" id="keep-draft">Keep editing it</button>
+      </div>
+    </section>
+
+    <section id="player" aria-labelledby="player-heading" tabindex="-1">
+      <h2 id="player-heading">Listen</h2>
+      <p id="item-summary"></p>
+      <details id="provenance">
+        <summary>Provenance and signal evidence</summary>
+        <dl id="provenance-list"></dl>
+      </details>
+      <div id="preview-missing" hidden>
+        <p>This item has no browser preview yet. Pocket will make a PCM16 copy at the original sample rate:
+          nearest rounding, ties to even, no dither, no gain or normalization. Samples that do not fit are
+          refused rather than clamped.</p>
+        <button type="button" id="make-preview" disabled>Prepare browser preview</button>
+      </div>
+      <div id="preview-ready" hidden>
+        <p id="preview-label" class="meta"></p>
+        <audio id="audio" controls preload="metadata" aria-label="Browser preview player"></audio>
+        <p class="meta">Your browser or device may resample during playback; the preview bytes are what Pocket verified.</p>
+        <ol id="occurrences" class="occurrences" aria-label="Occurrences in this item"></ol>
+        <fieldset id="selection">
+          <legend>Interval you actually heard</legend>
+          <div class="row">
+            <label>Start (seconds)<input id="start" type="number" min="0" step="0.001" inputmode="decimal"></label>
+            <button type="button" id="mark-start">Start at playhead <kbd>[</kbd></button>
+          </div>
+          <div class="row">
+            <label>End (seconds)<input id="end" type="number" min="0" step="0.001" inputmode="decimal"></label>
+            <button type="button" id="mark-end">End at playhead <kbd>]</kbd></button>
+          </div>
+          <p id="interval" class="meta" aria-live="polite"></p>
+          <button type="button" id="play-selection">Play this interval <kbd>P</kbd></button>
+        </fieldset>
+        <p class="meta">Shortcuts when not typing: <kbd>Space</kbd> play/pause, <kbd>[</kbd> and <kbd>]</kbd> mark
+          the interval, <kbd>P</kbd> play it.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="report-heading">
+      <h2 id="report-heading">Report what you heard</h2>
+      <form id="report" novalidate>
+        <p id="draft-target" class="meta"></p>
+        <!-- Disabled until the comparison has been verified, and while a save is in flight. -->
+        <fieldset id="report-fields" class="plain" disabled>
+          <legend class="visually-hidden">Report</legend>
+          <label>Your name<input id="actor" autocomplete="name" maxlength="240" required></label>
+          <label>What did you hear?<textarea id="note" rows="4" maxlength="8000" required></textarea></label>
+          <label>Decision (optional)<select id="decision"></select></label>
+          <label class="check"><input id="listened" type="checkbox"> I listened to this interval of this preview</label>
+          <p id="save-problem" class="meta" tabindex="-1"></p>
+          <div class="row">
+            <button type="submit" id="save">Save report</button>
+            <button type="button" id="cancel">Cancel draft</button>
+          </div>
+        </fieldset>
+      </form>
+      <div id="receipt" hidden tabindex="-1"></div>
+    </section>
+
+    <section aria-labelledby="reports-heading">
+      <h2 id="reports-heading">Saved reports</h2>
+      <p class="meta">Every retained report is shown as written. Contradictions stay side by side; nothing is averaged
+        into a preference.</p>
+      <ul id="reports"></ul>
+      <button type="button" id="more-reports" hidden>Show more reports</button>
+    </section>
+  </main>
+</body>
+</html>

@@ -6,11 +6,13 @@ Pocket is public, MIT-licensed and in early development. The package currently i
 
 The standalone context/practice path connects exact recording regions, explicit source and timeline clocks, repeated occurrences, internal cues, attributed interpretations, literal edits, exact audio comparisons and scoped reports. Explicit join envelopes have their own bounded processing profile.
 
+A retained comparison can be reviewed in the loopback-only [practice review page](practice-review.md) (`pocket practice-review`). It plays declared PCM16 browser previews (`practice_preview`) and saves attributed reports that name the exact preview and interval reviewed (`pocket.practice-feedback/v2`). Verified preview bytes are the player's input, not proof of device output; only Chromium has been qualified for the preview format.
+
 MIDI tools, recording analysis, record selection and a local selection workspace also exist. Saved/native Ableton workflows have separate setup and qualification requirements. Inspect current `capabilities_list` results and the [capability matrix](midi-capabilities.md); a named native tool is not a promise that your installation is qualified.
 
 ## Next practical step
 
-Make a small retained comparison easier for a musician to review, including explicit browser-preview provenance and attributed interval feedback. That interface is a planned extension of the practice providers, not a claim that the existing selection workspace already does it. The installed guide and registry always take precedence over roadmap language.
+Have a musician use the [practice review page](practice-review.md) on a small retained comparison and record attributed interval reports. No human listening has been performed with it yet: automated tests, including optional Chromium browser checks, cover the verified previews, saved reports and page behavior, not musical usefulness or what a device outputs. The installed guide and registry always take precedence over roadmap language.
 
 ## After v1
 

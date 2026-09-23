@@ -9,7 +9,9 @@ import soundfile as sf
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
+    per_call_verification,
     put_bytes,
     put_record,
     read_bytes,
@@ -66,6 +68,7 @@ def _processed(parent, joins, store_root):
     return samples * gain[:, None], rate
 
 
+@call_memo("practice_envelope")
 def load_practice_envelope(handle, store_root):
     _verify_handles(handle, store_root)
     record = read_record(handle, store_root, SCHEMA)
@@ -95,6 +98,7 @@ def load_practice_envelope(handle, store_root):
     return record
 
 
+@per_call_verification
 def practice_envelope(store_root: str, request_id: str, render: ArtifactHandle,
                       joins: list[JoinEnvelope], attribution: Attribution) -> dict:
     """Create a declared linear fade-out/in at explicit joins; timing and baseline stay fixed."""
@@ -136,6 +140,7 @@ def _comparison(baseline, variants, question, store_root):
     return [original, *processed]
 
 
+@per_call_verification
 def practice_compare_processed(store_root: str, request_id: str, baseline: ArtifactHandle,
                                variants: list[ArtifactHandle], question: str) -> dict:
     """Compare explicit join derivatives with their unchanged exact parent; no automatic verdict."""

@@ -48,9 +48,10 @@ def query_feedback_records(*, store_root, feedback, loader, schema, coverage,
         if render_sha256 is None:
             raise PocketError('Interval filter requires exact render identity')
         interval = _interval(interval_frames)
+    schemas = (schema,) if isinstance(schema, str) else tuple(schema)
     if any(not isinstance(h, dict) or h.get('schema') != 'pocket.artifact-handle/v1'
-           or h.get('artifact_schema') != schema for h in feedback):
-        raise PocketError('Only ' + schema.removeprefix('pocket.') + ' handles are supported')
+           or h.get('artifact_schema') not in schemas for h in feedback):
+        raise PocketError('Only ' + ' or '.join(s.removeprefix('pocket.') for s in schemas) + ' handles are supported')
     # One shared graph walk retains existing global verification budgets.
     _verify_handles(feedback, store_root)
     if len({h['sha256'] for h in feedback}) != len(feedback):

@@ -112,7 +112,7 @@ def generate_reference(destination, root, revision):
     names = {r['name'] for r in data['registered_providers']}
     text = ['# Provider reference', '',
         f'Generated from package **{data["package_version"]}** at source revision [`{revision[:12]}`](https://github.com/rpalermodrums/pocket/tree/{revision}).', '',
-        'These are installed Python, CLI and MCP input contracts. The general HTTP/OpenAPI facade is not implemented; the local selection workspace has separate browser routes. Output receipts remain dynamic dictionaries. Capability discovery supplies current profiles and prerequisites.', '',
+        'These are installed Python, CLI and MCP input contracts. The general HTTP/OpenAPI facade is not implemented; the local selection workspace and practice review page have separate browser routes. Output receipts remain dynamic dictionaries. Capability discovery supplies current profiles and prerequisites.', '',
         '[Download complete contracts](installed-contracts.json) · [Download all MCP tools](mcp-tools.json)', '',
         f'{len(names)} composable providers; {len(data["mcp_tools"])} total MCP registrations, including branded and compatibility names.', '',
         '<label for="provider-filter">Find a provider</label><input id="provider-filter" type="search" placeholder="Try context, MIDI, feedback…"><p id="provider-count" role="status"></p>', '']

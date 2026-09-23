@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fcntl
-import hmac
 import json
 import os
 import secrets
@@ -14,6 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from .errors import PocketError
+from .loopback import guard, send
 from .selection_types import BagHandle
 
 _FILES = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -180,36 +180,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(10)
 
     def _send(self, status, body, content_type="application/json; charset=utf-8"):
-        payload = body if isinstance(body, bytes) else json.dumps(body, allow_nan=False).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; "
-                         "img-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; "
-                         "base-uri 'none'; form-action 'self'")
-        self.end_headers()
-        self.wfile.write(payload)
+        send(self, status, body, content_type)
 
     def _guard(self, write=False):
-        if self.headers.get("Host") != self.server.authority:
-            self._send(403, {"error": "Unexpected local host"})
-            return False
-        origin = self.headers.get("Origin")
-        if origin is not None and origin != self.server.origin:
-            self._send(403, {"error": "Cross-origin requests are not allowed"})
-            return False
-        if self.headers.get("Sec-Fetch-Site") == "cross-site":
-            self._send(403, {"error": "Cross-site requests are not allowed"})
-            return False
-        if write and (origin != self.server.origin or not hmac.compare_digest(
-            self.headers.get("X-Pocket-CSRF", ""), self.server.workspace.csrf
-        )):
-            self._send(403, {"error": "Refresh this workspace to obtain its local session token"})
-            return False
-        return True
+        return guard(self, self.server.authority, self.server.origin, self.server.workspace.csrf, write,
+                     "Refresh this workspace to obtain its local session token")
 
     def do_GET(self):
         if not self._guard():

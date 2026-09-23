@@ -53,6 +53,7 @@ Read [the Pocket skill](../skills/pocket/SKILL.md) and [installed contracts](con
 ## Choose the next tool
 
 - [Musical context and practice](musical-context.md): source clocks, interpretations, literal edits, comparison and feedback.
+- [Practice review](practice-review.md): hear a retained comparison through declared browser previews and save attributed interval reports.
 - [Peek](peek.md): inspect a passage's timing and tonal evidence without declaring musical beat one.
 - [MIDI](midi.md): material creation, editing and optional MIDI file output.
 - [Record selection](selection-interfaces.md): routes and next-record choices.

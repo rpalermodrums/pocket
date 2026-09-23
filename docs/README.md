@@ -11,6 +11,8 @@ See [status and direction](status.md) for current capabilities and future work.
 
 - [Musical context and practice](musical-context.md): clocks, internal cues,
   repeated passages and independently verified audio without a DAW.
+- [Practice review](practice-review.md): a local page to hear a retained
+  comparison through declared previews and save attributed interval reports.
 - [MIDI and sound tools](midi.md) and [capability matrix](midi-capabilities.md).
 - [Peek](peek.md), [Thread](thread.md), [Stitch](stitch.md): recording analysis,
   saved-set inspection and exact comparisons.

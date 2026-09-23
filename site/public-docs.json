@@ -66,6 +66,10 @@
       "target": "docs/pipette.md"
     },
     {
+      "source": "docs/practice-review.md",
+      "target": "docs/practice-review.md"
+    },
+    {
       "source": "docs/record-bag.md",
       "target": "docs/record-bag.md"
     },
@@ -198,6 +202,9 @@
       "Core tools": [
         {
           "Context & practice": "docs/musical-context.md"
+        },
+        {
+          "Practice review": "docs/practice-review.md"
         },
         {
           "Inspect audio": "docs/peek.md"

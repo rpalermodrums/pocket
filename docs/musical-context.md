@@ -48,6 +48,8 @@ native promotion stay in their adapter.
 | `pocket.practice-render/v1` | Context revision, selected occurrences, original-source/output mappings, exact output audio handle, processing profile and measured signal. |
 | `pocket.practice-comparison/v1` | Explicit baseline, alternatives, question, duration policy and signal readiness. No inferred winner. |
 | `pocket.practice-feedback/v1` | Exact comparison/render, audio hash, frame interval, actor, actor kind, note and optional decision. |
+| `pocket.practice-feedback/v2` | A v1-style report on a declared preview: exact comparison/render, the preview and its audio hash, the reviewed preview interval and the mapped render interval. |
+| `pocket.practice-preview/v1` | Declared PCM16 browser copy of one exact render: parent and audio identities, one-to-one frame mapping, conversion, quantization error and signal evidence. |
 
 Every position is scoped by the **context artifact handle plus clock ID**. Local
 IDs alone are not durable cross-context references. An immutable child context
@@ -82,7 +84,9 @@ remains an interpretation.
 The providers are lazy root exports from `pocket_music`. MCP uses the same
 underscore names. CLI uses hyphens and accepts the same argument object through
 `--spec path.json`. The existing `PUBLIC_CAPABILITIES` registry registers all three
-surfaces; there is no additional HTTP implementation.
+surfaces; there is no HTTP API for these providers. The loopback
+[practice review page](practice-review.md) is a separate local browser interface
+that calls them.
 
 An already-running Pocket MCP process needs a restart to load the new provider
 registrations. Existing editable installations pick up the Python/CLI changes.
@@ -94,13 +98,14 @@ registrations. Existing editable installations pick up the Python/CLI changes.
 | `context_resolve` | `context`, `target_clock_id`, `target_space`, exactly one `position` or `anchor_id`; optional `occurrence_id` | Exact output coordinate and the occurrence used. |
 | `practice_render` | `request_id`, `context`, ordered `occurrence_ids` | New audio and render handles with source mappings. |
 | `practice_compare` | `request_id`, `baseline`, `variants`, `question`; optional `allow_duration_mismatch` | Verified comparison handle. |
-| `practice_feedback` | `request_id`, `comparison`, `render`, `interval_frames`, `actor`, `actor_kind`, `note`; optional `decision` | Attributed feedback handle. |
+| `practice_feedback` | `request_id`, `comparison`, `render`, `interval_frames`, `actor`, `actor_kind`, `note`; optional `decision`, `preview` | Attributed feedback handle (v2 when a preview was reviewed). |
 | `interpretation_create`, `interpretation_query`, `context_bind_interpretation` | Exact context/source clock, tagged claim, attribution; selected evidence when applicable | Immutable interpretation and v2 context binding. |
 | `context_edit`, `context_edit_query` | Explicit operations, locks, attribution or exact edit handle | Child context and revalidated preservation proof. |
 | `practice_compare_revisions` | Baseline/variants, edit receipts, full occurrence correspondence, question | Explicit cross-revision comparison. |
 | `practice_feedback_query` | Explicit feedback handles; optional exact render, interval and report filters | Bounded original reports without consensus. |
 | `practice_envelope`, `practice_compare_processed` | Exact baseline, declared joins and attribution; or derivatives and question | Explicit processing and baseline comparison. |
-| `practice_query` | `artifact`; optional `section`, `offset`, `limit` | Revalidated render/comparison/feedback summary, or paged render mappings. |
+| `practice_preview` | `request_id`, exact `render` (raw or join envelope), `profile: "browser-pcm16-original-rate/v1"` | Declared PCM16 browser preview and its audio handle. |
+| `practice_query` | `artifact`; optional `section`, `offset`, `limit` | Revalidated render/comparison/feedback/preview summary, or paged render mappings. |
 
 `MusicalContextDefinition` and nested transport types live in `context_types.py`.
 All definition fields are explicit: `context_id`, `title`, `attribution`, `sources`,
@@ -179,11 +184,19 @@ uses `actor_kind="agent"`. Creating feedback never changes a render's stored
   Moving the complete artifact store preserves references; retained practice
   reads do not need the original external recording. Recapturing/replaying the
   original capture request still validates that external original.
+- Within one practice provider call (and `context_edit_query`), an artifact that
+  appears several times in the evidence graph is read and hash-verified once, and
+  a repeated validation of the same context, render, envelope, preview or edit
+  reuses that call's result. Graph bounds are still enforced on every walk.
+  Nothing is kept between calls: the next call reads and verifies everything
+  again, so a changed file is detected. Up to 256 MiB of verified bytes may be
+  held in memory during a call.
 
 DOUBLE WAV is an evidence format and is not supported by every browser player.
-A browser export needs an explicit supported format and independent fidelity
-checks. Local experiments used separate FLOAT32 review copies; those exports
-are not a new public processing profile.
+Use `practice_preview` for a declared browser copy (see
+[declared browser previews](#declared-browser-previews)). Earlier local
+experiments used separate FLOAT32 review copies; those files are not a public
+processing profile.
 
 This profile does not mix overlapping layers, transpose, stretch, generate a
 count-in, infer meter, or accompany a player in real time. Existing symbolic tools
@@ -274,6 +287,11 @@ include an exact `render` handle, `actor`, `actor_kind`, `decision` and
 `interval_frames`; an interval requires the render handle. An audio hash alone
 cannot distinguish identical PCM belonging to different context revisions.
 
+Version 1 and version 2 reports can be mixed in one query. A v2 row adds
+`report_schema` and `reviewed_audio` (the exact preview, its audio hash and the
+preview interval); v1 rows keep their original fields, because the playback bytes
+behind a v1 report were never recorded. Filters use render frames for both.
+
 Queries validate all supplied reports before filtering. Pages retain input order,
 original intervals, text and contradictory decisions. An overlap match does not
 extend a keep decision. Cursors bind the exact input/filter identities; changed
@@ -324,3 +342,73 @@ Its FLOAT32 browser previews record their rounding error separately from the
 DOUBLE evidence. These are technical repetition joins, not selected phrase loops
 or listening-approved defaults. See [contract export and errors](contracts.md) for
 machine schemas generated from the installed providers.
+
+## Declared browser previews
+
+`practice_preview(store_root, request_id, render, profile)` makes a separately
+identified `pocket.practice-preview/v1` copy of an exact practice render or
+join-envelope render for a browser player. The only profile is
+`browser-pcm16-original-rate/v1`:
+
+- Decoded parent samples are multiplied by 32768 and rounded to the nearest
+  integer, ties to even. No dither, gain, normalization, clamping, resampling,
+  channel conversion, fades or timing change is applied.
+- Every rounded value must lie in `[-32768, 32767]`. Otherwise the request is
+  refused with `unsupported_profile`, naming the first frame and channel. An
+  overloaded or near-full-scale render is never clamped to make it playable.
+- Output is a canonical 44-byte-header RIFF/WAVE PCM16 file at the parent's own
+  rate and channel count. Rates are limited to 8000, 11025, 16000, 22050, 24000,
+  32000, 44100, 48000, 88200 and 96000 Hz; other rates are refused, not resampled.
+- Frames map one-to-one to the parent (`frame_mapping.kind: "identity"`), so the
+  parent's occurrence mappings also address preview frames. A PCM16-sourced render
+  previews without any rounding; `coverage.parent_samples_exact` reports this.
+
+The record keeps the exact parent handle and audio identity, the conversion
+declaration, quantization counts and maximum error in LSB, the parent's signal
+evidence and the preview's own measured signal. Parent signal warnings stay in
+the receipt. `practice_query` rebuilds the expected bytes from the fully
+revalidated parent, so a rehashed or edited preview record is refused.
+`section="mappings"` on a preview returns the parent's occurrence mappings.
+
+A preview is a derivative for playback, not a musical edit. It cannot be a
+preview parent, an envelope parent or a comparison member. Identical replays
+return the verified receipt; changed inputs under the same request ID conflict.
+
+Verified preview bytes establish the encoded input a player receives, not the
+sound leaving a device: browsers and operating systems may resample or process
+output. In Chromium, PCM16 is decoded as `k × (1/32768)` below zero and
+`k × (1/32767)` above, using float32 reciprocals. Browser floats therefore differ
+slightly from Pocket's `k/32768` on positive samples, although every integer is
+recovered exactly. The optional `tests/test_practice_preview_browser.py`
+qualification checks this for every declared rate. Other browsers have not been
+qualified. Creating or querying a preview records no listening.
+
+### Reports about a preview
+
+Pass `preview` to `practice_feedback` when the person or agent reviewed a declared
+preview rather than the retained render. The preview must derive from the exact
+`render` named in the call, and that render must belong to the comparison; a
+preview of another variant is refused with `source_mismatch`, so a stale
+selection cannot be reported against the wrong audio. `interval_frames` then
+address the preview. The new `pocket.practice-feedback/v2` record keeps:
+
+- the comparison, render and render audio hash, as in v1;
+- `interval_frames`: the mapped render interval (identical under the one-to-one
+  preview mapping);
+- `reviewed_audio`: `kind: "declared_preview"`, the preview handle, its audio
+  hash, profile, the preview interval and `frame_mapping: "identity"`.
+
+Calls without `preview` still create v1 records with unchanged request identity,
+fields and receipt. `practice_query` on a v2 report reports the preview profile,
+the parent render's profile as `parent_profile` and `reviewed_audio`. Reading a
+v2 report revalidates the comparison, the preview and its parent; a rehashed
+record with a changed preview, interval, attribution or evidence kind is refused.
+
+The [practice review page](practice-review.md) uses exactly this route for a
+person's report: it prepares the declared preview, shows the frames that will be
+saved and requires explicit confirmation before calling `practice_feedback`.
+
+`actor_kind="agent"` remains an agent report even when it names a preview. The
+provider records what the caller states about an interval; it never infers that
+anyone listened from playback, and saving a report never changes a render,
+preview or comparison.

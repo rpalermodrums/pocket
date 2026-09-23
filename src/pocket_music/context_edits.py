@@ -6,8 +6,10 @@ import copy
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
     digest,
+    per_call_verification,
     put_record,
     read_record,
     run_request,
@@ -152,6 +154,7 @@ def _renderability(child, operations, store_root):
     return results
 
 
+@call_memo("context_edit")
 def load_context_edit(handle, store_root):
     _verify_handles(handle, store_root)
     record = read_record(handle, store_root, SCHEMA)
@@ -190,6 +193,7 @@ def context_edit(store_root: str, request_id: str, context: ArtifactHandle, oper
     return result
 
 
+@per_call_verification
 def context_edit_query(store_root: str, edit: ArtifactHandle) -> dict:
     """Recompute preservation and supported render-profile checks from retained parents."""
     return context_receipt(artifacts={"edit": edit}, summary=load_context_edit(edit, store_root), coverage=COVERAGE)

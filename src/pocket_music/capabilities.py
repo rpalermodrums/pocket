@@ -60,6 +60,7 @@ PUBLIC_CAPABILITIES = (
     ('practice_envelope', 'practice_envelopes', 'practice', 'envelope', False, 'Declared linear fade-out/in at exact occurrence joins; baseline and timing remain unchanged.'),
     ('practice_compare_processed', 'practice_envelopes', 'practice', 'compare_processed', False, 'Compare explicit join derivatives with their exact unchanged baseline; no inferred listening verdict.'),
     ('practice_feedback_query', 'practice_feedback_query', 'practice', 'feedback_query', True, 'Retrieve explicit attributed reports by exact render, interval, actor and decision, preserving contradictions.'),
+    ('practice_preview', 'practice_previews', 'practice', 'preview', False, 'Declared original-rate PCM16 browser preview of an exact render; nearest-even rounding, no dither or other DSP, unrepresentable samples refused.'),
     ('instrument_inspect', 'instruments.core', 'instrument', 'inspect', False, 'Bounded installation and attributed state inspection.'),
     ('instrument_parameters', 'instruments.core', 'instrument', 'parameter_read', True, 'Query captured exposed descriptors without loading a patch.'),
     ('preset_catalog', 'instruments.core', 'instrument', 'catalog', False, 'Hash and query opaque local presets without loading them.'),
@@ -160,16 +161,17 @@ _HANDLE_FAMILIES = {
     'practice_compare': (['pocket.practice-render/v1'], ['pocket.practice-comparison/v1']),
     'practice_envelope': (['pocket.practice-render/v1'], ['pocket.practice-envelope/v1', 'pocket.render-audio/v1']),
     'practice_compare_processed': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-processed-comparison/v1']),
-    'practice_feedback': (['pocket.practice-processed-comparison/v1', 'pocket.practice-envelope/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-render/v1'], ['pocket.practice-feedback/v1']),
-    'practice_query': (['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1'],
-                       ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1']),
+    'practice_feedback': (['pocket.practice-processed-comparison/v1', 'pocket.practice-envelope/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-preview/v1'], ['pocket.practice-feedback/v1', 'pocket.practice-feedback/v2']),
+    'practice_query': (['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2'],
+                       ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2']),
+    'practice_preview': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-preview/v1', 'pocket.practice-preview-audio/v1']),
     'interpretation_create': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.audio-region-hypotheses/v1'], ['pocket.interpretation/v1']),
     'interpretation_query': (['pocket.interpretation/v1'], ['pocket.interpretation/v1']),
     'context_bind_interpretation': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.interpretation/v1'], ['pocket.musical-context/v2']),
     'context_edit': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.interpretation/v1'], ['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.context-edit/v1']),
     'context_edit_query': (['pocket.context-edit/v1'], ['pocket.context-edit/v1']),
     'practice_compare_revisions': (['pocket.practice-render/v1', 'pocket.context-edit/v1'], ['pocket.practice-revision-comparison/v1']),
-    'practice_feedback_query': (['pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1']),
+    'practice_feedback_query': (['pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-envelope/v1', 'pocket.practice-feedback/v2'], ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v2', 'pocket.practice-preview/v1']),
     'instrument_inspect': ([], ['pocket.instrument-state/v1', 'pocket.instrument-inventory/v1', 'pocket.environment/v1']),
     'instrument_parameters': (['pocket.instrument-state/v1'], ['pocket.instrument-state/v1']),
     'preset_catalog': (['pocket.preset-catalog/v1'], ['pocket.preset-catalog/v1']),
@@ -233,9 +235,17 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         if module in ('musical_context', 'practice_audio'):
             profile = 'authored-occurrences-exact-step/v1' if module == 'musical_context' else 'exact-pcm-occurrences/v1'
             prerequisites = ['Verified retained source regions and explicit authored coordinates; no model, instrument or DAW']
-        if name in ('practice_query', 'practice_feedback'):
+        if name == 'practice_feedback':
             profile = None
-            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1 and linear-loop-join-envelope/v1; no model, instrument or DAW']
+            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1 and linear-loop-join-envelope/v1; no model, instrument or DAW',
+                             'Optional declared browser-pcm16-original-rate/v1 preview of the selected render records the reviewed preview and interval as practice-feedback/v2']
+        if name == 'practice_query':
+            profile = None
+            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1, linear-loop-join-envelope/v1 and browser-pcm16-original-rate/v1 previews; no model, instrument or DAW']
+        if module == 'practice_previews':
+            profile = 'browser-pcm16-original-rate/v1'
+            prerequisites = ['Exact verified render or join-envelope parent at 8000/11025/16000/22050/24000/32000/44100/48000/88200/96000 Hz, mono/stereo; every sample must round into PCM16 without clamping',
+                             'Verified bytes are the encoded player input; browser/device output and human listening are not established']
         if module == 'practice_envelopes':
             profile = 'linear-loop-join-envelope/v1'
             prerequisites = ['Exact PCM parent, explicit occurrence-join frames and nonoverlapping linear envelopes; original signal warnings retained']

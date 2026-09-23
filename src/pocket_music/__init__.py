@@ -29,6 +29,7 @@ _PUBLIC = {
     "model_preflight": "music_embeddings", "LocalClapAdapter": "music_embeddings",
     "build_embedding_index": "music_embeddings", "load_embedding_index": "music_embeddings",
     "rank_embedding_query": "music_embeddings", "start_workspace": "workspace",
+    "start_practice_review": "practice_review",
 }
 from .capabilities import PUBLIC_CAPABILITIES
 

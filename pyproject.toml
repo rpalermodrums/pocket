@@ -31,4 +31,4 @@ target-version = "py311"
 line-length = 110
 
 [tool.setuptools.package-data]
-pocket_music = ["basic_pitch_LICENSE.txt", "web/*.html", "web/*.css", "web/*.js", "web/*.svg", "devices/baste/*.js", "devices/baste/*.maxpat", "devices/native_midi/*.js", "devices/native_midi/*.maxpat", "devices/native_midi_writer/*.js", "devices/native_midi_writer/*.maxpat"]
+pocket_music = ["basic_pitch_LICENSE.txt", "web/*.html", "web/*.css", "web/*.js", "web/*.svg", "web/practice-review/*.html", "web/practice-review/*.css", "web/practice-review/*.js", "web/practice-review/*.mjs", "devices/baste/*.js", "devices/baste/*.maxpat", "devices/native_midi/*.js", "devices/native_midi/*.maxpat", "devices/native_midi_writer/*.js", "devices/native_midi_writer/*.maxpat"]

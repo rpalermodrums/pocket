@@ -189,6 +189,14 @@ def parser() -> argparse.ArgumentParser:
     workspace.add_argument("--workspace-dir", required=True)
     workspace.add_argument("--bag-handle", help="JSON file containing a bag handle or create result")
     workspace.add_argument("--port", type=int, default=0, help="Loopback port; 0 chooses a free port")
+    review = commands.add_parser("practice-review",
+                                 help="Serve a local listening and report page for one comparison; Ctrl-C stops it")
+    review.add_argument("--store-root", required=True, help="Existing Pocket artifact store")
+    review.add_argument("--comparison-file", required=True,
+                        help="JSON file with a comparison handle or a receipt containing artifacts.comparison")
+    review.add_argument("--session-dir", required=True, help="Directory for this review's small handle index")
+    review.add_argument("--reports-file", help="Optional JSON list of existing feedback handles or receipts to show")
+    review.add_argument("--port", type=int, default=0, help="Loopback port; 0 chooses a free port")
     return root
 
 
@@ -220,6 +228,11 @@ def _dispatch(args: argparse.Namespace):
         stored = _read_object(args.bag_handle) if args.bag_handle else None
         handle = stored.get("handle", stored) if stored else None
         start_workspace(args.workspace_dir, bag_handle=handle, port=args.port)
+        return None
+    if args.command == "practice-review":
+        from .practice_review import start_practice_review
+        start_practice_review(args.store_root, args.comparison_file, args.session_dir,
+                              reports_file=args.reports_file, port=args.port)
         return None
     if args.command == "identify":
         return identify_audio(args.path)
@@ -268,7 +281,7 @@ def _dispatch(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        artifact_output = (args.command in {"stitch", "thread-export", "workspace", "baste-device"} or
+        artifact_output = (args.command in {"stitch", "thread-export", "workspace", "practice-review", "baste-device"} or
                            (args.command in _SPEC_OPERATIONS and
                             _SPEC_OPERATIONS[args.command][args.action][2] is not None))
         response_path = None if artifact_output else getattr(args, "output", None)

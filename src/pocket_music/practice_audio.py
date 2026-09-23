@@ -17,7 +17,9 @@ import soundfile as sf
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
+    per_call_verification,
     put_bytes,
     put_record,
     read_bytes,
@@ -33,6 +35,8 @@ from .time_maps import musical_time
 RENDER_SCHEMA = "pocket.practice-render/v1"
 COMPARISON_SCHEMA = "pocket.practice-comparison/v1"
 FEEDBACK_SCHEMA = "pocket.practice-feedback/v1"
+FEEDBACK_V2_SCHEMA = "pocket.practice-feedback/v2"
+PREVIEW_SCHEMA = "pocket.practice-preview/v1"
 PROFILE = "exact-pcm-occurrences/v1"
 PROCESSING = {"profile": PROFILE, "output_subtype": "DOUBLE", "fades": False, "normalization": False,
               "resampling": False, "channel_conversion": False, "time_stretch": False, "mixing": False}
@@ -114,6 +118,7 @@ def _signal(payload, rate, channels, frames):
                          "expected_frames": frames, "frame_tolerance": 0, "signal_expectation": "audible"})
 
 
+@call_memo("practice_render")
 def load_practice_render(handle, store_root):
     """Recheck mapping, signal and decoded source samples, including after relocation."""
     _verify_handles(handle, store_root)
@@ -146,6 +151,7 @@ def load_practice_render(handle, store_root):
     return record
 
 
+@per_call_verification
 def practice_render(store_root: str, request_id: str, context: ArtifactHandle,
                     occurrence_ids: list[str]) -> dict:
     """Render exact original-rate passages/repetitions as a new immutable DOUBLE WAV."""
@@ -191,6 +197,7 @@ def _comparison(baseline, variants, question, allow_duration_mismatch, store_roo
     return renders
 
 
+@per_call_verification
 def practice_compare(store_root: str, request_id: str, baseline: ArtifactHandle,
                      variants: list[ArtifactHandle], question: str,
                      allow_duration_mismatch: bool = False) -> dict:
@@ -238,29 +245,101 @@ def load_comparison(handle, store_root):
     return record, renders
 
 
+def _reviewed_preview(preview, render, store_root):
+    """Fully revalidate a declared preview and require it to derive from the selected render."""
+    if not isinstance(preview, dict) or preview.get("artifact_schema") != PREVIEW_SCHEMA:
+        raise PocketError("Feedback preview must be an exact practice preview handle")
+    from .practice_previews import load_practice_preview
+    record, _ = load_practice_preview(preview, store_root)
+    if canonical_bytes(record["parent"]) != canonical_bytes(render):
+        raise PocketError("Feedback preview is not the selected render's preview", code="source_mismatch")
+    return record
+
+
+def _render_interval(reviewed_interval, preview):
+    # The only preview profile maps frames one-to-one with a zero offset.
+    offset = preview["frame_mapping"]["parent_offset_frames"]
+    return [reviewed_interval[0] + offset, reviewed_interval[1] + offset]
+
+
+@per_call_verification
 def practice_feedback(store_root: str, request_id: str, comparison: ArtifactHandle, render: ArtifactHandle,
                       interval_frames: list[int], actor: str, actor_kind: Literal["human", "agent"], note: str,
-                      decision: Literal["keep", "revise", "reject", "no_addition"] | None = None) -> dict:
-    """Attach an attributed listening report to exact compared audio and frame bounds."""
+                      decision: Literal["keep", "revise", "reject", "no_addition"] | None = None,
+                      preview: ArtifactHandle | None = None) -> dict:
+    """Attach an attributed listening report to exact compared audio and frame bounds.
+
+    Without `preview` this is the original v1 report on the retained render. With
+    a declared preview of that render, `interval_frames` address the preview that
+    was reviewed; a v2 record keeps both it and the mapped render interval.
+    """
     inputs = {"comparison": comparison, "render": render, "interval_frames": interval_frames,
               "actor": actor, "actor_kind": actor_kind, "note": note, "decision": decision}
+    if preview is not None:
+        inputs["preview"] = preview  # v1 request identities stay unchanged
     def work():
         comparison_record, renders = load_comparison(comparison, store_root)
         handles = [comparison_record["baseline"], *comparison_record["variants"]]
         if render not in handles:
             raise PocketError("Feedback render is not in this comparison")
         evidence = renders[handles.index(render)]
-        validate_feedback_report(interval_frames, evidence["signal"]["frames"], actor, actor_kind, note, decision)
         kind = "attributed_human_listening" if actor_kind == "human" else "agent_report"
-        handle = put_record({"schema": FEEDBACK_SCHEMA, **inputs, "evidence_kind": kind,
-                             "render_sha256": evidence["audio"]["sha256"]}, store_root)
+        if preview is None:
+            validate_feedback_report(interval_frames, evidence["signal"]["frames"], actor, actor_kind, note, decision)
+            handle = put_record({"schema": FEEDBACK_SCHEMA, **inputs, "evidence_kind": kind,
+                                 "render_sha256": evidence["audio"]["sha256"]}, store_root)
+            return context_receipt(request_id=request_id, artifacts={"feedback": handle},
+                                   coverage={"listening": kind, "provider_playback": False})
+        reviewed = _reviewed_preview(preview, render, store_root)
+        validate_feedback_report(interval_frames, reviewed["format"]["frames"], actor, actor_kind, note, decision)
+        handle = put_record({"schema": FEEDBACK_V2_SCHEMA, "comparison": comparison, "render": render,
+                             "render_sha256": evidence["audio"]["sha256"],
+                             "interval_frames": _render_interval(interval_frames, reviewed),
+                             "reviewed_audio": {"kind": "declared_preview", "preview": preview,
+                                                "preview_sha256": reviewed["audio"]["sha256"],
+                                                "profile": reviewed["profile"], "interval_frames": interval_frames,
+                                                "frame_mapping": reviewed["frame_mapping"]["kind"]},
+                             "actor": actor, "actor_kind": actor_kind, "note": note, "decision": decision,
+                             "evidence_kind": kind}, store_root)
         return context_receipt(request_id=request_id, artifacts={"feedback": handle},
-                               coverage={"listening": kind, "provider_playback": False})
+                               coverage={"listening": kind, "provider_playback": False,
+                                         "reviewed_audio": "declared_preview", "preview_profile": reviewed["profile"]})
     return run_request(store_root, request_id, "practice_feedback", inputs, work)
+
+
+def _load_feedback_v2(handle, store_root, cache):
+    _verify_handles(handle, store_root)
+    record = read_record(handle, store_root, FEEDBACK_V2_SCHEMA)
+    fields(record, {"schema", "comparison", "render", "render_sha256", "interval_frames", "reviewed_audio",
+                    "actor", "actor_kind", "note", "decision", "evidence_kind"})
+    reviewed = record["reviewed_audio"]
+    fields(reviewed, {"kind", "preview", "preview_sha256", "profile", "interval_frames", "frame_mapping"})
+    key = canonical_bytes(record["comparison"])
+    if key not in cache:
+        cache[key] = load_comparison(record["comparison"], store_root)
+    comparison, renders = cache[key]
+    handles = [comparison["baseline"], *comparison["variants"]]
+    if record["render"] not in handles:
+        raise PocketError("Feedback render is not in this comparison")
+    render = renders[handles.index(record["render"])]
+    preview = _reviewed_preview(reviewed["preview"], record["render"], store_root)
+    validate_feedback_report(reviewed["interval_frames"], preview["format"]["frames"], record["actor"],
+                             record["actor_kind"], record["note"], record["decision"])
+    kind = "attributed_human_listening" if record["actor_kind"] == "human" else "agent_report"
+    if (reviewed["kind"] != "declared_preview" or reviewed["profile"] != preview["profile"]
+            or reviewed["preview_sha256"] != preview["audio"]["sha256"]
+            or reviewed["frame_mapping"] != preview["frame_mapping"]["kind"]
+            or record["interval_frames"] != _render_interval(reviewed["interval_frames"], preview)
+            or record["evidence_kind"] != kind or record["render_sha256"] != render["audio"]["sha256"]):
+        raise PocketError("Feedback preview, interval, attribution or render identity mismatch",
+                          code="evidence_mismatch")
+    return record, render
 
 
 def load_practice_feedback(handle, store_root, cache=None):
     """Validate exact comparison membership, render identity and attributed interval."""
+    if isinstance(handle, dict) and handle.get("artifact_schema") == FEEDBACK_V2_SCHEMA:
+        return _load_feedback_v2(handle, store_root, {} if cache is None else cache)
     _verify_handles(handle, store_root)
     record = read_record(handle, store_root, FEEDBACK_SCHEMA)
     cache = {} if cache is None else cache
@@ -282,6 +361,7 @@ def load_practice_feedback(handle, store_root, cache=None):
     return record, render
 
 
+@per_call_verification
 def practice_query(store_root: str, artifact: ArtifactHandle,
                    section: Literal["summary", "mappings"] = "summary", offset: int = 0, limit: int = 32) -> dict:
     """Verify retained practice records; mappings use bounded pagination."""
@@ -293,24 +373,40 @@ def practice_query(store_root: str, artifact: ArtifactHandle,
     record = read_record(artifact, store_root)
     schema = record["schema"]
     audio_schema = schema
+    extra_coverage = {}
+    mappings = None
     if schema in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
         record = load_practice_audio(artifact, store_root)
+        mappings = record["mappings"]
     elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1", "pocket.practice-processed-comparison/v1"):
         record, _ = load_comparison(artifact, store_root)
     elif schema == FEEDBACK_SCHEMA:
         record, render = load_practice_feedback(artifact, store_root)
         audio_schema = render["schema"]
+    elif schema == FEEDBACK_V2_SCHEMA:
+        record, render = load_practice_feedback(artifact, store_root)
+        audio_schema = PREVIEW_SCHEMA
+        extra_coverage = {"parent_profile": render["processing"]["profile"], "reviewed_audio": "declared_preview"}
+    elif schema == PREVIEW_SCHEMA:
+        from .practice_previews import load_practice_preview
+        record, parent = load_practice_preview(artifact, store_root)
+        # One-to-one frames: parent occurrence mappings address preview frames unchanged.
+        mappings = parent["mappings"]
+        extra_coverage = {"parent_profile": parent["processing"]["profile"],
+                          "frame_mapping": "identity", "device_output_verified": False}
     else:
         raise PocketError("Unknown practice artifact schema")
-    profile = ("linear-loop-join-envelope/v1" if audio_schema in
+    profile = ("browser-pcm16-original-rate/v1" if audio_schema == PREVIEW_SCHEMA else
+               "linear-loop-join-envelope/v1" if audio_schema in
                ("pocket.practice-envelope/v1", "pocket.practice-processed-comparison/v1") else PROFILE)
-    common = {"artifacts": {"artifact": artifact}, "coverage": {"profile": profile, "provider_playback": False}}
+    common = {"artifacts": {"artifact": artifact},
+              "coverage": {"profile": profile, "provider_playback": False, **extra_coverage}}
     if section == "summary":
         if offset:
             raise PocketError("Summary offset must be zero")
         return context_receipt(**common, summary={k: v for k, v in record.items() if k != "mappings"})
-    if schema not in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
+    if mappings is None:
         raise PocketError("Only a render contains source mappings")
-    rows = record["mappings"][offset:offset + limit]
-    return context_receipt(**common, rows=rows, total=len(record["mappings"]), offset=offset,
-                           next_offset=offset + len(rows) if offset + len(rows) < len(record["mappings"]) else None)
+    rows = mappings[offset:offset + limit]
+    return context_receipt(**common, rows=rows, total=len(mappings), offset=offset,
+                           next_offset=offset + len(rows) if offset + len(rows) < len(mappings) else None)

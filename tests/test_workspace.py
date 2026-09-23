@@ -241,3 +241,9 @@ assert.match(dom.get('routes').children[0].children[2].textContent,/45 min short
     result = subprocess.run([node, '-'], input=fixture + functions + expectations, text=True,
                             capture_output=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_non_ascii_csrf_header_is_refused_not_crashed(server):
+    status, _, _ = call(server, "/api/import", {"expected_workspace_revision": 0, "tracks": records()},
+                        {"X-Pocket-CSRF": "\xe9"})
+    assert status == 403

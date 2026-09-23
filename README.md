@@ -27,6 +27,7 @@ Read the [getting started guide](docs/getting-started.md) for expected output an
 | Capability | Documentation |
 |---|---|
 | Describe passages, internal cues and repeated material; compare exact audio | [Musical context and practice](docs/musical-context.md) |
+| Hear a retained comparison through declared browser previews; save attributed interval reports | [Practice review](docs/practice-review.md) |
 | Inspect timing and tonal evidence in a recording | [Peek](docs/peek.md) |
 | Create, inspect and edit MIDI material with explicit constraints | [MIDI and sound tools](docs/midi.md) |
 | Explore record routes or choose what comes next | [Weave](docs/weave.md), [Whisker](docs/whisker.md) and the [local workspace](docs/workspace.md) |
