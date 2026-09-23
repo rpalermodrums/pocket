@@ -60,7 +60,7 @@ jobs:
       - run: python -m pip install -e '.[agent,dev,midi]' -r requirements-docs.txt
       - run: python -m pytest -q tests/test_public_site.py
       - run: python site/build.py --output private/site-build/publish
-      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: private/site-build/publish/pocket/
   deploy:
