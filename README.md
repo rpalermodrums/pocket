@@ -2,6 +2,17 @@
 
 **The musical toolkit for agents.** Pocket connects exact recordings, musical evidence, saved Ableton projects and small listening experiments. Every correction should make the next pass better informed.
 
+Pocket's broader goal spans musical practice, composition and performance across
+instruments and genres. After v1, that includes a responsive “living band in a box”
+practice partner. The [musical context and standalone practice tools](docs/musical-context.md)
+now connect explicit clocks, internal cues, repeated passages, exact audio and
+listening reports without requiring a DAW. See the
+[foundation status](docs/foundation-status.md) for implemented boundaries and next steps.
+
+The foundation has been [checked on a user-selected acoustic recording](docs/reference-foundation-check.md).
+The [next implementation phase](docs/next-phase-plan.md) connects chosen musical
+interpretations, explicit edits and comparisons across revisions.
+
 Private, early development. Version 0.4 adds **Baste** and **Pipette**: observe an open Live session, then preserve an explicitly kept saved trial as a new project. Musical proposals, technical verification and listening judgments stay separate.
 
 | Tool | What it does |

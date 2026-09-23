@@ -2,6 +2,15 @@
 
 Pocket begins with a local Python package. The CLI and optional MCP server invoke the same functions; they are interfaces, not separate implementations. No hosted service, model download or running Live instance is required for the maps and rendered-audio comparisons.
 
+The broader goal is an agentic toolkit for music across practice, composition and
+performance. A responsive “living band in a box” jazz practice partner is a
+post-v1 goal; DAWs, electronic music and fixed meters are not core requirements.
+The [musical context layer](musical-context.md) is an additive foundation for
+explicit clocks, authored anchors and repeated occurrences. Its original-rate
+practice renderer uses shared signal evidence with the existing native audition
+adapter. [Foundation status](foundation-status.md) separates these working
+contracts from the proposed v1 facade and remaining musical acceptance.
+
 ## Records and clocks
 
 An **asset** identifies exact file bytes and decoded sample metadata. An analysis **region** keeps its original-source frame bounds. A **Thread** describes saved clip and control intent, with separate arrangement beats and source positions. A **handle** identifies an immutable compressed snapshot and the saved project/dependency versions that make it applicable. A **trial** binds its sources, explicit variation, generated output bytes and scoped listener feedback.

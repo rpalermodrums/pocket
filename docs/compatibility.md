@@ -1,5 +1,13 @@
 # Name compatibility
 
+The additive [musical context and practice API](musical-context.md) uses the
+existing public-provider registry for Python, CLI and MCP. Its
+`pocket.musical-context/v1` is separate from native `pocket.context/v1` and the
+selection browser's `pocket.workspace/v1`. Existing interfaces and artifacts keep
+their meanings. Shared rational types and native audition evidence were extracted
+without changing those serialized contracts. New context/practice receipts name
+`musical-context-v1` in provenance; old receipt provenance stays unchanged.
+
 **Peek**, **Thread** and **Stitch** are the current names for Track Map, Set Map and Transition Lab. **Weave** and **Whisker** are the current names for Set Workshop and On Deck. These are naming changes, not analysis, editing or saved-format migrations. **Baste** and **Pipette** are new 0.4 tools, with no legacy aliases.
 
 ## Current interfaces
@@ -18,7 +26,7 @@ Use the current names for new calls. The CLI still accepts these exact older ali
 | `pocket weave` | `pocket workshop` |
 | `pocket whisker` | `pocket on-deck` |
 
-MCP discovery exposes **39 primary tools and 20 compatibility aliases: 59 names total**. Twenty primary names changed across the original five branded tools. The other 15 original names, including `identify_audio`, record-bag operations and the Spotify, acquisition and embedding adapters, are unchanged. Baste/Pipette add four names:
+The original branded MCP surface documented here comprised **39 primary tools and 20 compatibility aliases: 59 names total**. Later registered providers, including MIDI, audio analysis and musical context, extend that inventory; inspect `capabilities_list` and MCP discovery for the installed surface. Twenty primary names changed across the original five branded tools. The other 15 original names, including `identify_audio`, record-bag operations and the Spotify, acquisition and embedding adapters, are unchanged. Baste/Pipette added four names:
 
 | MCP | CLI | Python provider |
 |---|---|---|
