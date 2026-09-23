@@ -402,6 +402,10 @@ the parent render's profile as `parent_profile` and `reviewed_audio`. Reading a
 v2 report revalidates the comparison, the preview and its parent; a rehashed
 record with a changed preview, interval, attribution or evidence kind is refused.
 
+The [practice review page](practice-review.md) uses exactly this route for a
+person's report: it prepares the declared preview, shows the frames that will be
+saved and requires explicit confirmation before calling `practice_feedback`.
+
 `actor_kind="agent"` remains an agent report even when it names a preview. The
 provider records what the caller states about an interval; it never infers that
 anyone listened from playback, and saving a report never changes a render,

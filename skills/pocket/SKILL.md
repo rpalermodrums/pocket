@@ -50,7 +50,10 @@ copy of an exact render (nearest-even rounding, no dither; unrepresentable
 samples are refused, never clamped). Its bytes are the player's input, not proof
 of device output or listening. When someone reviewed that preview, pass it as
 `preview` to `practice_feedback`: the v2 report keeps the exact preview and the
-interval heard, plus the mapped render interval.
+interval heard, plus the mapped render interval. For a person listening, launch
+`pocket practice-review` on the comparison (see the
+[practice review guide](../../docs/practice-review.md)); only their explicit save
+creates a human report, and playback never does.
 See the [installed contracts guide](../../docs/contracts.md) for generated current
 Python/CLI/MCP schemas and opt-in versioned errors. The design package's proposed
 HTTP facade is not implemented.
