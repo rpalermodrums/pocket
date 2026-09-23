@@ -279,3 +279,25 @@ def test_malformed_retained_records_fail_as_contract_errors(tmp_path, field, val
     record[field] = value
     with pytest.raises(PocketError, match=match):
         practice_query(store, put_record(record, store))
+
+
+def test_float_overloads_are_preserved_and_comparison_is_not_signal_ready(tmp_path):
+    store, _, definition, source, _ = fixture(tmp_path)
+    samples, rate = sf.read(source, always_2d=True)
+    samples[3700, 0] = 1.05
+    sf.write(source, samples, rate, subtype="FLOAT")
+    original = source.read_bytes()
+    region = audio_region_capture(store_root=store, request_id="float-capture", source={
+        "path": str(source), "expected_sha256": sha256_file(source), "start_frame": 700, "frames": 20000,
+        "source_origin": "independently_acquired"})["artifacts"]["region"]
+    definition["sources"][0]["region"] = region
+    context = context_create(store, "float-context", definition)["artifacts"]["context"]
+    baseline = practice_render(store, "float-baseline", context, ["first", "again"])
+    decoded, _ = sf.read(io.BytesIO(read_bytes(baseline["artifacts"]["audio"], store)), always_2d=True)
+    assert decoded[2000, 0] == decoded[10000, 0] == float(np.float32(1.05))
+    assert baseline["warnings"] == ["sample_overload"]
+    alternate = practice_render(store, "float-alternate", context, ["alternative"])
+    compared = practice_compare(store, "float-compare", baseline["artifacts"]["render"],
+                                [alternate["artifacts"]["render"]], "Technical overload preservation", True)
+    assert compared["coverage"]["signal_ready"] is False
+    assert source.read_bytes() == original
