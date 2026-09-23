@@ -513,3 +513,39 @@ def test_show_more_reports_loads_each_page_once(review):
     assert page.locator("#reports li").count() == 17
     assert requested == 1
     assert more.is_hidden()
+
+
+def test_show_more_reports_keeps_keyboard_focus_and_never_plays(review):
+    from test_practice_review import report as report_over_http
+    server, page, _, _ = review
+    prepare(page)  # Variant 1 is selected and has a preview, so a stray Space would play it
+    for n in range(40):  # three pages: 16 + 16 + 8
+        status, result, _ = report_over_http(server, interval_frames=[7000 + n, 7050 + n],
+                                             client_request_id=f"{n + 1:032x}")
+        assert status == 200, result
+    page.reload()
+    page.get_by_role("radio", name="Variant 1").click()
+    page.locator("#preview-ready").wait_for()
+    active = "document.activeElement.id || document.activeElement.tagName"
+    more = page.get_by_role("button", name="Show more reports")
+    more.wait_for()
+    cursor_page = lambda url: "/api/review/reports?cursor=" in url  # noqa: E731
+    held = hold(page, cursor_page, "GET")
+    more.focus()
+    page.keyboard.press("Enter")
+    wait_for_held(page, held)
+    assert page.evaluate(active) == "more-reports"
+    page.keyboard.press(" ")  # pressed again while page 2 is loading
+    page.wait_for_timeout(300)
+    assert len(held) == 1
+    held[0].continue_()
+    page.unroute(cursor_page)
+    wait_until(page, "document.querySelectorAll('#reports li').length === 32")
+    assert page.evaluate(active) == "more-reports"
+    page.keyboard.press(" ")  # page 3, the last one
+    wait_until(page, "document.querySelectorAll('#reports li').length === 40")
+    assert more.is_hidden()
+    assert page.evaluate("document.activeElement.closest('#reports') !== null")
+    page.keyboard.press(" ")
+    page.wait_for_timeout(300)
+    assert page.evaluate("document.querySelector('audio').paused")
