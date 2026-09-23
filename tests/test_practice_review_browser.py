@@ -387,7 +387,7 @@ def test_failed_save_unlocks_the_form_before_the_refresh_returns(review):
     page.get_by_role("button", name="Save report").click()
     page.locator("#error").get_by_text("Report not saved").wait_for()
     wait_for_held(page, held)
-    assert not page.locator("#report-fields").is_disabled()
+    assert not page.get_by_label("What did you hear?").is_disabled()
     assert "Saving and verifying" not in page.locator("#save-problem").inner_text()
     held[0].continue_()
 
@@ -409,3 +409,78 @@ def test_manual_seek_or_switch_cancels_interval_playback(review):
     page.evaluate("document.activeElement.blur()")
     page.keyboard.press(" ")
     wait_until(page, "document.querySelector('audio').currentTime > 0.6")
+
+
+def fail_first_save(page):
+    """Answer the first save with a refusal; later saves reach the server (or earlier routes)."""
+    failed = []
+
+    def route(route):
+        if route.request.method != "POST" or failed:
+            return route.fallback()
+        failed.append(True)
+        route.fulfill(status=409, json={"error": "This review changed; refresh before continuing"})
+    page.route("**/api/review/reports", route)
+
+
+def answer_late(page, pattern):
+    """Hold the next GET's answer as the server gave it then, until the test releases it."""
+    held = []
+
+    def route(route):
+        if route.request.method != "GET" or held:
+            return route.fallback()
+        held.append((route, route.fetch()))
+    page.route(pattern, route)
+    return held
+
+
+def test_a_failed_saves_refresh_never_unlocks_a_retry_in_flight(review):
+    server, page, _, _ = review
+    prepare(page)
+    fill_report(page)
+    refresh = hold(page, "**/api/review", "GET")
+    retry = hold(page, "**/api/review/reports", "POST")
+    fail_first_save(page)
+    save = page.get_by_role("button", name="Save report")
+    save.click()
+    page.locator("#error").get_by_text("Report not saved").wait_for()
+    first = wait_for_held(page, refresh)
+    save.click()  # the retry the explanation invites
+    second = wait_for_held(page, retry)
+    listed = lambda response: response.url.endswith("/api/review/reports") and response.request.method == "GET"
+    with page.expect_response(listed):
+        first.continue_()  # the failed save's refresh finishes while the retry is in flight
+    page.wait_for_timeout(300)
+    for name in ("Cancel draft", "Save report"):
+        assert page.get_by_role("button", name=name).is_disabled()
+    assert page.get_by_role("radio", name="Baseline").is_disabled()
+    assert page.get_by_label("What did you hear?").is_disabled()
+    assert "Report not saved" not in page.locator("#error").inner_text()
+    second.continue_()
+    page.locator("#receipt").get_by_text("Report saved").wait_for()
+    assert report_count(server) == 1
+    assert "No report was saved" not in page.locator("#status").inner_text()
+
+
+@pytest.mark.parametrize("late", ["**/api/review", "**/api/review/reports"], ids=["state", "reports"])
+def test_a_late_answer_to_a_failed_save_never_replaces_the_retrys_result(review, late):
+    server, page, _, _ = review
+    prepare(page)
+    fill_report(page)
+    held = answer_late(page, late)
+    fail_first_save(page)
+    save = page.get_by_role("button", name="Save report")
+    save.click()
+    page.locator("#error").get_by_text("Report not saved").wait_for()
+    route, response = wait_for_held(page, held)
+    save.click()
+    page.locator("#receipt").get_by_text("Report saved").wait_for()
+    saved = page.locator("#reports li").filter(has_text="The join dips slightly")
+    saved.wait_for()
+    route.fulfill(response=response)  # older state or an older report list answers last
+    page.wait_for_timeout(400)
+    assert "Report not saved" not in page.locator("#error").inner_text()
+    assert saved.count() == 1
+    assert page.locator("#listening-state").inner_text().startswith("1 human listening report")
+    assert report_count(server) == 1

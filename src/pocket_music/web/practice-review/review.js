@@ -13,6 +13,8 @@ let draft = null;
 let actorName = "";
 let pendingSwitch = null;
 let saving = false;
+let saveAttempt = 0;       // only the latest save may unlock the form or explain itself
+let reportsListing = 0;    // only the latest listing may replace the report list
 let intervalEnd = null;    // seconds; set only by "Play this interval"
 let intervalFrame = null;  // requestAnimationFrame handle watching intervalEnd
 let ownSeek = false;       // the next seek is ours, so it must not cancel interval playback
@@ -21,6 +23,12 @@ let previewPending = false;
 const positions = {};
 
 class NetworkError extends Error {}
+
+// Overlapping requests can answer out of order. The session revision only grows,
+// so an older answer never replaces state verified more recently.
+function adopt(next) {
+  if (!state || next.revision >= state.revision) state = next;
+}
 
 async function api(path, body) {
   const options = {cache: "no-store", credentials: "same-origin"};
@@ -301,7 +309,7 @@ async function makePreview() {
   announce("Preparing a declared browser preview…");
   try {
     const result = await api("/api/review/previews", {expected_revision: state.revision, item_id: requested});
-    state = result.state;
+    adopt(result.state);
     if (draft && !draft.previewSha && draft.itemId === requested) draft.previewSha = previewSha(requested);
     render();
     const warnings = result.warnings.length ? ` Signal warnings: ${result.warnings.join("; ")}` : "";
@@ -322,7 +330,7 @@ async function makePreview() {
 
 async function refresh({quiet = false} = {}) {
   try {
-    state = await api("/api/review");
+    adopt(await api("/api/review"));
     render();
   } catch {
     // The error already shown explains what happened; keep the last verified state.
@@ -344,11 +352,12 @@ async function save(event) {
   }
   const sent = draft;
   if (!sent.clientRequestId) sent.clientRequestId = newClientRequestId(crypto.getRandomValues(new Uint8Array(16)));
+  const attempt = ++saveAttempt;
   saving = true;
   render();
   try {
     const result = await api("/api/review/reports", reportPayload(sent, state.revision));
-    state = result.state;
+    adopt(result.state);
     actorName = sent.actor;
     saving = false;
     showReceipt(result.report);
@@ -367,10 +376,14 @@ async function save(event) {
       : `Report not saved: ${error.message}`;
     showError(explanation);
     await refresh({quiet: true});
-    showError(explanation);  // a failed refresh must not replace what happened to the save
+    // A failed refresh must not replace what happened to this save, but a retry
+    // started meanwhile owns the form and the message.
+    if (attempt === saveAttempt) showError(explanation);
   } finally {
-    saving = false;
-    if (state) render();
+    if (attempt === saveAttempt) {
+      saving = false;
+      if (state) render();
+    }
   }
 }
 
@@ -385,8 +398,11 @@ function showReceipt(row) {
 
 async function loadReports({cursor = null, quiet = false} = {}) {
   const list = $("reports");
+  // A new listing supersedes older ones; "more" pages belong to the listing they extend.
+  const listing = cursor ? reportsListing : ++reportsListing;
   try {
     const page = await api(`/api/review/reports${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    if (listing !== reportsListing) return;
     if (!cursor) list.replaceChildren();
     for (const row of page.items) {
       const line = reportLine(row, labels());
@@ -404,7 +420,7 @@ async function loadReports({cursor = null, quiet = false} = {}) {
     more.onclick = () => loadReports({cursor: page.next_cursor});
     if (!page.total) list.replaceChildren(element("li", "No reports saved yet."));
   } catch (error) {
-    if (!quiet) showError(`Reports could not be verified: ${error.message}`);
+    if (!quiet && listing === reportsListing) showError(`Reports could not be verified: ${error.message}`);
   }
 }
 
