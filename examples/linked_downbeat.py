@@ -12,15 +12,17 @@ then B twice. Three positions stay distinct records even where they share a numb
   * source downbeat: the authored bar-one anchor at source frame 90000, one beat after B's
     first frame (80000).
 
-The exact PCM renderer only allows a tempo step at an occurrence boundary, so the first two
-coincide here; the edit below moves neither. H1 slips the source window of every B
-occurrence (a linked edit names each repeat) by one B beat, with A, the B clip placement and
-every anchor locked. B's bar one then lands on each handover. H2 shifts B's clip placement
-instead; the context accepts it as intent, and the edit reports that exact PCM cannot render it.
+The exact PCM renderer refuses an occurrence whose tempo changes inside it, so the 96 BPM step
+sits on the A2|B1 clip boundary. H1 slips the source window of every B occurrence (a linked edit
+names each repeat) by one B beat. Locks keep A and the B clip placement fixed and every anchor
+claim unchanged; no context edit can change the time map. B's bar one then lands on both B clip
+boundaries. Each B keeps its nine-beat length, so it gains the next source beat at its end: B's
+following bar one. H2 shifts B's clip placement instead; the context accepts it as intent, and
+the edit reports that exact PCM cannot render it.
 """
 import argparse
-import hashlib
 import json
+import shlex
 from pathlib import Path
 
 import numpy as np
@@ -37,7 +39,7 @@ from pocket_music import (
     practice_query,
     practice_render,
 )
-from pocket_music.artifact_store import read_bytes, read_record
+from pocket_music.artifact_store import read_record
 from pocket_music.assets import sha256_file
 from pocket_music.errors import PocketError
 
@@ -104,34 +106,39 @@ def run(destination):
     order = ["A1", "A2", "B1", "B2"]
     baseline = practice_render(store, "baseline", context, order)["artifacts"]["render"]
 
-    # H1: slip every B occurrence's source window by one B beat. Locks prove that A, the B
-    # clip boundaries and every anchor claim stay put; the time map is not an edit target.
+    # H1: slip every B occurrence's source window by one B beat. Locks refuse any change to A,
+    # to the B clip boundaries or to an anchor claim; the time map is not an edit target at all.
     locks = ([{"section": "occurrences", "object_id": o, "fields": ["source_span_frames", "timeline_span_qn"]}
               for o in ("A1", "A2")]
-             + [{"section": "occurrences", "object_id": o, "fields": ["timeline_span_qn"]} for o in ("B1", "B2")]
+             + [{"section": "occurrences", "object_id": o, "fields": ["timeline_span_qn"]}
+                for o in ("B1", "B2")]
              + [{"section": "anchors", "object_id": a, "fields": ["position", "kind"]}
                 for a in ("a-bar-one", "b-bar-one", "b-pickup")])
-    h1 = context_edit(store, "h1-slip", context,
-                      [{"kind": "occurrence_slip_source", "occurrence_ids": ["B1", "B2"], "delta_frames": B_BEAT}],
-                      locks, {**AUTHOR, "statement": "H1: land B's bar one on each B clip boundary"})
+    slip = {"kind": "occurrence_slip_source", "occurrence_ids": ["B1", "B2"], "delta_frames": B_BEAT}
+    h1 = context_edit(store, "h1-slip", context, [slip], locks,
+                      {**AUTHOR, "statement": "H1: land B's bar one on each B clip boundary"})
     child = h1["artifacts"]["context"]
     proof = context_edit_query(store, h1["artifacts"]["edit"])["summary"]  # recomputed from the exact parent
     variant = practice_render(store, "h1", child, order)["artifacts"]["render"]
 
     # H2: move B's clip placement one beat earlier instead. That crosses A2's end and the tempo step.
-    h2 = context_edit(store, "h2-shift", context,
-                      [{"kind": "occurrence_shift_timeline", "occurrence_ids": ["B1", "B2"], "delta_qn": q(-1)}],
-                      [], {**AUTHOR, "statement": "H2: move B's clip one beat earlier (intent only)"})
+    shift = {"kind": "occurrence_shift_timeline", "occurrence_ids": ["B1", "B2"], "delta_qn": q(-1)}
+    h2 = context_edit(store, "h2-shift", context, [shift], [],
+                      {**AUTHOR, "statement": "H2: move B's clip one beat earlier (intent only)"})
+    h2_proof = context_edit_query(store, h2["artifacts"]["edit"])["summary"]
 
     # Each occurrence is paired with itself at identical output frames, so the review page may keep
     # the playhead position when switching between the baseline and H1.
     pairs = [{"baseline_occurrence_id": m["occurrence_id"], "variant_occurrence_id": m["occurrence_id"],
-              "baseline_interval_frames": m["output_span_frames"], "variant_interval_frames": m["output_span_frames"]}
+              "baseline_interval_frames": m["output_span_frames"],
+              "variant_interval_frames": m["output_span_frames"]}
              for m in read_record(baseline, store)["mappings"]]
     comparison = practice_compare_revisions(
-        store, "comparison", baseline, [variant], [h1["artifacts"]["edit"]], [{"variant": variant, "pairs": pairs}],
-        "At each A to B handover, should B's bar one land on the handover (H1) or keep its pickup there "
-        "(baseline)? Synthetic click track.")
+        store, "comparison", baseline, [variant], [h1["artifacts"]["edit"]],
+        [{"variant": variant, "pairs": pairs}],
+        "Should B's bar one land on its clip boundary at the A to B handover and at B's repeat (H1), "
+        "or keep its pickup there (baseline)? Both keep nine-beat B occurrences: H1 puts a one-beat bar "
+        "before the repeat, the baseline five beats between B's downbeats. Synthetic click track.")
 
     def resolve(ctx, anchor_id, occurrence_id):
         try:
@@ -145,35 +152,34 @@ def run(destination):
             ("a-bar-one", ("A1", "A2")), ("b-bar-one", ("B1", "B2")), ("b-pickup", ("B1", "B2"))]
             for o in occurrences}
 
-    def audio_sha256(render):
-        return hashlib.sha256(read_bytes(read_record(render, store)["audio"], store)).hexdigest()
-
     results = {
         "tempo_steps": musical_time("query", store, time_map=time_map, section="tempo")["rows"],
         "clip_boundaries_qn": {"A2|B1": q(16), "B1|B2": q(25)},
         "source_downbeat_frame": B_BAR_ONE, "pickup_frame": B_START,
-        "context": context, "baseline": {"render": baseline, "audio_sha256": audio_sha256(baseline),
-                                         "positions_qn": positions(context)},
-        "h1": {"edit": h1["artifacts"]["edit"], "context": child, "changes": proof["changes"],
-               "renderability": proof["renderability"], "render": variant, "audio_sha256": audio_sha256(variant),
-               "positions_qn": positions(child)},
+        "context": context,
+        "baseline": {"render": baseline, "audio": read_record(baseline, store)["audio"],
+                     "positions_qn": positions(context)},
+        "h1": {"edit": h1["artifacts"]["edit"], "context": child, "locks": proof["locks"],
+               "changes": proof["changes"], "renderability": proof["renderability"], "render": variant,
+               "audio": read_record(variant, store)["audio"], "positions_qn": positions(child)},
         "h2": {"edit": h2["artifacts"]["edit"], "context": h2["artifacts"]["context"],
-               "renderability": context_edit_query(store, h2["artifacts"]["edit"])["summary"]["renderability"]},
+               "renderability": h2_proof["renderability"]},
         "comparison": comparison,
         "verified_comparison": practice_query(store, comparison["artifacts"]["comparison"]),
         "listening": "not_performed",
     }
     (destination / "results.json").write_text(json.dumps(results, indent=2) + "\n")
     (destination / "comparison.json").write_text(json.dumps(comparison, indent=2) + "\n")
-    return {"results": str(destination / "results.json"),
-            "review": ["pocket", "practice-review", "--store-root", store,
-                       "--comparison-file", str(destination / "comparison.json"),
-                       "--session-dir", str(destination / "review"), "--port", "0"],
-            "listening": "not_performed"}
+    review = ["pocket", "practice-review", "--store-root", store,
+              "--comparison-file", str(destination / "comparison.json"),
+              "--session-dir", str(destination / "review"), "--port", "0"]
+    return {"results": str(destination / "results.json"), "review": review,
+            "review_command": shlex.join(review), "listening": "not_performed"}
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("destination", type=Path)
     args = parser.parse_args()
     print(json.dumps(run(args.destination.expanduser().resolve()), indent=2))

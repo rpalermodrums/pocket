@@ -285,17 +285,22 @@ creating a comparison nor reading feedback supplies a listening verdict.
 A passage often begins before its own bar one: a pickup, a breath, a fill. Three
 positions then stay separate records, even when two of them share a number:
 
-| Position | Recorded as | Changed only by |
+| Position | Recorded as | Context edit that changes it |
 |---|---|---|
-| Tempo-change point | A step (`at_qn`, `bpm`) in the timeline's `pocket.time-map/v1` | A new time map |
+| Tempo-change point | A step (`at_qn`, `bpm`) in the timeline's `pocket.time-map/v1` | None: a time map is not an edit target |
 | Clip boundary | The start of an occurrence's `timeline_span_qn` | `occurrence_shift_timeline` |
 | Source downbeat | A `bar_one` anchor at an absolute source frame | `anchor_rebind` with a new attributed interpretation |
 
+Outside these edits, `context_create` with a v1 `parent` can restate the whole
+definition under the same `context_id`, including the time map, with no edit
+receipt or preservation proof.
+
 `occurrence_slip_source` changes which source frames fill an unchanged timeline
-slot. Slipping a passage by exactly its pickup length moves its bar one onto its
-clip boundary. The boundary, the tempo step and the anchor's claim stay where they
-were. The [linked-downbeat example](../examples/linked_downbeat.py) shows this on a
-generated click track:
+slot. Slipping a passage by exactly its pickup length therefore moves its bar one
+onto its clip boundary. The boundary, the tempo step and the anchor's claim stay
+where they were. The [linked-downbeat example](../examples/linked_downbeat.py)
+applies this to the [internal downbeat in a repeated passage](#an-internal-downbeat-in-a-repeated-passage)
+on a generated click track. The destination must not already exist:
 
 ```sh
 python examples/linked_downbeat.py private/linked-downbeat
@@ -306,19 +311,26 @@ one-beat pickup and also plays twice. The timeline steps to 96 BPM at quarter no
 16, which is also where B1 starts. B's `bar_one` anchor is source frame 90000, one
 beat after B's first frame.
 
-- **H1** slips B1 and B2 together by 10000 frames (one B beat). Locks cover A's
-  source windows and placement, B's placement and every anchor. The recomputed
-  edit proof lists only the two `source_span_frames` changes, `[80000, 170000)` to
-  `[90000, 180000)`. B's bar one now resolves to quarter notes 16 and 25 (the two
-  clip boundaries) rather than 17 and 26, and no occurrence maps the pickup any
-  more. Each B drops its pickup beat and plays one further beat at its end, so every
-  output interval keeps its length. A's output samples are unchanged.
+- **H1** slips B1 and B2 together by 10000 frames (one B beat). Locks refuse any
+  change to A's source windows or placement, to B's placement, or to an anchor's
+  kind or position. The recomputed edit proof lists only the two
+  `source_span_frames` changes, `[80000, 170000)` to `[90000, 180000)`. B's bar one
+  now resolves to quarter notes 16 and 25 (the two B clip boundaries) rather than
+  17 and 26, and no occurrence maps the pickup any more. A's output samples are
+  unchanged.
+- Each B keeps its nine-beat length, so dropping the pickup adds the next source
+  beat at its end. In this click track that beat is B's following bar one. H1
+  therefore plays downbeats at quarter notes 24 and 25, a one-beat bar before the
+  repeat, and B2 ends on a lone downbeat at 33. The baseline instead has five beats
+  between the downbeats at 21 and 26. A strictly two-bar repeat would change the
+  occurrence lengths, which no context edit does.
 - A linked edit names every repeat. Nothing infers that B2 repeats B1: slipping
   only B1 leaves B2's bar one at quarter note 26.
 - **H2** instead shifts B's placement one quarter note earlier. The context accepts
   this as intent, and the edit reports that the exact PCM profile cannot realize it.
-  B1 now straddles the tempo step, which would need time stretch, and it overlaps
-  A2, which this renderer never mixes. Rendering either way is refused.
+  B1 now straddles the tempo step and overlaps A2. Rendering all four occurrences is
+  refused because this renderer never mixes overlapping occurrences. Rendering B1
+  and B2 alone is refused because B1 would need time stretch.
 - The revision comparison pairs every occurrence with itself at identical output
   frames, so the [practice review page](practice-review.md) keeps the playhead when
   switching between the baseline and H1. The example writes `comparison.json` and

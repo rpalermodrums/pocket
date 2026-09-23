@@ -3,7 +3,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import shlex
 import threading
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +14,10 @@ import soundfile as sf
 
 from pocket_music import (
     context_edit,
+    context_edit_query,
     context_query,
     context_resolve,
+    interpretation_create,
     musical_time,
     practice_preview,
     practice_query,
@@ -26,10 +30,24 @@ ROOT = Path(__file__).resolve().parents[1]
 ORDER = ["A1", "A2", "B1", "B2"]
 A_OUTPUT = 128000                                 # A1 + A2: two copies of source [0, 64000)
 B_FRAMES = 90000                                  # every B occurrence keeps its source duration
+H1_LOCKS = [
+    {"section": "occurrences", "object_id": "A1", "fields": ["source_span_frames", "timeline_span_qn"]},
+    {"section": "occurrences", "object_id": "A2", "fields": ["source_span_frames", "timeline_span_qn"]},
+    {"section": "occurrences", "object_id": "B1", "fields": ["timeline_span_qn"]},
+    {"section": "occurrences", "object_id": "B2", "fields": ["timeline_span_qn"]},
+    {"section": "anchors", "object_id": "a-bar-one", "fields": ["kind", "position"]},
+    {"section": "anchors", "object_id": "b-bar-one", "fields": ["kind", "position"]},
+    {"section": "anchors", "object_id": "b-pickup", "fields": ["kind", "position"]},
+]
 
 
 def q(value):
     return {"n": value, "d": 1}
+
+
+def fresh(name):
+    """A new request ID: a refused request keeps its journal, so a rerun must not reuse it."""
+    return f"{name}-{uuid.uuid4().hex}"
 
 
 @pytest.fixture(scope="module")
@@ -54,14 +72,21 @@ def accent_onsets(samples):
     return [int(i) for i in np.flatnonzero(loud) if not loud[max(0, i - 100):i].any()]
 
 
+def normalized(locks):
+    rows = ({**lock, "fields": sorted(lock["fields"])} for lock in locks)
+    return sorted(rows, key=lambda lock: lock["object_id"])
+
+
 def test_only_the_linked_source_windows_move(example):
     _, store, results, _ = example
     parent, child = results["context"], results["h1"]["context"]
-    assert results["h1"]["changes"] == [
+    proof = context_edit_query(store, results["h1"]["edit"])["summary"]
+    assert proof["changes"] == results["h1"]["changes"] == [
         {"object_id": o, "path": f"/definition/occurrences/{i}/source_span_frames",
          "before": [80000, 170000], "after": [90000, 180000]} for i, o in ((2, "B1"), (3, "B2"))]
+    assert normalized(proof["locks"]) == normalized(results["h1"]["locks"]) == normalized(H1_LOCKS)
     before, after = (read_record(c, store)["definition"] for c in (parent, child))
-    assert after["timelines"] == before["timelines"]           # the same time map handle: tempo step untouched
+    assert after["timelines"] == before["timelines"]           # same time map handle: tempo step untouched
     assert after["anchors"] == before["anchors"]               # the source downbeat claim is unchanged
     assert [o["timeline_span_qn"] for o in after["occurrences"]] == \
         [o["timeline_span_qn"] for o in before["occurrences"]]  # clip boundaries are unchanged
@@ -100,10 +125,12 @@ def test_output_samples_match_an_independent_source_oracle(example):
     np.testing.assert_array_equal(baseline, np.concatenate([a, source[80000:170000], source[80000:170000]]))
     np.testing.assert_array_equal(variant, np.concatenate([a, source[90000:180000], source[90000:180000]]))
     assert len(variant) == len(baseline) == A_OUTPUT + 2 * B_FRAMES
-    # Baseline: B's pickup sits on each handover and its bar one follows one 96 BPM beat later.
+    # Baseline: B's pickup sits on each B clip boundary and its bar one follows one 96 BPM beat
+    # later, so five beats separate B1's second downbeat from B2's first.
     b_accents = [f for f in accent_onsets(baseline) if f >= A_OUTPUT]
     assert b_accents == [A_OUTPUT + k * B_FRAMES + off for k in (0, 1) for off in (10000, 50000)]
-    # H1: B's bar one starts exactly at each clip boundary; each B gains one beat at its end.
+    # H1: B's bar one starts exactly at each B clip boundary. The beat each B gains at its end is
+    # B's following bar one, so a lone downbeat precedes B2's (quarter notes 24 and 25) and ends B2.
     h1_accents = [f for f in accent_onsets(variant) if f >= A_OUTPUT]
     assert h1_accents == [A_OUTPUT + k * B_FRAMES + off for k in (0, 1) for off in (0, 40000, 80000)]
     a_accents = [0, 32000, 64000, 96000]                 # bar one of each 4/4 bar in A1 and A2
@@ -111,13 +138,15 @@ def test_output_samples_match_an_independent_source_oracle(example):
     assert [f for f in accent_onsets(baseline) if f < A_OUTPUT] == a_accents
 
 
-def test_baseline_is_unchanged_and_both_renders_revalidate(example):
+def test_stored_audio_bytes_match_their_handles_and_both_renders_revalidate(example):
     _, store, results, _ = example
     for key in ("baseline", "h1"):
-        render = results[key]["render"]
-        audio = read_bytes(read_record(render, store)["audio"], store)
-        assert hashlib.sha256(audio).hexdigest() == results[key]["audio_sha256"]
-        assert practice_query(store, render)["status"] == "ok"
+        audio = results[key]["audio"]
+        assert read_record(results[key]["render"], store)["audio"] == audio
+        on_disk = (Path(store) / audio["artifact_uri"]).read_bytes()
+        assert hashlib.sha256(on_disk).hexdigest() == audio["sha256"]
+        assert practice_query(store, results[key]["render"])["status"] == "ok"
+    assert results["baseline"]["audio"]["sha256"] != results["h1"]["audio"]["sha256"]
     assert results["baseline"]["positions_qn"]["b-bar-one@B1"] == q(17)
 
 
@@ -127,51 +156,64 @@ def test_timeline_shift_is_intent_only_and_exact_pcm_refuses_it(example):
     assert "stretch" in results["h2"]["renderability"][0]["reason"]
     spans = {o["occurrence_id"]: o["timeline_span_qn"]
              for o in read_record(results["h2"]["context"], store)["definition"]["occurrences"]}
-    assert spans["B1"] == [q(15), q(24)] and spans["A2"] == [q(8), q(16)]   # overlaps A2 and straddles the step
+    # B1 now overlaps A2 and straddles the tempo step at quarter note 16.
+    assert spans["B1"] == [q(15), q(24)] and spans["A2"] == [q(8), q(16)]
     with pytest.raises(PocketError, match="contiguous and ordered"):
-        practice_render(store, "h2-render", results["h2"]["context"], ORDER)
+        practice_render(store, fresh("h2-render"), results["h2"]["context"], ORDER)
     with pytest.raises(PocketError, match="time stretch") as refused:
-        practice_render(store, "h2-render-b", results["h2"]["context"], ["B1", "B2"])
+        practice_render(store, fresh("h2-render-b"), results["h2"]["context"], ["B1", "B2"])
     assert refused.value.code == "unsupported_profile"
 
 
-def test_locks_refuse_moving_a_or_a_clip_boundary(example):
+def test_the_example_locks_refuse_moving_a_a_clip_boundary_or_an_anchor(example):
     _, store, results, _ = example
     parent = results["context"]
+    locks = read_record(results["h1"]["edit"], store)["locks"]
+    assert normalized(locks) == normalized(H1_LOCKS)
     attribution = read_record(parent, store)["definition"]["attribution"]
-    locks = [{"section": "occurrences", "object_id": "A1", "fields": ["source_span_frames", "timeline_span_qn"]},
-             {"section": "occurrences", "object_id": "B1", "fields": ["timeline_span_qn"]}]
+    for operation in [
+            {"kind": "occurrence_slip_source", "occurrence_ids": ["A1"], "delta_frames": 8000},
+            {"kind": "occurrence_shift_timeline", "occurrence_ids": ["B1", "B2"], "delta_qn": q(-1)}]:
+        with pytest.raises(PocketError, match="locked field"):
+            context_edit(store, fresh("locked"), parent, [operation], locks, attribution)
+    # An authored alternative reading (the pickup is bar one) is a valid rebind, but the locks refuse it.
+    other = interpretation_create(store, fresh("pickup-reading"), parent, "recording",
+                                  {"kind": "bar_one", "status": "authored", "source_frame_q": q(80000)},
+                                  attribution)["artifacts"]["interpretation"]
+    rebind = {"kind": "anchor_rebind", "anchor_id": "b-bar-one", "binding_id": "pickup-reading",
+              "interpretation": other}
+    assert context_edit(store, fresh("rebind-unlocked"), parent, [rebind], [], attribution)["status"] == "ok"
     with pytest.raises(PocketError, match="locked field"):
-        context_edit(store, "slip-a", parent, [{"kind": "occurrence_slip_source", "occurrence_ids": ["A1"],
-                                               "delta_frames": 8000}], locks, attribution)
-    with pytest.raises(PocketError, match="locked field"):
-        context_edit(store, "shift-b", parent, [{"kind": "occurrence_shift_timeline", "occurrence_ids": ["B1"],
-                                                "delta_qn": q(-1)}], locks, attribution)
+        context_edit(store, fresh("rebind"), parent, [rebind], locks, attribution)
 
 
 def test_unlinked_slip_moves_only_the_named_repeat(example):
     _, store, results, _ = example
     parent = results["context"]
     attribution = read_record(parent, store)["definition"]["attribution"]
-    child = context_edit(store, "slip-b1-only", parent, [{"kind": "occurrence_slip_source", "occurrence_ids": ["B1"],
-                                                          "delta_frames": 10000}], [], attribution)["artifacts"]["context"]
+    slip = {"kind": "occurrence_slip_source", "occurrence_ids": ["B1"], "delta_frames": 10000}
+    child = context_edit(store, "slip-b1-only", parent, [slip], [], attribution)["artifacts"]["context"]
     positions = [context_resolve(store, child, "practice", "arrangement_qn", anchor_id="b-bar-one",
                                  occurrence_id=o)["output"]["value"] for o in ("B1", "B2")]
     assert positions == [q(16), q(26)]   # nothing infers that B2 repeats B1; a linked edit names both
 
 
-def test_review_keeps_position_when_switching_and_records_no_listening(example, tmp_path):
+def test_printed_review_command_opens_the_comparison_and_records_no_listening(example, tmp_path):
     from test_practice_review import call, state
 
     from pocket_music.practice_review import _load_handle, _make_server
     destination, store, results, printed = example
     assert printed["listening"] == results["listening"] == "not_performed"
-    assert printed["review"][:2] == ["pocket", "practice-review"]
-    comparison = _load_handle(str(destination / "comparison.json"), "comparison")
+    assert printed["review"] == ["pocket", "practice-review", "--store-root", store,
+                                 "--comparison-file", str(destination / "comparison.json"),
+                                 "--session-dir", str(destination / "review"), "--port", "0"]
+    assert shlex.split(printed["review_command"]) == printed["review"]
+    argv = dict(zip(printed["review"][2::2], printed["review"][3::2], strict=True))
+    comparison = _load_handle(argv["--comparison-file"], "comparison")
     assert comparison == results["comparison"]["artifacts"]["comparison"]
     assert comparison["artifact_schema"] == "pocket.practice-revision-comparison/v1"
     assert results["verified_comparison"]["status"] == "ok"
-    server = _make_server(store, comparison, str(tmp_path / "session"))
+    server = _make_server(argv["--store-root"], comparison, str(tmp_path / "session"))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -185,5 +227,6 @@ def test_review_keeps_position_when_switching_and_records_no_listening(example, 
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-    preview = practice_preview(store, "preview-h1", results["h1"]["render"], "browser-pcm16-original-rate/v1")
+    preview = practice_preview(store, fresh("preview-h1"), results["h1"]["render"],
+                               "browser-pcm16-original-rate/v1")
     assert preview["coverage"]["parent_samples_exact"] is True   # PCM16 source: no rounding at all
