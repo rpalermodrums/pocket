@@ -51,7 +51,7 @@ def _locks(locks, before, after):
             if field not in original:
                 raise PocketError("Unknown locked context field")
             if canonical_bytes(original[field]) != canonical_bytes(result[field]):
-                raise PocketError("Context edit changes a locked field")
+                raise PocketError("Context edit changes a locked field", code="locked_field")
 
 
 def _changes(before, after):
@@ -164,7 +164,7 @@ def load_context_edit(handle, store_root):
     if (canonical_bytes(child) != canonical_bytes(expected) or record["changes"] != changes
             or record["preserved_definition_sha256"] != preserved or record["coverage"] != COVERAGE
             or record["renderability"] != _renderability(record["child"], record["operations"], store_root)):
-        raise PocketError("Context edit preservation evidence mismatch")
+        raise PocketError("Context edit preservation evidence mismatch", code="evidence_mismatch")
     return record
 
 

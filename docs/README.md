@@ -16,6 +16,7 @@ including a living jazz practice partner, remains a post-v1 goal.
   [optional music embeddings](music-embeddings.md).
 - [Baste](baste.md), [Pipette](pipette.md), [feedback](feedback.md).
 - [Architecture](architecture.md) and [compatibility](compatibility.md).
+- [Installed contracts and error handling](contracts.md).
 
 The old-name pages remain short compatibility links. Reusable examples live in
 `examples/`; they generate fixtures or accept a supplied recording.

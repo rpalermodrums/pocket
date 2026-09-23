@@ -83,7 +83,7 @@ def _validate(inputs, store_root):
             if current == root:
                 break
             if current not in edits:
-                raise PocketError("Variant lacks verified edit lineage to the exact baseline context")
+                raise PocketError("Variant lacks verified edit lineage to the exact baseline context", code="evidence_mismatch")
             used.add(current)
             current = canonical_bytes(edits[current]["parent"])
         if current != root:
@@ -134,5 +134,5 @@ def load_revision_comparison(handle, store_root):
     if (record["signal_ready"] is not all(r["signal"]["usable_for_expectation"] for r in renders)
             or record["listening"] != "not_reviewed" or record["musical_verdict"] is not None
             or record["coverage"] != COVERAGE):
-        raise PocketError("Revision comparison evidence mismatch")
+        raise PocketError("Revision comparison evidence mismatch", code="evidence_mismatch")
     return record, renders

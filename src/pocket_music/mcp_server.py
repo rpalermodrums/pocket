@@ -109,7 +109,12 @@ _SELECTION_NAMES = {
 }
 
 
-def build_server():
+def build_server(error_format=None):
+    import os
+    if error_format is None:
+        error_format = os.environ.get("POCKET_ERROR_FORMAT", "legacy")
+    if error_format not in ("legacy", "v2"):
+        raise ValueError("POCKET_ERROR_FORMAT must be legacy or v2")
     try:
         from mcp.server.fastmcp import FastMCP
         from mcp.types import ToolAnnotations
@@ -125,6 +130,7 @@ def build_server():
     from .acquisition import acquire_source, discover_sources, inspect_source_formats, plan_acquisition
     from .assets import identify_audio
     from .baste import build_baste_device, observe_live
+    from .error_contracts import error_envelope
     from .errors import PocketError
     from .feedback import query_feedback
     from .music_embeddings import build_embedding_index, model_preflight, rank_embedding_query
@@ -162,14 +168,16 @@ def build_server():
                     for key, value in bound.arguments.items():
                         TypeAdapter(hints[key]).validate_python(value, strict=True)
                 except (TypeError, ValueError) as error:
-                    raise ToolError(f'Invalid {name} arguments: {error}') from error
+                    message = json.dumps(error_envelope(error, code='invalid_arguments')) if error_format == 'v2' else f'Invalid {name} arguments: {error}'
+                    raise ToolError(message) from error
                 # Validation must not rewrite the original JSON before hashing:
                 # the SDK's convenience parser coerces integers to floats even
                 # after strict validation, changing content-addressed identities.
                 try:
                     return [TextContent(type='text', text=_compact_response(function)(**arguments))]
                 except PocketError as error:
-                    raise ToolError(str(error)) from error
+                    message = json.dumps(error_envelope(error)) if error_format == "v2" else str(error)
+                    raise ToolError(message) from error
             return await super().call_tool(name, arguments)
 
         async def list_tools(self):

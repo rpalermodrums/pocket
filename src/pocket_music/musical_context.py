@@ -282,7 +282,7 @@ def context_resolve(store_root: str, context: ArtifactHandle, target_clock_id: s
         if not candidates:
             raise PocketError("No occurrence maps this position; extrapolation is unsupported")
         if len(candidates) != 1:
-            raise PocketError("Ambiguous repeated passage; supply occurrence_id")
+            raise PocketError("Ambiguous repeated passage; supply occurrence_id", code="ambiguous_mapping")
         selected, source_span, timeline_span = candidates[0]
         left, right = (source_span, timeline_span) if forward else (timeline_span, source_span)
         value = right[0] + (value - left[0]) * (right[1] - right[0]) / (left[1] - left[0])

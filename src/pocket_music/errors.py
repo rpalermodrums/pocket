@@ -1,2 +1,6 @@
 class PocketError(ValueError):
-    """An invalid request that can be reported directly to a tool caller."""
+    """An invalid request, retaining its legacy message with an optional stable code."""
+
+    def __init__(self, message, *, code="invalid_request"):
+        super().__init__(message)
+        self.code = code

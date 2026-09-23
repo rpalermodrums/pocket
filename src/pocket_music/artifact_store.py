@@ -218,7 +218,7 @@ def run_request(store_root: str | Path, request_id: str, operation: str, inputs:
     try:
         lock.mkdir()
     except FileExistsError as error:
-        raise PocketError("Request is active or interrupted; inspect its journal before retry") from error
+        raise PocketError("Request is active or interrupted; inspect its journal before retry", code="request_not_complete") from error
     journal_path = folder / "journal.json"
     try:
         if journal_path.exists():
@@ -227,12 +227,12 @@ def run_request(store_root: str | Path, request_id: str, operation: str, inputs:
             except (ValueError, OSError) as error:
                 raise PocketError("Request journal is corrupt; inspect before recovery") from error
             if journal.get("input_sha256") != identity:
-                raise PocketError("idempotency_conflict: request ID has different inputs")
+                raise PocketError("idempotency_conflict: request ID has different inputs", code="idempotency_conflict")
             if journal.get("state") != "complete":
-                raise PocketError("Request did not complete; inspect retained artifacts and use a new request ID")
+                raise PocketError("Request did not complete; inspect retained artifacts and use a new request ID", code="request_not_complete")
             result = journal["receipt"]
             if digest(result) != journal.get("receipt_sha256"):
-                raise PocketError("Request receipt integrity mismatch")
+                raise PocketError("Request receipt integrity mismatch", code="evidence_mismatch")
             _verify_handles(inputs, root)
             _verify_handles(result, root)
             return result
@@ -300,7 +300,7 @@ def request_status(store_root: str, request_id: str) -> dict:
     if state == 'complete':
         result = journal.get('receipt')
         if not isinstance(result, dict) or digest(result) != journal.get('receipt_sha256'):
-            raise PocketError('Request receipt integrity mismatch')
+            raise PocketError('Request receipt integrity mismatch', code='evidence_mismatch')
         _verify_handles(result, root)
         result_status = result.get('status', 'outcome_unknown')
         if not isinstance(result_status, str) or result_status not in {

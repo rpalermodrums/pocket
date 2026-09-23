@@ -84,7 +84,7 @@ def _sequence(context, occurrence_ids, store_root):
             step_end = fraction(tempo[index + 1]["at_qn"]) if index + 1 < len(tempo) else end_qn
             if (max(begin_qn, step_start) < min(end_qn, step_end)
                     and frames_per_qn != 60 * rate / fraction(step["bpm"])):
-                raise PocketError("Authored occurrence requires time stretch; exact PCM profile refuses it")
+                raise PocketError("Authored occurrence requires time stretch; exact PCM profile refuses it", code="unsupported_profile")
         mappings.append({"occurrence_id": occurrence["occurrence_id"],
                          "source_clock_id": occurrence["source_clock_id"],
                          "source_sha256": original["sha256"], "source_span_frames": [start, end],
@@ -267,7 +267,7 @@ def load_practice_feedback(handle, store_root, cache=None):
                              record["actor_kind"], record["note"], record["decision"])
     kind = "attributed_human_listening" if record["actor_kind"] == "human" else "agent_report"
     if record["evidence_kind"] != kind or record["render_sha256"] != render["audio"]["sha256"]:
-        raise PocketError("Feedback attribution or render identity mismatch")
+        raise PocketError("Feedback attribution or render identity mismatch", code="evidence_mismatch")
     return record, render
 
 
