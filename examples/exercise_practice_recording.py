@@ -19,10 +19,12 @@ from pocket_music import (
     audio_region_capture,
     audio_region_hypotheses,
     audio_region_query,
+    context_bind_interpretation,
     context_create,
     context_query,
     context_resolve,
     identify_audio,
+    interpretation_create,
     musical_time,
     practice_compare,
     practice_feedback,
@@ -107,11 +109,15 @@ def exercise(source: Path, destination: Path, starts: list[Fraction]):
                       "sources": [{"clock_id": "recording", "region": region}],
                       "timelines": [{"clock_id": "practice", "time_map": time_map}],
                       "occurrences": occurrences, "materials": [],
-                      "anchors": [{"anchor_id": "detected-onset", "kind": "onset", "label": "Observed internal attack",
-                                   "position": {"clock_id": "recording", "space": "source_frame", "value": cue},
-                                   "attribution": {**attribution, "statement": "Authored selection of retained Peek attack " +
-                                                   anchor["local"]["annotation_id"]}}]}
-        context = context_create(store, name + "-context", definition)["artifacts"]["context"]
+                      "anchors": []}
+        origin_context = context_create(store, name + "-context", definition)["artifacts"]["context"]
+        interpretation = interpretation_create(store, name + "-interpretation", origin_context, "recording",
+            {"kind": "onset", "status": "selected", "source_frame_q": q(cue)}, attribution,
+            {"hypotheses": hypotheses, "expected_revision": hypotheses["sha256"],
+             "annotation_id": anchor["local"]["annotation_id"]})["artifacts"]["interpretation"]
+        context = context_bind_interpretation(store, name + "-bind", origin_context, interpretation,
+            {"kind": "anchor", "binding_id": "selected-onset", "anchor_id": "detected-onset",
+             "label": "Observed internal attack"}, attribution)["artifacts"]["context"]
         resolve_args = {"store_root": store, "context": context, "target_clock_id": "practice",
                         "target_space": "host_seconds", "anchor_id": "detected-onset"}
         ambiguity = reject(partial(context_resolve, **resolve_args), "Ambiguous")
@@ -146,7 +152,7 @@ def exercise(source: Path, destination: Path, starts: list[Fraction]):
             "Exact decoded samples, source mapping, repeat occurrence, inverse conversion and replay verified. No listening performed.")
         assert practice_query(store, feedback["artifacts"]["feedback"])["summary"]["evidence_kind"] == "agent_report"
         reports.append({"name": name, "capture_start_frame": start, "capture_seconds": float(starts[index]),
-                        "region": region, "hypotheses": hypotheses, "context": context,
+                        "region": region, "hypotheses": hypotheses, "context": context, "interpretation": interpretation,
                         "context_summary": context_query(store, context)["summary"],
                         "pulse_candidates_bpm": [r["local"]["annotation"]["bpm"] for r in pulses],
                         "nominal_clock_bpm": q(bpm), "clock_basis": clock_reason,

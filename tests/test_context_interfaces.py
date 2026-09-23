@@ -110,7 +110,8 @@ def test_discovery_declares_actual_profiles_and_artifacts(tmp_path):
     store, context, _, _, _ = fixture(tmp_path)
     rows = {r["public_tool"]: r for domain in ("context", "practice")
             for r in capabilities_list(domain=domain, limit=50)["capabilities"]}
-    assert len(rows) == 7
+    assert {"context_create", "context_query", "context_resolve", "practice_render",
+            "practice_compare", "practice_feedback", "practice_query"} <= set(rows)
     for name, row in rows.items():
         assert callable(getattr(pocket_music, name))
         assert row["status"] == "available" and row["native_verified"] is False

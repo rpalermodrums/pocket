@@ -27,10 +27,13 @@ from .errors import PocketError
 from .time_maps import musical_time
 
 SCHEMA = "pocket.musical-context/v1"
+SCHEMA_V2 = "pocket.musical-context/v2"
 PROFILE = "authored-occurrences-exact-step/v1"
 COVERAGE = {"profile": PROFILE, "interpretation": "authored_not_inferred",
             "occurrence_mapping": "explicit_affine_source_frames_to_quarter_notes",
             "native_execution": False, "rendered": False, "human_listening": "not_performed"}
+
+COVERAGE_V2 = {**COVERAGE, "interpretation": "explicit_evidence_bound_selections"}
 
 
 def context_receipt(**kwargs):
@@ -151,28 +154,37 @@ def _validate(definition, store_root):
 
 
 def load_context(handle, store_root):
-    """Validate the complete retained graph and bounded revision ancestry."""
+    """Validate bounded ancestry once, then evidence bindings in parent-first order."""
     _verify_handles(handle, store_root)
-    record = read_record(handle, store_root, SCHEMA)
-    current, depth = record, 0
-    while True:
-        fields(current, {"schema", "definition", "parent", "coverage"})
-        if current["schema"] != SCHEMA or canonical_bytes(current["coverage"]) != canonical_bytes(COVERAGE):
-            raise PocketError("Musical context profile mismatch")
-        clocks = _validate(current["definition"], store_root)
-        if depth == 0:
-            result_clocks = clocks
-        parent = current["parent"]
-        if parent is None:
-            break
-        depth += 1
-        if depth > 32:
+    chain, current_handle = [], handle
+    while current_handle is not None:
+        if len(chain) >= 33:
             raise PocketError("Context revision ancestry exceeds 32 parents")
-        current = read_record(parent, store_root, SCHEMA)
-        if (not isinstance(current.get("definition"), dict)
-                or current["definition"].get("context_id") != record["definition"]["context_id"]):
+        current = read_record(current_handle, store_root)
+        schema = current.get("schema")
+        if schema not in (SCHEMA, SCHEMA_V2):
+            raise PocketError("Unknown musical context schema")
+        fields(current, {"schema", "definition", "parent", "coverage"} | ({"bindings"} if schema == SCHEMA_V2 else set()))
+        expected = COVERAGE if schema == SCHEMA else COVERAGE_V2
+        if canonical_bytes(current["coverage"]) != canonical_bytes(expected):
+            raise PocketError("Musical context profile mismatch")
+        chain.append((current_handle, current))
+        current_handle = current["parent"]
+    ancestors, interpretations = {}, {}
+    root_id = None
+    for current_handle, current in reversed(chain):
+        clocks = _validate(current["definition"], store_root)
+        if root_id is None:
+            root_id = current["definition"]["context_id"]
+        if current["definition"]["context_id"] != root_id:
             raise PocketError("Parent belongs to a different musical context")
-    return record, result_clocks
+        if current["schema"] == SCHEMA_V2:
+            from .interpretations import validate_context_bindings
+            validate_context_bindings(current, store_root, ancestors, interpretations)
+        elif current["parent"] is not None and ancestors[canonical_bytes(current["parent"])]["schema"] == SCHEMA_V2:
+            raise PocketError("Cannot downgrade a bound context to v1 and discard interpretation bindings")
+        ancestors[canonical_bytes(current_handle)] = current
+    return chain[0][1], clocks
 
 
 def context_create(store_root: str, request_id: str, definition: MusicalContextDefinition,
@@ -182,6 +194,8 @@ def context_create(store_root: str, request_id: str, definition: MusicalContextD
         _validate(definition, store_root)
         if parent is not None:
             previous, _ = load_context(parent, store_root)
+            if previous["schema"] != SCHEMA:
+                raise PocketError("Use context_edit to revise a bound v2 context")
             if previous["definition"]["context_id"] != definition["context_id"]:
                 raise PocketError("Parent belongs to a different musical context")
         record = {"schema": SCHEMA, "definition": copy.deepcopy(definition),
@@ -196,13 +210,13 @@ def context_create(store_root: str, request_id: str, definition: MusicalContextD
 
 
 def context_query(store_root: str, context: ArtifactHandle,
-                  section: Literal["summary", "sources", "timelines", "occurrences", "anchors", "materials"] = "summary",
+                  section: Literal["summary", "sources", "timelines", "occurrences", "anchors", "materials", "bindings"] = "summary",
                   offset: int = 0, limit: int = 32) -> dict:
     """Inspect a bounded context page without starting a host or inferring music."""
     integer(offset, "offset", 0)
     integer(limit, "limit", 1, 64)
     record, _ = load_context(context, store_root)
-    common = {"artifacts": {"context": context}, "coverage": copy.deepcopy(COVERAGE)}
+    common = {"artifacts": {"context": context}, "coverage": copy.deepcopy(record["coverage"])}
     data = record["definition"]
     if section == "summary":
         if offset:
@@ -211,6 +225,11 @@ def context_query(store_root: str, context: ArtifactHandle,
                                "attribution": data["attribution"], "parent": record["parent"],
                                "counts": {s: len(data[s]) for s in
                                           ("sources", "timelines", "occurrences", "anchors", "materials")}})
+    if section == "bindings":
+        rows = record.get("bindings", [])
+        selected = rows[offset:offset + limit]
+        return context_receipt(**common, section=section, rows=selected, total=len(rows), offset=offset,
+                               next_offset=offset + len(selected) if offset + len(selected) < len(rows) else None)
     if section not in ("sources", "timelines", "occurrences", "anchors", "materials"):
         raise PocketError("Unknown context section")
     rows = data[section][offset:offset + limit]
@@ -279,4 +298,4 @@ def context_resolve(store_root: str, context: ArtifactHandle, target_clock_id: s
         output = clocks.timeline_convert(target_clock_id, "arrangement_qn", rational_json(value), target_space)
     return context_receipt(artifacts={"context": context}, input=position, anchor_id=anchor_id,
                            occurrence_id=selected["occurrence_id"] if selected else None,
-                           output={"clock_id": target_clock_id, **output}, coverage=copy.deepcopy(COVERAGE))
+                           output={"clock_id": target_clock_id, **output}, coverage=copy.deepcopy(record["coverage"]))

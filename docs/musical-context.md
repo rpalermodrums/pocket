@@ -79,7 +79,7 @@ remains an interpretation.
 
 ## Public contract
 
-All seven providers are lazy root exports from `pocket_music`. MCP uses the same
+The providers are lazy root exports from `pocket_music`. MCP uses the same
 underscore names. CLI uses hyphens and accepts the same argument object through
 `--spec path.json`. The existing `PUBLIC_CAPABILITIES` registry registers all three
 surfaces; there is no additional HTTP implementation.
@@ -189,3 +189,30 @@ The [local-recording recipe](../examples/exercise_practice_recording.py) exercis
 analysis abstention, competing pulse estimates and overloaded FLOAT32 audio.
 Working plans and private acceptance reports live in the ignored local
 [development material](README.md#local-development-material).
+
+## Evidence-bound interpretations
+
+`interpretation_create` binds a claim to an exact context and source clock. A
+selected candidate names its `audio-region-hypotheses` handle, expected revision
+and annotation ID. Wrong recordings/crops, stale revisions and superseded
+candidates are refused. `interpretation_query` returns the selected evidence and
+its original-source projection without rerunning a detector.
+
+Claims are onset/bar-one/phrase-start points, pulse estimates, or unresolved
+intervals. Selected claims preserve candidate values; authored claims remain
+attributed choices. An attack cannot certify bar one. Abstention supports an
+unresolved interval, never a guessed tempo. Fractional model positions remain
+rational evidence; they are not silently rounded into source frames.
+
+`context_bind_interpretation` creates an immutable `pocket.musical-context/v2`
+child with a typed selection binding or a new point anchor. Point anchors require
+integer source frames. A pulse/unresolved choice is retained as a selection and
+does not change a tempo map. The interpretation must belong to the exact parent
+context. Binding IDs are unique; bindings and context ancestry remain bounded.
+Read them with `context_query(section="bindings")`.
+
+V1 records and receipts remain readable with their original meaning. V2 adds a
+`bindings` collection outside the definition. Ordinary create calls still produce
+v1 contexts; they cannot downgrade a v2 parent and discard its bindings. Query,
+resolve and exact practice rendering accept both versions. The same operation
+names and closed nested types are exposed through Python, CLI and MCP.
