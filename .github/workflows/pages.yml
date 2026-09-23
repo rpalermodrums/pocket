@@ -20,10 +20,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    # A workflow_run's github.sha is the current main tip, so a commit whose
-    # Tests finished after a newer commit landed is skipped rather than
-    # published over it. Pull request runs, including fork branches named main,
-    # never match.
+    # A workflow_run's github.sha is the main tip when the run was created, so
+    # a commit already superseded when its Tests finished is skipped rather
+    # than published over the newer one. A commit landing later publishes
+    # after this run (the concurrency group keeps order). Pull request runs,
+    # including fork branches named main, never match.
     if: >-
       github.ref == 'refs/heads/main' && (
         github.event_name == 'workflow_dispatch' || (
