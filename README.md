@@ -129,32 +129,6 @@ Configure that local process only for agents you trust with your audio and proje
 
 The [name compatibility guide](docs/compatibility.md) maps the previous names to these tools. Old commands and imports remain accepted; serialized formats, field keys, flags, caches and output artifacts are unchanged.
 
-## The musical rules
-
-- A tempo match does not identify beat one. Keep pulse, bar and phrase hypotheses separate.
-- A key label does not prove a melodic overlap works. Inspect the local parts and listen to the handoff.
-- A listener can approve one aspect of a trial while rejecting another. Preserve the exact scope of the correction.
-- No implicit fades, normalization or crop expansion. Use the **phrase handoff approach** when the musical experiment calls for it; there is no universal crossfade recipe.
-- An openable project, a successful export and a good transition are different results. Report each honestly.
-
-## Development and next decisions
-
-```sh
-python -m pytest
-node --test tests/baste_reader.test.cjs
-```
-
-Tests generate their own audio and saved-project fixtures. Keep recordings,
-rendered trials, local plans and acceptance reports in the ignored `private/`
-directory. [Architecture](docs/architecture.md) describes the shared contracts;
-the [documentation index](docs/README.md) separates usage guides from local
-working material. Successful analysis or rendering does not establish listening
-approval.
-
-## Meet Pip
-
-Pip is Pocket's field mouse: curious ears, a record sleeve for a pocket, and a tail curled like a groove. The [SVG mark](assets/pip.svg) and [README logo](assets/pocket.svg) are original, editable vectors with no external fonts or image dependencies.
-
 ## License
 
 Pocket is licensed under the [MIT License](LICENSE). Bundled third-party code retains its accompanying license notices.
