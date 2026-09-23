@@ -10,9 +10,13 @@ easily. This page explains them in plain terms and ends with a glossary.
 Pocket is a library of small, single-purpose operations for musical work. Among
 other things they can capture a passage of a recording, place a cue on a
 timeline, render alternatives, edit MIDI, read a saved Ableton Live set and
-record what a listener heard. Each operation is called a **provider**. You can
-call every provider three ways, and each call writes new files and returns a
-**receipt** describing exactly what it did and did not do.
+record what a listener heard. Each operation is called a **provider**, and you
+can call every provider three ways. Providers that make something, such as a
+capture, a render or a report, write it as a new file. Read-only providers,
+such as queries, `capabilities_list` and [Peek](peek.md), write nothing. Many
+providers, including all of the practice tools, return a **receipt** describing
+exactly what they did and did not do. Some older tools, Peek among them, return
+their own documented report instead.
 
 ## One implementation, three ways in
 
@@ -53,7 +57,8 @@ Pocket writes what it makes into a folder you choose, called a **store**
 }
 ```
 
-- A **receipt** is what a call returns. It holds a status, handles to anything
+- A **receipt** is what many calls return, whether or not they wrote
+  anything. It holds a status, handles to anything
   new, `coverage` (what was and was not attempted), warnings and stated
   uncertainty. For example, `"human_listening": "not_performed"` means exactly
   that.
@@ -220,7 +225,7 @@ The standalone practice, review and MIDI tools are named for what they do. See
 | Provider | One Pocket operation, available through Python, the CLI and MCP |
 | Pulse | The steady beat you would tap along to |
 | qn | Quarter notes, the unit of timeline position |
-| Receipt | What a call returns: status, new handles, coverage, warnings and uncertainty |
+| Receipt | What many calls return: status, any new handles, coverage, warnings and uncertainty |
 | Record bag | A sealed crate of records used for planning sets |
 | Region | A captured passage of a recording, kept with its original frame bounds |
 | Render | Audio Pocket produced by playing chosen occurrences in order |
