@@ -484,3 +484,32 @@ def test_a_late_answer_to_a_failed_save_never_replaces_the_retrys_result(review,
     assert saved.count() == 1
     assert page.locator("#listening-state").inner_text().startswith("1 human listening report")
     assert report_count(server) == 1
+
+
+def test_show_more_reports_loads_each_page_once(review):
+    from test_practice_review import preview as prepare_over_http
+    from test_practice_review import report as report_over_http
+    server, page, _, _ = review
+    prepare_over_http(server)
+    for n in range(17):  # one more than a page
+        status, result, _ = report_over_http(server, interval_frames=[7000 + n, 7050 + n],
+                                             client_request_id=f"{n + 1:032x}")
+        assert status == 200, result
+    page.reload()
+    more = page.get_by_role("button", name="Show more reports")
+    more.wait_for()
+    assert page.locator("#reports li").count() == 16
+    held = hold(page, lambda url: "/api/review/reports?cursor=" in url, "GET")
+    more.scroll_into_view_if_needed()
+    box = more.bounding_box()
+    page.mouse.dblclick(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    wait_for_held(page, held)
+    page.wait_for_timeout(300)
+    requested = len(held)
+    for route in held:
+        route.continue_()
+    wait_until(page, "document.querySelectorAll('#reports li').length >= 17")
+    page.wait_for_timeout(300)
+    assert page.locator("#reports li").count() == 17
+    assert requested == 1
+    assert more.is_hidden()

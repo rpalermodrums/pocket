@@ -445,3 +445,32 @@ def test_preview_refusals_have_no_lifetime_attempt_limit(tmp_path):
             "schema": "pocket.request-journal/v1", "request_id": folder.name, "operation": "practice_preview",
             "input_sha256": "0" * 64, "state": "failed", "error": "synthetic refusal"}))
     assert review._preview_request(render) == f"{base}-41"
+
+
+@pytest.mark.parametrize("tamper", ["duplicate", "foreign", "relabelled"])
+def test_retained_reports_are_fully_verified_before_they_are_counted(tmp_path, tamper):
+    store, handle = comparison(tmp_path, processed=False)
+    record = read_record(handle, store)
+    session = tmp_path / "session"
+    server, thread = serve(store, handle, session)
+    try:
+        preview(server)
+        assert report(server, interval_frames=[0, 100])[0] == 200
+        other = practice_compare(store, "other", record["baseline"], record["variants"], "Another question?",
+                                 True)["artifacts"]["comparison"]
+        foreign = practice_feedback(store, "foreign", other, record["variants"][0], [0, 100], "Somebody", "human",
+                                    "About the other comparison", None)["artifacts"]["feedback"]
+        index = session / "review-session.json"
+        data = json.loads(index.read_text())
+        data["reports"].append({"duplicate": data["reports"][0], "foreign": foreign,
+                                "relabelled": {**foreign, "artifact_schema": "pocket.practice-comparison/v1"}}[tamper])
+        index.write_text(json.dumps(data))
+        for path in ("/api/review", "/api/review/reports"):
+            status, result, _ = call(server, path)
+            assert status == 409 and "human_report_count" not in result, (path, result)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+    with pytest.raises(PocketError):
+        _make_server(store, handle, str(session))

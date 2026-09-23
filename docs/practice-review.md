@@ -35,7 +35,9 @@ start_practice_review(store_root, comparison_file, session_dir, reports_file=Non
 The session directory holds only `review-session.json`, a small index of the
 preview and report handles made through this page, plus a lock so two servers
 cannot share it. Reopening the same session directory shows those previews and
-reports again after full verification. The artifacts themselves live in the store.
+reports again after full verification, on every request. If the index lists a report
+twice, a report about another comparison, or anything that is not a report, the page
+refuses to load rather than count it. The artifacts themselves live in the store.
 
 ## Listen and report
 

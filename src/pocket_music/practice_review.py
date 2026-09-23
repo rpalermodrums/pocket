@@ -129,11 +129,11 @@ class _Review:
                 state = {"schema": SESSION_SCHEMA, "revision": 0, "comparison": comparison, "previews": {},
                          "reports": []}
             extra = [h for h in report_handles if h not in state["reports"]]
+            if len(state["reports"]) + len(extra) > MAX_REPORTS:
+                raise PocketError(f"A review session holds at most {MAX_REPORTS} reports")
+            self._verify_reports([*state["reports"], *extra])
             if extra:
-                self._verify_reports(extra)
                 state["reports"] = [*state["reports"], *extra]
-                if len(state["reports"]) > MAX_REPORTS:
-                    raise PocketError(f"A review session holds at most {MAX_REPORTS} reports")
                 state["revision"] += 1
             self.write(state)
         except Exception:
@@ -162,12 +162,25 @@ class _Review:
         temporary.replace(self.path)
 
     def _verify_reports(self, handles):
-        """Fully validate supplied reports and require membership in this comparison."""
+        """Fully validate reports, supplied or retained, and require membership in this comparison.
+
+        Nothing verified in an earlier request is trusted: the session index is a local file, so
+        every read that counts or lists reports revalidates them within its own request.
+        """
         from .practice_feedback_query import practice_feedback_query
-        practice_feedback_query(self.store, handles, limit=128, max_bytes=65536)  # validates every handle
-        for handle in handles:
-            if read_record(handle, self.store)["comparison"] != self.comparison:
-                raise PocketError("Every report must belong to the selected comparison")
+        if not handles:
+            return []
+        # Validates every handle as a feedback report and refuses duplicates. The limit only pages
+        # the answer (a larger page costs repeated serialization); validation covers all handles.
+        practice_feedback_query(self.store, handles, limit=1, max_bytes=65536)
+        return self._members(handles)
+
+    def _members(self, handles):
+        """Records of reports validated in this request, refused unless they belong to this comparison."""
+        records = [read_record(handle, self.store) for handle in handles]
+        if any(record["comparison"] != self.comparison for record in records):
+            raise PocketError("Every report must belong to the selected comparison")
+        return records
 
     def item(self, item_id):
         if not isinstance(item_id, str) or not _ITEM.fullmatch(item_id) or item_id not in self.items:
@@ -204,8 +217,7 @@ class _Review:
                                 for m in render["mappings"]],
                 "preview": None if preview is None else self._preview_summary(preview[0], preview[1])})
         synchronized, basis = _alignment(self.comparison["artifact_schema"], record, renders)
-        # Hash-verified records; the reports endpoint performs full provider validation.
-        kinds = [read_record(handle, self.store)["actor_kind"] for handle in state["reports"]]
+        kinds = [record["actor_kind"] for record in self._verify_reports(state["reports"])]
         return {"revision": state["revision"], "csrf_token": self.csrf, "question": record["question"],
                 "comparison": {"short_id": _short(self.comparison["sha256"]),
                                "family": COMPARISON_LABELS[self.comparison["artifact_schema"]],
@@ -346,7 +358,9 @@ class _Review:
         handles = state["reports"] if handles is None else handles
         if not handles:
             return {"items": [], "total": 0, "next_cursor": None, "complete": True}
+        # The query validates every handle and refuses duplicates; membership is checked before listing.
         result = practice_feedback_query(self.store, handles, limit=16, cursor=cursor, max_bytes=65536)
+        self._members(handles)
         members = {canonical_bytes(item["render"]): item_id for item_id, item in self.items.items()}
         rows = [{**row, "item_id": members.get(canonical_bytes(row["render"]))} for row in result["items"]]
         return {"items": rows, "total": result["total"], "next_cursor": result["next_cursor"],

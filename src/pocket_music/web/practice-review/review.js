@@ -398,8 +398,10 @@ function showReceipt(row) {
 
 async function loadReports({cursor = null, quiet = false} = {}) {
   const list = $("reports");
+  const more = $("more-reports");
   // A new listing supersedes older ones; "more" pages belong to the listing they extend.
   const listing = cursor ? reportsListing : ++reportsListing;
+  more.disabled = true;  // one request per page: a double click must never append a page twice
   try {
     const page = await api(`/api/review/reports${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
     if (listing !== reportsListing) return;
@@ -415,12 +417,13 @@ async function loadReports({cursor = null, quiet = false} = {}) {
     if (page.status === "needs_input") {
       list.append(element("li", "A report is larger than this page can show at once; read it with practice_feedback_query."));
     }
-    const more = $("more-reports");
     more.hidden = !page.next_cursor;
     more.onclick = () => loadReports({cursor: page.next_cursor});
     if (!page.total) list.replaceChildren(element("li", "No reports saved yet."));
   } catch (error) {
     if (!quiet && listing === reportsListing) showError(`Reports could not be verified: ${error.message}`);
+  } finally {
+    if (listing === reportsListing) more.disabled = false;
   }
 }
 
