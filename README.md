@@ -2,7 +2,7 @@
 
 **The musical toolkit for agents.** Pocket is a Python toolkit with CLI and MCP interfaces for audio analysis, musical coordinates, MIDI operations and evidence-linked edits. Its operations are small and composable; you decide what to build with them.
 
-Pocket is public, open source and in early development. Its broader goal is a responsive, living “band in a box” practice partner, including for jazz musicians. That is a **post-v1 goal**, not a feature available today.
+Pocket is public, open source and in early development.
 
 [Documentation](docs/README.md) · [Agent skill](skills/pocket/SKILL.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
@@ -49,7 +49,7 @@ Give the process access only to files you intend it to work with. Core workflows
 
 ## Where this is going
 
-Pocket is not limited to electronic music, a particular meter or Ableton. The next practical step is making exact listening comparisons easier to review. Responsive accompaniment, following, comping and trading require separate musical and real-time qualification. See [status and direction](docs/status.md) for the distinction between current tools and future work.
+Pocket is not limited to electronic music, a particular meter or Ableton. A responsive, living “band in a box” practice partner, including for jazz musicians, is a **post-v1 goal**. Accompaniment, following, comping and trading require separate musical and real-time qualification. See [status and direction](docs/status.md) for the distinction between current tools and future work.
 
 ## Project
 

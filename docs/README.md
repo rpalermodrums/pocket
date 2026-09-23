@@ -1,9 +1,11 @@
 # Pocket documentation
 
-Pocket is a general toolkit for musical work. Responsive ensemble practice,
-including a living jazz practice partner, remains a post-v1 goal.
+Pocket exposes composable music operations through Python, CLI and MCP.
+These guides cover installation, provider inputs, artifact contracts and adapter limits.
 
-Start with [your first experiment](getting-started.md), or read [status and direction](status.md).
+Start with [installation and a synthetic example](getting-started.md), or read
+[installed contracts](contracts.md) and [architecture](architecture.md).
+See [status and direction](status.md) for current capabilities and future work.
 
 ## Use the tools
 
