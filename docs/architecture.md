@@ -8,8 +8,8 @@ post-v1 goal; DAWs, electronic music and fixed meters are not core requirements.
 The [musical context layer](musical-context.md) is an additive foundation for
 explicit clocks, authored anchors and repeated occurrences. Its original-rate
 practice renderer uses shared signal evidence with the existing native audition
-adapter. [Foundation status](foundation-status.md) separates these working
-contracts from the proposed v1 facade and remaining musical acceptance.
+adapter. Working contracts remain distinct from proposed facade names and
+from musical acceptance; provider discovery describes the installed surface.
 
 ## Records and clocks
 
@@ -51,8 +51,6 @@ Use Peek, Thread and Stitch on unfamiliar transitions. Record where the tool's r
 
 The decision criterion is whether a tool improves a musical choice or removes repeated work. A plausible MIDI file, more model confidence or more infrastructure is not sufficient on its own.
 
-The [Baste/Pipette plan](baste-pipette-plan.md) evaluates the six proposed tools
-and establishes this cycle's dependencies. Baste precedes a future guarded live
-parameter writer; Pipette provides saved promotion for a future comparison UI.
-Neither expands Stitch's editing or Max dependency collection scope. See
-[acceptance](baste-pipette-acceptance.md) for current verification boundaries.
+[Baste](baste.md) observes a live session; [Pipette](pipette.md) preserves an
+explicitly kept saved candidate. Neither expands Stitch's editing or Max
+dependency collection scope. A future live writer needs separate qualification.

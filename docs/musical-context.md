@@ -176,20 +176,16 @@ uses `actor_kind="agent"`. Creating feedback never changes a render's stored
   original capture request still validates that external original.
 
 DOUBLE WAV is an evidence format and is not supported by every browser player.
-The [reference exercise](reference-foundation-check.md#browser-playback-boundary)
-used separately labeled FLOAT32 review exports with verified sample equality;
-those exports are not a new public processing profile.
+A browser export needs an explicit supported format and independent fidelity
+checks. Local experiments used separate FLOAT32 review copies; those exports
+are not a new public processing profile.
 
 This profile does not mix overlapping layers, transpose, stretch, generate a
 count-in, infer meter, or accompany a player in real time. Existing symbolic tools
 remain composable through material references. Those additions need their own
 capability profiles and evidence rather than broader claims attached to this one.
 
-See [foundation implementation status](foundation-status.md) for the crosswalk,
-compatibility decisions and next acceptance work.
-
-The [recorded-performance check](reference-foundation-check.md) exercises three
-real passages using [a reusable local-recording recipe](../examples/exercise_practice_recording.py).
-It includes analysis abstention, competing pulse estimates and overloaded FLOAT32
-audio. The [next-phase plan](next-phase-plan.md) defines typed interpretation
-selection and comparisons across immutable edits as the next deliveries.
+The [local-recording recipe](../examples/exercise_practice_recording.py) exercises
+analysis abstention, competing pulse estimates and overloaded FLOAT32 audio.
+Working plans and private acceptance reports live in the ignored local
+[development material](README.md#local-development-material).

@@ -34,15 +34,15 @@ The same public calls are available through CLI (`--spec`) and MCP.
 
 The [synthetic demo](../../examples/practice_context.py) exercises the complete
 file-only path. It does not qualify acoustic musical usefulness, native behavior
-or real-time accompaniment. See [foundation status](../../docs/foundation-status.md)
-before treating proposed facade operations as implemented tools.
+or real-time accompaniment. Discover installed operations through `capabilities_list`;
+local development plans are not callable tool contracts.
 
 For a real recording, the [reference exercise](../../examples/exercise_practice_recording.py)
 uses explicit twenty-second captures and declared A/B boundary probes. Retain
 abstention and competing pulse candidates; a nominal clock is not detected tempo.
 Preserve decoded overs and mark signal readiness separately. The exercise records
-agent technical reports only. Use the [next-phase plan](../../docs/next-phase-plan.md)
-for proposed interpretation/edit contracts; those additions are not callable yet.
+agent technical reports only. Keep actual recordings and acceptance receipts
+in the ignored `private/audio/` directory.
 
 ## Selection and improvisation
 
@@ -96,8 +96,8 @@ See [Pipette](../../docs/pipette.md) for rejection rules and evidence scope.
 
 Read the [MIDI guide](../../docs/midi.md), [capability matrix](../../docs/midi-capabilities.md)
 and [composable examples](../../examples/midi-workflow/README.md) for the requested operation.
-For an audio-to-MIDI musical handover, follow the visible choices and evidence
-requirements in the [Tunji acceptance scenario](../../docs/tunji-acceptance.md).
+For an audio-to-MIDI handover, state the musical question, source uncertainty and
+listening requirements explicitly.
 Discover current availability with `capabilities_list`; a closed native gate is not a callable tool.
 Use public providers directly, through matching MCP names, or through hyphenated CLI names with `--spec`.
 

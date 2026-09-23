@@ -6,12 +6,8 @@ Pocket's broader goal spans musical practice, composition and performance across
 instruments and genres. After v1, that includes a responsive “living band in a box”
 practice partner. The [musical context and standalone practice tools](docs/musical-context.md)
 now connect explicit clocks, internal cues, repeated passages, exact audio and
-listening reports without requiring a DAW. See the
-[foundation status](docs/foundation-status.md) for implemented boundaries and next steps.
-
-The foundation has been [checked on a user-selected acoustic recording](docs/reference-foundation-check.md).
-The [next implementation phase](docs/next-phase-plan.md) connects chosen musical
-interpretations, explicit edits and comparisons across revisions.
+listening reports without requiring a DAW. The [documentation index](docs/README.md)
+links to the current usage and API guides.
 
 Private, early development. Version 0.4 adds **Baste** and **Pipette**: observe an open Live session, then preserve an explicitly kept saved trial as a new project. Musical proposals, technical verification and listening judgments stay separate.
 
@@ -49,8 +45,6 @@ Live, Serum or Mido. SMF import/export uses the optional `midi` extra
 [MIDI and sound tools](docs/midi.md) expose the same public providers
 through CLI and MCP, with [composable examples](examples/midi-workflow/README.md)
 and an explicit [capability and acceptance matrix](docs/midi-capabilities.md).
-The [Tunji acceptance scenario](docs/tunji-acceptance.md) connects these tools
-to an editable musical handover, with source uncertainty and listening gates explicit.
 Native stock candidates support supervised import and a separately qualified
 ordinary-note writer, followed by save/reopen/render evidence;
 Serum catalog and planning do not imply a working native Serum installation.
@@ -116,8 +110,6 @@ session without saving or changing it. [Pipette](docs/pipette.md) documents the
 explicit keep specification and selected render hashes. It copies a saved trial's
 evidence and media, rebinds only the child's collected reference hints, and verifies
 the result through Thread. It does not promote mutable Baste observations.
-See the [implementation plan](docs/baste-pipette-plan.md) and
-[acceptance record](docs/baste-pipette-acceptance.md) for verification and limits.
 
 ## Work with an agent
 
@@ -152,9 +144,12 @@ python -m pytest
 node --test tests/baste_reader.test.cjs
 ```
 
-Tests generate small signals and saved-project fixtures. Full recordings, renders, model weights and real listener notes stay outside the repository. [Architecture](docs/architecture.md) describes the shared contracts and extraction from earlier production work. [Evaluation](docs/evaluation.md) records the production field checks and what still needs listening tests. The [implementation plan](docs/implementation-plan.md) records scope, ownership and acceptance gates.
-
-The [selection plan](docs/selection-plan.md) defines this cycle, and the [0.3 field notes](docs/selection-field-notes.md) record what actual library, model, acquisition and shared-session tests changed. Reproducible proposals, validated recording identity and successful model execution are different from a good set. Use listening feedback to decide what to keep; optional embeddings remain an experiment, with their observed limitations documented beside the provider.
+Tests generate their own audio and saved-project fixtures. Keep recordings,
+rendered trials, local plans and acceptance reports in the ignored `private/`
+directory. [Architecture](docs/architecture.md) describes the shared contracts;
+the [documentation index](docs/README.md) separates usage guides from local
+working material. Successful analysis or rendering does not establish listening
+approval.
 
 ## Meet Pip
 

@@ -2,7 +2,7 @@
 
 Pocket's symbolic tools work without Live, Serum, a renderer or a workflow runner. Each public Python provider is also a CLI command and an MCP tool. Recipes compose those same functions; there is no hidden selected material or conversation state.
 
-This implementation provides offline MIDI material, deterministic alternatives, guarded edits, file curves, sound plans, and a supervised native-candidate evidence pipeline. One narrow synthetic stock-instrument workflow has been saved/reopened, rendered, technically promoted and reopened after relocation. General native MIDI fidelity failed specific probes, Serum is deferred, and no human musical approval is claimed. See the [capability matrix](midi-capabilities.md) and the [Tunji musical acceptance scenario](tunji-acceptance.md), which separates proposed music from completed delivery and listening evidence.
+This implementation provides offline MIDI material, deterministic alternatives, guarded edits, file curves, sound plans, and a supervised native-candidate evidence pipeline. One narrow synthetic stock-instrument workflow has been saved/reopened, rendered, technically promoted and reopened after relocation. General native MIDI fidelity failed specific probes, Serum is deferred, and no human musical approval is claimed. See the [capability matrix](midi-capabilities.md) and the [local development notes](README.md#local-development-material), which separates proposed music from completed delivery and listening evidence.
 
 ## Calling a capability
 

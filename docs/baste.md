@@ -75,7 +75,7 @@ session. The reader limits work to 30,000 objects, 300,000 counted reads and 30
 seconds between budget checks. Python accepts a 0.1–60 second transport timeout
 (default 35 seconds). A single host call cannot be preempted; these are resource
 bounds, not a real-time scheduling guarantee. Native latency and limits are in
-[the acceptance record](baste-pipette-acceptance.md).
+[local development notes](README.md#local-development-material).
 
 ## Read-only boundary and transport
 
@@ -122,5 +122,5 @@ resource bounds, dictionary lifetime and the actual HTTP transport. They do not
 prove native behavior. Native acceptance uses an isolated project, GUI comparison,
 a change since Save, repeated observations and saved-byte/mtime preservation.
 
-See [the implementation plan](baste-pipette-plan.md) for source specifications and
+See [local development notes](README.md#local-development-material) for source specifications and
 [Pipette](pipette.md) for the separate saved-candidate promotion workflow.
