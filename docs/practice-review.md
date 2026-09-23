@@ -19,7 +19,8 @@ pocket practice-review --store-root /path/to/store \
 ```
 
 The command prints one JSON line with the local URL and serves until Ctrl-C.
-`--port 0` chooses a free port. Add `--reports-file reports.json` (a JSON list of
+On Ctrl-C it waits for a preview or report that is still being written before
+exiting. `--port 0` chooses a free port. Add `--reports-file reports.json` (a JSON list of
 feedback handles or receipts) to show existing reports, for example an agent's
 technical report, beside new ones; every one must belong to the selected comparison.
 
@@ -45,12 +46,15 @@ reports again after full verification. The artifacts themselves live in the stor
    with the `browser-pcm16-original-rate/v1` profile: an original-rate PCM16 copy
    with nearest rounding and no dither, gain or clamping. The page says whether any
    sample was rounded. An unrepresentable sample or an unqualified sample rate is
-   refused with an explanation; the page never resamples or normalizes to make
-   audio playable.
+   refused with an explanation, every time you try; the page never resamples or
+   normalizes to make audio playable. A refused or interrupted preview request is
+   kept in the store for inspection and a later attempt uses a new request ID.
 3. Play it with the browser's controls. Nothing plays automatically. Mark the
    interval you actually heard with **Start at playhead** / **End at playhead**
    (`[` and `]`), or type seconds. The page always shows the integer frames that
-   will be saved. **Play this interval** (`P`) replays just that span.
+   will be saved. **Play this interval** (`P`) replays that span and stops within
+   a display frame (about 20 ms) of its end; pausing, seeking or ordinary playback
+   cancels it.
 4. Enter your name and what you heard, optionally choose an existing decision
    (keep, revise, reject, no addition), and tick **I listened to this interval of
    this preview**. Saving calls `practice_feedback` with the preview and creates an
@@ -60,12 +64,17 @@ reports again after full verification. The artifacts themselves live in the stor
 
 Playback, seeking or a finished timer never creates a report. A draft belongs to
 one item and one preview: switching items with unsaved text asks you to keep or
-discard it, and a changed preview makes the draft unsaveable. A repeated save of
-the same draft returns the same report rather than a duplicate.
+discard it, and a changed preview makes the draft unsaveable. While a save is in
+flight the form, cancel and item choices are locked. A repeated save of the same
+unchanged draft returns the same report rather than a duplicate, including after
+a dropped connection: the page then says the report may already exist and keeps
+your draft.
 
 Every saved report is listed as written, including contradictory decisions and
-agent reports, which are labelled separately. Nothing is averaged into a
-preference, and a report is not a musical verdict for any other interval or item.
+agent reports, which are labelled separately. The header counts human listening
+reports and agent reports separately, and only a person's report says what was
+"heard". Nothing is averaged into a preference, and a report is not a musical
+verdict for any other interval or item.
 
 ### Switching between items
 
@@ -93,7 +102,8 @@ interval, not proof that anyone listened, and not approval of other material.
 The server binds only `127.0.0.1`, checks the exact Host, rejects foreign origins
 and cross-site requests, requires a same-origin JSON request with a per-process
 token for every write, limits request bodies to 64 KiB, and sends a restrictive
-content security policy with `no-store` caching. Only the selected comparison's
+content security policy with `no-store` caching. Error messages never include
+store or session paths. Only the selected comparison's
 items are reachable through server-issued item IDs; there is no path parameter or
 store listing. Audio responses support one byte range. Each request verifies what
 it reads; nothing verified in one request is trusted in the next. This protects

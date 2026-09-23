@@ -1,8 +1,9 @@
 // Practice review page. All text from the server is inserted with textContent.
 // Media events only move the playhead; a report exists only after an explicit save.
 import {
-  DECISIONS, draftHasContent, draftStale, formatSeconds, frameToSeconds, intervalError, newClientRequestId,
-  newDraft, reportLine, reportPayload, saveProblem, secondsToFrame, shortcutAllowed, switchBlocked,
+  DECISIONS, draftHasContent, draftStale, formatSeconds, frameToSeconds, intervalError, listeningState,
+  newClientRequestId, newDraft, reportLine, reportPayload, saveProblem, secondsToFrame, shortcutAllowed,
+  switchBlocked,
 } from "/review-model.mjs";
 
 const $ = id => document.getElementById(id);
@@ -12,8 +13,13 @@ let draft = null;
 let actorName = "";
 let pendingSwitch = null;
 let saving = false;
-let stopAt = null;
+let intervalEnd = null;    // seconds; set only by "Play this interval"
+let intervalFrame = null;  // requestAnimationFrame handle watching intervalEnd
+let ownSeek = false;       // the next seek is ours, so it must not cancel interval playback
+let provenanceToken = 0;
 const positions = {};
+
+class NetworkError extends Error {}
 
 async function api(path, body) {
   const options = {cache: "no-store", credentials: "same-origin"};
@@ -21,7 +27,12 @@ async function api(path, body) {
     Object.assign(options, {method: "POST", body: JSON.stringify(body),
       headers: {"Content-Type": "application/json", "X-Pocket-CSRF": state ? state.csrf_token : ""}});
   }
-  const response = await fetch(path, options);
+  let response;
+  try {
+    response = await fetch(path, options);
+  } catch (error) {
+    throw new NetworkError(error.message);
+  }
   let data;
   try {
     data = await response.json();
@@ -67,8 +78,20 @@ function element(tag, text, className) {
   return node;
 }
 
+function stopInterval() {
+  intervalEnd = null;
+  if (intervalFrame !== null) cancelAnimationFrame(intervalFrame);
+  intervalFrame = null;
+}
+
+function focusSelectedItem() {
+  const button = document.querySelector(`[data-item="${selectedId}"]`);
+  if (button) button.focus();
+}
+
 function renderItems() {
   const container = $("items");
+  const hadFocus = container.contains(document.activeElement);
   container.replaceChildren();
   for (const candidate of state.items) {
     const button = element("button", undefined, "item");
@@ -76,6 +99,7 @@ function renderItems() {
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", String(candidate.item_id === selectedId));
     button.tabIndex = candidate.item_id === selectedId ? 0 : -1;
+    button.disabled = saving;
     button.dataset.item = candidate.item_id;
     const seconds = frameToSeconds(candidate.frames, candidate.sample_rate);
     button.append(element("strong", candidate.label),
@@ -86,29 +110,29 @@ function renderItems() {
         candidate.signal.usable_for_expectation ? undefined : "warning"),
       element("span", candidate.preview ? `Preview ${candidate.preview.short_id}` : "No preview yet"),
       element("span", `Audio ${candidate.short_id}`));
-    button.addEventListener("click", () => selectItem(candidate.item_id));
+    button.addEventListener("click", () => selectItem(candidate.item_id, true));
     button.addEventListener("keydown", event => {
       const order = state.items.map(entry => entry.item_id);
       const index = order.indexOf(candidate.item_id);
       const step = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1}[event.key];
       if (step) {
         event.preventDefault();
-        const target = order[(index + step + order.length) % order.length];
-        selectItem(target, true);
+        selectItem(order[(index + step + order.length) % order.length], true);
       }
     });
     container.append(button);
   }
+  // Re-rendering replaces the buttons; keep keyboard and assistive-technology focus in place.
+  if (hadFocus) focusSelectedItem();
 }
 
 function renderPlayer() {
   const current = item();
   $("item-summary").textContent = `${current.label}: ${current.processing.label}. `
     + `${current.frames} frames at ${current.sample_rate} Hz.`;
-  $("provenance").open = false;
-  $("provenance-list").replaceChildren();
   $("preview-missing").hidden = Boolean(current.preview);
   $("preview-ready").hidden = !current.preview;
+  $("make-preview").disabled = saving;
   const audio = $("audio");
   if (current.preview) {
     $("preview-label").textContent = `Browser preview ${current.preview.short_id}: ${current.preview.label}.`;
@@ -118,14 +142,19 @@ function renderPlayer() {
       audio.setAttribute("src", source);
       audio.load();
     }
-    const occurrences = $("occurrences");
-    occurrences.replaceChildren(...current.occurrences.map(entry => element("li",
+    $("occurrences").replaceChildren(...current.occurrences.map(entry => element("li",
       `${entry.occurrence_id}: ${formatSeconds(frameToSeconds(entry.output_span_frames[0], current.sample_rate))}–`
       + `${formatSeconds(frameToSeconds(entry.output_span_frames[1], current.sample_rate))}`)));
   } else {
     audio.pause();
     audio.removeAttribute("src");
   }
+}
+
+function resetProvenance() {
+  provenanceToken += 1;
+  $("provenance").open = false;
+  $("provenance-list").replaceChildren();
 }
 
 function renderSelection() {
@@ -153,7 +182,11 @@ function renderForm() {
   $("draft-target").textContent = current.preview
     ? `This report is about ${current.label}, preview ${current.preview.short_id} of audio ${current.short_id}.`
     : `${current.label} needs a preview before you can report on it.`;
-  $("save-problem").textContent = problem || "Ready to save. Saving creates a permanent, attributed report.";
+  $("save-problem").textContent = saving ? "Saving and verifying the report…"
+    : problem || "Ready to save. Saving creates a permanent, attributed report.";
+  // The whole form is inert while a save is in flight: nothing can be edited, cancelled or retargeted.
+  $("report-fields").disabled = saving;
+  $("discard-draft").disabled = saving;
   $("save").disabled = saving || Boolean(problem);
   for (const id of ["actor", "note", "decision", "listened"]) $(id).disabled = !current.preview;
   if (document.activeElement !== $("actor")) $("actor").value = draft.actor;
@@ -166,9 +199,7 @@ function render() {
   $("question").textContent = state.question;
   $("comparison-meta").textContent = `${state.comparison.family} · comparison ${state.comparison.short_id} · `
     + (state.comparison.signal_ready ? "signal checks passed" : "signal warnings retained");
-  $("listening-state").textContent = state.report_count
-    ? `${state.report_count} saved report${state.report_count === 1 ? "" : "s"} in this session. Playing audio never records a report.`
-    : "Not yet reviewed. Playing audio never records a report.";
+  $("listening-state").textContent = listeningState(state.human_report_count, state.agent_report_count);
   $("alignment").textContent = state.alignment.synchronized_switching
     ? `Switching keeps the playhead position: ${state.alignment.basis}.`
     : `Switching does not align playback: ${state.alignment.basis}.`;
@@ -184,7 +215,11 @@ function resetDraft() {
 }
 
 function selectItem(id, focus = false) {
-  if (id === selectedId) return;
+  if (saving) return;
+  if (id === selectedId) {
+    if (focus) focusSelectedItem();
+    return;
+  }
   if (switchBlocked(draft, id)) {
     pendingSwitch = id;
     $("switch-guard-text").textContent = `You have an unsaved report for ${item(draft.itemId).label}. `
@@ -196,27 +231,47 @@ function selectItem(id, focus = false) {
   const audio = $("audio");
   const previous = selectedId;
   if (previous) positions[previous] = audio.currentTime || 0;
+  stopInterval();
   audio.pause();
   selectedId = id;
   resetDraft();
+  resetProvenance();
   render();
   const target = state.alignment.synchronized_switching && previous ? positions[previous] : positions[id];
   if (item().preview && target) {
-    const cue = () => { audio.currentTime = target; };
+    const cue = () => {
+      ownSeek = true;
+      audio.currentTime = target;
+    };
     if (audio.readyState >= 1) cue(); else audio.addEventListener("loadedmetadata", cue, {once: true});
   }
   announce(`${item().label} selected.`);
-  if (focus) document.querySelector(`[data-item="${id}"]`).focus();
+  if (focus) focusSelectedItem();
 }
 
 function mark(field) {
   const current = item();
-  if (!current.preview) return;
+  if (!current.preview || saving) return;
   draft[field] = secondsToFrame($("audio").currentTime, current.sample_rate);
   draft.clientRequestId = null;
   renderSelection();
   renderForm();
   announce(`${field === "start" ? "Start" : "End"} set to frame ${draft[field]}.`);
+}
+
+function watchInterval() {
+  const audio = $("audio");
+  if (intervalEnd === null || audio.paused) {
+    intervalFrame = null;
+    return;
+  }
+  // Checked every animation frame rather than on timeupdate (about every 250 ms), so
+  // playback stops within one display frame of the declared end.
+  if (audio.currentTime >= intervalEnd) {
+    audio.pause();
+    return;
+  }
+  intervalFrame = requestAnimationFrame(watchInterval);
 }
 
 function playSelection() {
@@ -226,32 +281,55 @@ function playSelection() {
     return;
   }
   const audio = $("audio");
+  stopInterval();
+  ownSeek = true;
   audio.currentTime = frameToSeconds(draft.start, current.sample_rate);
-  stopAt = frameToSeconds(draft.end, current.sample_rate);
-  audio.play().catch(error => showError(`Playback did not start: ${error.message}`));
+  intervalEnd = frameToSeconds(draft.end, current.sample_rate);
+  audio.play().then(() => {
+    if (intervalEnd !== null && intervalFrame === null) intervalFrame = requestAnimationFrame(watchInterval);
+  }).catch(error => showError(`Playback did not start: ${error.message}`));
 }
 
 async function makePreview() {
+  if (saving) return;
   clearError();
+  const requested = selectedId;
   const button = $("make-preview");
   button.disabled = true;
   announce("Preparing a declared browser preview…");
   try {
-    const result = await api("/api/review/previews", {expected_revision: state.revision, item_id: selectedId});
+    const result = await api("/api/review/previews", {expected_revision: state.revision, item_id: requested});
     state = result.state;
-    if (draft && !draft.previewSha && draft.itemId === selectedId) draft.previewSha = previewSha();
+    if (draft && !draft.previewSha && draft.itemId === requested) draft.previewSha = previewSha(requested);
     render();
-    announce(`Preview ready.${result.warnings.length ? " Signal warnings: " + result.warnings.join("; ") : ""}`);
-    $("audio").focus();
+    const warnings = result.warnings.length ? ` Signal warnings: ${result.warnings.join("; ")}` : "";
+    if (selectedId !== requested) {
+      // The person has moved on; never pull focus or announce it as the current item.
+      announce(`Preview for ${item(requested).label} ready.${warnings}`);
+      return;
+    }
+    announce(`Preview ready.${warnings}`);
+    if (document.activeElement === button || document.activeElement === document.body) $("audio").focus();
   } catch (error) {
     showError(`Preview not created: ${error.message}`);
   } finally {
-    button.disabled = false;
+    button.disabled = saving;
   }
+}
+
+async function refresh() {
+  try {
+    state = await api("/api/review");
+    render();
+  } catch {
+    // The error already shown explains what happened; keep the last verified state.
+  }
+  await loadReports();
 }
 
 async function save(event) {
   event.preventDefault();
+  if (!state || !draft || saving) return;
   clearError();
   const current = item();
   const problem = draftStale(draft, previewSha()) ? "The preview changed after this draft began."
@@ -261,24 +339,34 @@ async function save(event) {
     $("save-problem").focus();
     return;
   }
-  if (saving) return;
+  const sent = draft;
+  if (!sent.clientRequestId) sent.clientRequestId = newClientRequestId(crypto.getRandomValues(new Uint8Array(16)));
   saving = true;
-  renderForm();
-  if (!draft.clientRequestId) draft.clientRequestId = newClientRequestId(crypto.getRandomValues(new Uint8Array(16)));
+  render();
   try {
-    const result = await api("/api/review/reports", reportPayload(draft, state.revision));
+    const result = await api("/api/review/reports", reportPayload(sent, state.revision));
     state = result.state;
-    actorName = draft.actor;
+    actorName = sent.actor;
+    saving = false;
     showReceipt(result.report);
-    resetDraft();
+    pendingSwitch = null;
+    $("switch-guard").hidden = true;
+    if (draft === sent) resetDraft();
     render();
     $("receipt").focus();
     await loadReports();
   } catch (error) {
-    showError(`Report not saved: ${error.message}`);
+    saving = false;
+    if (error instanceof NetworkError) {
+      showError("The connection dropped before Pocket confirmed this save, so the report may already exist. "
+        + "Your draft is kept: saving it again unchanged returns the same report, never a duplicate.");
+    } else {
+      showError(`Report not saved: ${error.message}`);
+    }
+    await refresh();
   } finally {
     saving = false;
-    if (state) renderForm();
+    if (state) render();
   }
 }
 
@@ -300,7 +388,8 @@ async function loadReports(cursor = null) {
       const line = reportLine(row, labels());
       const entry = element("li");
       entry.append(element("span", line.kind, "badge"), element("p", `${line.who} · ${line.item} · frames ${line.frames}`),
-        element("p", `Heard: ${line.heard} · decision: ${line.decision}`, "meta"), element("p", row.note, "note"));
+        element("p", `${line.audioLabel}: ${line.heard} · decision: ${line.decision}`, "meta"),
+        element("p", row.note, "note"));
       list.append(entry);
     }
     if (page.status === "needs_input") {
@@ -316,9 +405,15 @@ async function loadReports(cursor = null) {
 }
 
 async function loadProvenance() {
+  const list = $("provenance-list");
   if (!$("provenance").open) return;
+  const token = ++provenanceToken;
+  const requested = selectedId;
+  list.replaceChildren(element("dt", "Status"), element("dd", "Verifying…"));
   try {
-    const detail = await api(`/api/review/items/${selectedId}`);
+    const detail = await api(`/api/review/items/${requested}`);
+    // Drop a late answer for an item that is no longer selected or a request that was superseded.
+    if (token !== provenanceToken || requested !== selectedId) return;
     const rows = [["Render", detail.render.sha256], ["Audio", detail.audio_sha256], ["Context", detail.context_sha256],
       ["Processing", detail.processing.profile], ["Signal", `${detail.signal.disposition}, peak ${detail.signal.sample_peak.toFixed(4)}, `
         + `RMS ${detail.signal.rms.toFixed(4)}, ${detail.signal.sample_overload_count} overload samples`]];
@@ -333,13 +428,16 @@ async function loadProvenance() {
       ["Quantization", `${detail.preview.quantization.samples - detail.preview.quantization.exact_samples} of `
         + `${detail.preview.quantization.samples} samples rounded, max ${detail.preview.quantization.max_abs_error_lsb} LSB`]);
     }
-    $("provenance-list").replaceChildren(...rows.flatMap(([term, value]) => [element("dt", term), element("dd", value)]));
+    list.replaceChildren(...rows.flatMap(([term, value]) => [element("dt", term), element("dd", value)]));
   } catch (error) {
+    if (token !== provenanceToken) return;
+    list.replaceChildren();
     showError(`Provenance could not be verified: ${error.message}`);
   }
 }
 
 function updateDraft(field, value) {
+  if (saving) return;
   draft[field] = value;
   draft.clientRequestId = null;
   if (field === "actor") actorName = value;
@@ -358,6 +456,7 @@ function wire() {
   $("play-selection").addEventListener("click", playSelection);
   for (const field of ["start", "end"]) {
     $(field).addEventListener("input", event => {
+      if (!state) return;
       const value = event.target.value === "" ? null : secondsToFrame(Number(event.target.value), item().sample_rate);
       updateDraft(field, value);
       renderSelection();
@@ -369,13 +468,16 @@ function wire() {
   $("listened").addEventListener("change", event => updateDraft("listened", event.target.checked));
   $("report").addEventListener("submit", save);
   $("cancel").addEventListener("click", () => {
+    if (!state || saving) return;
     const had = draftHasContent(draft);
     resetDraft();
+    pendingSwitch = null;
     $("switch-guard").hidden = true;
     render();
     announce(had ? "Draft discarded. No report was saved." : "Nothing to discard.");
   });
   $("discard-draft").addEventListener("click", () => {
+    if (!state || saving) return;
     resetDraft();
     $("switch-guard").hidden = true;
     const target = pendingSwitch;
@@ -390,22 +492,29 @@ function wire() {
   });
   $("provenance").addEventListener("toggle", loadProvenance);
   const audio = $("audio");
-  audio.addEventListener("timeupdate", () => {
-    if (stopAt !== null && audio.currentTime >= stopAt) {
-      audio.pause();
-      stopAt = null;
-    }
+  audio.addEventListener("pause", () => {
+    positions[selectedId] = audio.currentTime;
+    stopInterval();
   });
-  audio.addEventListener("pause", () => { positions[selectedId] = audio.currentTime; });
-  audio.addEventListener("error", () => showError("The browser could not play this preview."));
+  audio.addEventListener("seeking", () => {
+    if (ownSeek) ownSeek = false;
+    else stopInterval();  // a manual seek leaves interval playback
+  });
+  audio.addEventListener("error", () => {
+    if (audio.getAttribute("src")) showError("The browser could not play this preview.");
+  });
   document.addEventListener("keydown", event => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (!shortcutAllowed(event.target.tagName, event.target.isContentEditable)) return;
-    if (!item() || !item().preview) return;
+    if (!state || saving || !item() || !item().preview) return;
     if (event.key === " ") {
       event.preventDefault();
-      if (audio.paused) audio.play().catch(error => showError(`Playback did not start: ${error.message}`));
-      else audio.pause();
+      if (audio.paused) {
+        stopInterval();  // ordinary playback is never cut short by an old interval
+        audio.play().catch(error => showError(`Playback did not start: ${error.message}`));
+      } else {
+        audio.pause();
+      }
     } else if (event.key === "[") {
       mark("start");
     } else if (event.key === "]") {
@@ -426,6 +535,7 @@ async function start() {
     await loadReports();
   } catch (error) {
     $("question").textContent = "This review could not be verified.";
+    $("listening-state").textContent = "Nothing can be played or reported until the comparison verifies.";
     showError(error.message);
   }
 }

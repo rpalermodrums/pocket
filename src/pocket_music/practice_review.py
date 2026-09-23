@@ -205,12 +205,16 @@ class _Review:
                                 for m in render["mappings"]],
                 "preview": None if preview is None else self._preview_summary(preview[0], preview[1])})
         synchronized, basis = _alignment(self.comparison["artifact_schema"], record, renders)
+        # Hash-verified records; the reports endpoint performs full provider validation.
+        kinds = [read_record(handle, self.store)["actor_kind"] for handle in state["reports"]]
         return {"revision": state["revision"], "csrf_token": self.csrf, "question": record["question"],
                 "comparison": {"short_id": _short(self.comparison["sha256"]),
                                "family": COMPARISON_LABELS[self.comparison["artifact_schema"]],
                                "signal_ready": record["signal_ready"]},
                 "alignment": {"synchronized_switching": synchronized, "basis": basis},
-                "items": items, "report_count": len(state["reports"]), "max_reports": MAX_REPORTS,
+                "items": items, "report_count": len(state["reports"]),
+                "human_report_count": kinds.count("human"), "agent_report_count": kinds.count("agent"),
+                "max_reports": MAX_REPORTS,
                 "listening": "not_recorded_by_playback"}
 
     @staticmethod
@@ -304,14 +308,21 @@ class _Review:
             raise RequestRefused(400, "Missing report draft identity")
         item_id = data.get("item_id")
         item = self.item(item_id)
+        from .artifact_store import request_status
+        request_id = "review-report-" + client
         with self.mutex:
-            state = self._expect(data)
-            if len(state["reports"]) >= MAX_REPORTS:
-                raise RequestRefused(409, f"This review session holds {MAX_REPORTS} reports; start a new session")
+            if request_status(self.store, request_id)["journal_state"] == "complete":
+                # A retried save of the same draft (e.g. after a lost response) replays its retained
+                # report even though the page's revision is now stale; changed words still conflict.
+                state = self.read()
+            else:
+                state = self._expect(data)
+                if len(state["reports"]) >= MAX_REPORTS:
+                    raise RequestRefused(409, f"This review session holds {MAX_REPORTS} reports; start a new session")
             preview = self.preview_for(state, item_id)
             if preview is None or data.get("preview_sha256") != preview[1]["audio"]["sha256"]:
                 raise RequestRefused(409, "The preview you heard is not this item's current preview; refresh")
-            result = practice_feedback(self.store, "review-report-" + client, self.comparison, item["render"],
+            result = practice_feedback(self.store, request_id, self.comparison, item["render"],
                                        data.get("interval_frames"), data.get("actor"), "human", data.get("note"),
                                        data.get("decision"), preview=preview[0])
             handle = result["artifacts"]["feedback"]

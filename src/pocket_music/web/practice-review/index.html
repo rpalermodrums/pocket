@@ -13,7 +13,7 @@
     <p class="eyebrow">Pocket practice review</p>
     <h1 id="question">Loading the selected comparison…</h1>
     <p id="comparison-meta" class="meta"></p>
-    <p id="listening-state" class="state">Not yet reviewed. Playing audio never records a report.</p>
+    <p id="listening-state" class="state">Not yet reviewed by a person. Playing audio never records a report.</p>
   </header>
 
   <main>
@@ -42,7 +42,7 @@
         <p>This item has no browser preview yet. Pocket will make a PCM16 copy at the original sample rate:
           nearest rounding, ties to even, no dither, no gain or normalization. Samples that do not fit are
           refused rather than clamped.</p>
-        <button type="button" id="make-preview">Prepare browser preview</button>
+        <button type="button" id="make-preview" disabled>Prepare browser preview</button>
       </div>
       <div id="preview-ready" hidden>
         <p id="preview-label" class="meta"></p>
@@ -71,15 +71,19 @@
       <h2 id="report-heading">Report what you heard</h2>
       <form id="report" novalidate>
         <p id="draft-target" class="meta"></p>
-        <label>Your name<input id="actor" autocomplete="name" maxlength="240" required></label>
-        <label>What did you hear?<textarea id="note" rows="4" maxlength="8000" required></textarea></label>
-        <label>Decision (optional)<select id="decision"></select></label>
-        <label class="check"><input id="listened" type="checkbox"> I listened to this interval of this preview</label>
-        <p id="save-problem" class="meta" tabindex="-1"></p>
-        <div class="row">
-          <button type="submit" id="save">Save report</button>
-          <button type="button" id="cancel">Cancel draft</button>
-        </div>
+        <!-- Disabled until the comparison has been verified, and while a save is in flight. -->
+        <fieldset id="report-fields" class="plain" disabled>
+          <legend class="visually-hidden">Report</legend>
+          <label>Your name<input id="actor" autocomplete="name" maxlength="240" required></label>
+          <label>What did you hear?<textarea id="note" rows="4" maxlength="8000" required></textarea></label>
+          <label>Decision (optional)<select id="decision"></select></label>
+          <label class="check"><input id="listened" type="checkbox"> I listened to this interval of this preview</label>
+          <p id="save-problem" class="meta" tabindex="-1"></p>
+          <div class="row">
+            <button type="submit" id="save">Save report</button>
+            <button type="button" id="cancel">Cancel draft</button>
+          </div>
+        </fieldset>
       </form>
       <div id="receipt" hidden tabindex="-1"></div>
     </section>

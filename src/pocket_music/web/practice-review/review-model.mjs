@@ -20,10 +20,20 @@ export function frameToSeconds(frame, rate) {
 }
 
 export function formatSeconds(seconds) {
-  if (!Number.isFinite(seconds)) return "–";
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds - minutes * 60;
-  return `${minutes}:${rest.toFixed(3).padStart(6, "0")}`;
+  if (!Number.isFinite(seconds) || seconds < 0) return "–";
+  // Round to whole milliseconds first so 59.9996 s reads 1:00.000, never 0:60.000.
+  const total = Math.round(seconds * 1000);
+  const minutes = Math.floor(total / 60000);
+  const millis = total - minutes * 60000;
+  return `${minutes}:${String(Math.floor(millis / 1000)).padStart(2, "0")}.${String(millis % 1000).padStart(3, "0")}`;
+}
+
+export function listeningState(human, agent) {
+  const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  const heard = human ? `${plural(human, "human listening report")} in this session.`
+    : "Not yet reviewed by a person.";
+  const technical = agent ? ` ${plural(agent, "agent report")} (technical, not listening).` : "";
+  return `${heard}${technical} Playing audio never records a report.`;
 }
 
 export function intervalError(start, end, frames) {
@@ -90,9 +100,11 @@ export function reportLine(row, labels) {
   const who = `${row.actor} (${row.actor_kind === "human" ? "person" : "agent"})`;
   const item = labels[row.item_id] || "Unknown item";
   const [start, end] = row.interval_frames;
-  const heard = row.reviewed_audio
+  const audio = row.reviewed_audio
     ? `declared preview ${row.reviewed_audio.preview_sha256.slice(0, 12)}`
     : "playback identity not recorded";
-  return {who, item, frames: `${start}–${end}`, heard, decision: row.decision || "no decision",
-          kind: row.evidence_kind === "attributed_human_listening" ? "Human listening report" : "Agent report"};
+  const human = row.evidence_kind === "attributed_human_listening";
+  // Only a person's report says what was heard; an agent report only names audio.
+  return {who, item, frames: `${start}–${end}`, heard: audio, audioLabel: human ? "Heard" : "Audio referenced",
+          decision: row.decision || "no decision", kind: human ? "Human listening report" : "Agent report"};
 }

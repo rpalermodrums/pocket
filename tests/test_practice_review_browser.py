@@ -79,7 +79,7 @@ def report_count(server):
 
 def test_initial_state_is_labelled_local_and_silent(review):
     server, page, requests, errors = review
-    assert page.get_by_text("Not yet reviewed. Playing audio never records a report.").is_visible()
+    assert page.get_by_text("Not yet reviewed by a person. Playing audio never records a report.").is_visible()
     radios = page.get_by_role("radio")
     assert radios.count() == 2 and radios.first.get_attribute("aria-checked") == "true"
     assert page.get_by_role("button", name="Prepare browser preview").is_visible()
@@ -184,3 +184,176 @@ def test_narrow_layout_has_no_horizontal_scroll(review):
     assert page.evaluate("document.documentElement.scrollWidth") <= 400
     for name in ("Start (seconds)", "End (seconds)", "Your name", "What did you hear?"):
         assert page.get_by_label(name).is_visible()
+
+
+def hold(page, pattern, method):
+    """Intercept matching requests and keep them until the test releases them."""
+    held = []
+    page.route(pattern, lambda route: held.append(route) if route.request.method == method else route.continue_())
+    return held
+
+
+def wait_for_held(page, held):
+    for _ in range(200):
+        if held:
+            return held[0]
+        page.wait_for_timeout(25)
+    raise AssertionError("request was not intercepted")
+
+
+def test_form_is_inert_while_a_save_is_in_flight(review):
+    server, page, _, _ = review
+    prepare(page)
+    fill_report(page)
+    held = hold(page, "**/api/review/reports", "POST")
+    page.get_by_role("button", name="Save report").click()
+    route = wait_for_held(page, held)
+    for name in ("Cancel draft", "Save report"):
+        assert page.get_by_role("button", name=name).is_disabled()
+    assert page.get_by_label("What did you hear?").is_disabled()
+    assert page.get_by_role("radio", name="Baseline").is_disabled()
+    route.continue_()
+    page.locator("#receipt").get_by_text("Report saved").wait_for()
+    assert report_count(server) == 1
+    assert "No report was saved" not in page.locator("#status").inner_text()
+
+
+def test_lost_save_response_is_explained_and_retry_returns_the_same_report(review):
+    server, page, _, _ = review
+    prepare(page)
+    fill_report(page)
+    dropped = []
+
+    def drop_response(route):
+        if route.request.method != "POST" or dropped:
+            return route.continue_()
+        route.fetch()  # the save reaches the server...
+        dropped.append(True)
+        route.abort()  # ...but its response never reaches the page
+    page.route("**/api/review/reports", drop_response)
+    page.get_by_role("button", name="Save report").click()
+    page.locator("#error").get_by_text("may already exist").wait_for()
+    assert report_count(server) == 1
+    assert page.get_by_label("What did you hear?").input_value() == "The join dips slightly"
+    page.get_by_role("button", name="Save report").click()
+    page.locator("#receipt").get_by_text("Report saved").wait_for()
+    assert report_count(server) == 1 and page.locator("#reports li").count() == 1
+
+
+def test_late_provenance_answer_is_not_shown_under_another_item(review):
+    server, page, _, _ = review
+    summary = server.review.summary()
+    short = {entry["item_id"]: entry["short_id"] for entry in summary["items"]}
+    page.get_by_role("radio", name="Variant 1").click()
+    held = hold(page, "**/api/review/items/variant-1", "GET")
+    page.locator("#provenance summary").click()
+    route = wait_for_held(page, held)
+    page.get_by_role("radio", name="Baseline").click()
+    page.locator("#provenance summary").click()
+    page.locator("#provenance-list").get_by_text(short["baseline"], exact=False).wait_for()
+    route.continue_()
+    page.wait_for_timeout(300)
+    listed = page.locator("#provenance-list").inner_text()
+    assert short["baseline"] in listed and short["variant-1"] not in listed
+
+
+def test_interval_playback_stops_at_its_end_and_never_cuts_ordinary_play(review):
+    _, page, _, _ = review
+    prepare(page)
+    page.get_by_label("Start (seconds)").fill("0.9")
+    page.get_by_label("End (seconds)").fill("1.1")
+    page.get_by_role("button", name="Play this interval").click()
+    wait_until(page, "document.querySelector('audio').currentTime > 0.95 && document.querySelector('audio').paused")
+    stopped = page.evaluate("document.querySelector('audio').currentTime")
+    assert 1.1 <= stopped <= 1.16, stopped  # within a few display frames, not ~250 ms late
+    page.get_by_role("button", name="Play this interval").click()
+    wait_until(page, "!document.querySelector('audio').paused")
+    page.evaluate("document.querySelector('audio').pause()")
+    page.evaluate("document.activeElement.blur()")
+    page.keyboard.press(" ")  # ordinary playback after a manual pause
+    wait_until(page, "document.querySelector('audio').currentTime > 1.3")
+
+
+def test_late_preview_completion_does_not_take_focus(review):
+    _, page, _, _ = review
+    prepare(page, "Baseline")
+    page.get_by_role("radio", name="Variant 1").click()
+    held = hold(page, "**/api/review/previews", "POST")
+    page.get_by_role("button", name="Prepare browser preview").click()
+    route = wait_for_held(page, held)
+    page.get_by_role("radio", name="Baseline").click()
+    page.get_by_label("What did you hear?").click()
+    page.keyboard.type("snare is")
+    route.continue_()
+    page.get_by_text("Preview for Variant 1 ready.").wait_for()
+    page.keyboard.type(" late")
+    assert page.evaluate("document.activeElement.id") == "note"
+    assert page.get_by_label("What did you hear?").input_value() == "snare is late"
+    assert page.evaluate("document.querySelector('audio').paused") is True
+
+
+def test_selection_keeps_focus_and_saved_drafts_clear_the_guard(review):
+    _, page, _, _ = review
+    page.get_by_role("radio", name="Variant 1").click()
+    assert page.evaluate("document.activeElement.dataset.item") == "variant-1"
+    page.get_by_role("radio", name="Baseline").focus()
+    page.keyboard.press("Enter")
+    assert page.evaluate("document.activeElement.dataset.item") == "baseline"
+    prepare(page)
+    fill_report(page)
+    page.get_by_role("radio", name="Baseline").click()
+    assert page.locator("#switch-guard").is_visible()
+    page.get_by_role("button", name="Save report").click()
+    page.locator("#receipt").get_by_text("Report saved").wait_for()
+    assert page.locator("#switch-guard").is_hidden()
+
+
+def test_agent_reports_are_counted_and_labelled_separately(tmp_path, browser):
+    from pocket_music.artifact_store import read_record
+    from pocket_music.practice_audio import practice_feedback
+    store, handle = comparison(tmp_path)
+    variant = read_record(handle, store)["variants"][0]
+    agent = practice_feedback(store, "agent", handle, variant, [0, 100], "Pocket agent", "agent",
+                              "Technical check only", None)["artifacts"]["feedback"]
+    server = _make_server(store, handle, str(tmp_path / "session"), [agent])
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    context = browser.new_context()
+    page = context.new_page()
+    try:
+        page.goto(server.origin + "/")
+        page.locator("#reports li").first.wait_for()
+        assert page.locator("#listening-state").inner_text().startswith(
+            "Not yet reviewed by a person. 1 agent report (technical, not listening).")
+        row = page.locator("#reports li").first.inner_text()
+        assert "Agent report" in row and "Audio referenced:" in row and "Heard:" not in row
+    finally:
+        context.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_failed_initial_verification_leaves_nothing_actionable(tmp_path, browser):
+    store, handle = comparison(tmp_path)
+    server = _make_server(store, handle, str(tmp_path / "session"))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    context = browser.new_context()
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        page.route("**/api/review", lambda route: route.fulfill(
+            status=409, content_type="application/json", body='{"error": "Artifact integrity mismatch"}'))
+        page.goto(server.origin + "/")
+        page.locator("#error").get_by_text("Artifact integrity mismatch").wait_for()
+        assert page.get_by_role("button", name="Save report").is_disabled()
+        assert page.get_by_label("What did you hear?").is_disabled()
+        assert page.locator("#make-preview").is_disabled()
+        assert not errors
+    finally:
+        context.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

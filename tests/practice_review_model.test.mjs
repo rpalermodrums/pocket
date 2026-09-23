@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  draftHasContent, draftStale, formatSeconds, intervalError, newClientRequestId, newDraft, reportLine,
-  reportPayload, saveProblem, secondsToFrame, shortcutAllowed, switchBlocked,
+  draftHasContent, draftStale, formatSeconds, intervalError, listeningState, newClientRequestId, newDraft,
+  reportLine, reportPayload, saveProblem, secondsToFrame, shortcutAllowed, switchBlocked,
 } from "../src/pocket_music/web/practice-review/review-model.mjs";
 
 test("frame conversion is explicit and displayed", () => {
@@ -13,6 +13,17 @@ test("frame conversion is explicit and displayed", () => {
   assert.equal(secondsToFrame(Number.NaN, 8000), null);
   assert.equal(secondsToFrame(1, 0), null);
   assert.equal(formatSeconds(61.5), "1:01.500");
+  assert.equal(formatSeconds(59.9996), "1:00.000");
+  assert.equal(formatSeconds(2645983 / 44100), "1:00.000");
+  assert.equal(formatSeconds(119.9999), "2:00.000");
+  assert.equal(formatSeconds(0.0004), "0:00.000");
+});
+
+test("the header counts people and agents separately", () => {
+  assert.equal(listeningState(0, 0), "Not yet reviewed by a person. Playing audio never records a report.");
+  assert.equal(listeningState(0, 1),
+    "Not yet reviewed by a person. 1 agent report (technical, not listening). Playing audio never records a report.");
+  assert.match(listeningState(2, 0), /^2 human listening reports in this session\./);
 });
 
 test("intervals must be nonempty, ordered and inside the item", () => {
@@ -75,10 +86,12 @@ test("report lines distinguish agents, v1 records and declared previews", () => 
   labels);
   assert.equal(human.kind, "Human listening report");
   assert.equal(human.heard, `declared preview ${"f".repeat(12)}`);
+  assert.equal(human.audioLabel, "Heard");
   const agent = reportLine({actor: "Agent", actor_kind: "agent", item_id: null, interval_frames: [1, 2],
     decision: null, evidence_kind: "agent_report"}, labels);
   assert.equal(agent.kind, "Agent report");
   assert.equal(agent.heard, "playback identity not recorded");
+  assert.equal(agent.audioLabel, "Audio referenced");
   assert.equal(agent.item, "Unknown item");
   assert.equal(agent.decision, "no decision");
 });
