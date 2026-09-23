@@ -16,6 +16,7 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 - `pocket practice-review`: a loopback-only [practice review page](docs/practice-review.md) that plays one retained comparison through declared previews and saves explicitly attributed interval reports.
 - New guides for newcomers: [key ideas](docs/concepts.md), with a glossary, and [use Pocket with an agent](docs/agents.md). Most guides now open with a plain-language summary.
 - A redesigned website: a new home page with the tool family, light and dark color schemes, an on-page contents rail, previous and next links, copy buttons for code, search results with context, a 404 page and a link-preview image.
+- `examples/linked_downbeat.py`: a synthetic [linked-downbeat handover](docs/musical-context.md#land-an-internal-downbeat-on-a-handover). A linked source slip moves a repeated passage's internal bar one onto its clip boundaries. Locks refuse any change to the clip placement or to an anchor's kind or position, and no context edit can change the tempo step. It writes a revision comparison for `pocket practice-review` and records no listening. It adds no provider, profile or schema.
 
 ### Changed
 
