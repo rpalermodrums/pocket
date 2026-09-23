@@ -1,5 +1,11 @@
 name: Publish website
 on:
+  # Each main commit publishes itself once its Tests push run passes.
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  # Manual re-publish of main, or rollback to a reviewed main-history SHA.
   workflow_dispatch:
     inputs:
       revision:
@@ -14,7 +20,17 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
+    # A workflow_run's github.sha is the current main tip, so a commit whose
+    # Tests finished after a newer commit landed is skipped rather than
+    # published over it. Pull request runs, including fork branches named main,
+    # never match.
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_sha == github.sha))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,7 +48,7 @@ jobs:
         id: revision
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_REVISION: ${{ inputs.revision }}
+          REQUESTED_REVISION: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.revision }}
         run: |
           verified_sha="$(python site/scripts/check_publish.py)"
           printf '%s\n' "sha=$verified_sha" >> "$GITHUB_OUTPUT"
