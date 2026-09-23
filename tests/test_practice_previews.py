@@ -310,3 +310,13 @@ def test_canonical_wav_writer_matches_stdlib_for_mono_and_stereo():
             stream.setframerate(22050)
             stream.writeframes(values.tobytes())
         assert pcm16_wav(values, 22050) == output.getvalue()
+
+
+@pytest.mark.parametrize('values,frame,channel', [
+    ([[1.5], [3.0]], 0, 0),
+    ([[0.1, 0.99999], [2.5, 0.0]], 0, 1),
+    ([[0.1, 0.2], [0.3, 1.0]], 1, 1),
+])
+def test_refusal_names_the_first_unrepresentable_sample(values, frame, channel):
+    with pytest.raises(PocketError, match=f'frame {frame}, channel {channel} does not round'):
+        quantize_pcm16(np.array(values, dtype=np.float64))

@@ -28,6 +28,7 @@ SESSION_SCHEMA = "pocket.practice-review-session/v1"
 PREVIEW_PROFILE = "browser-pcm16-original-rate/v1"
 MAX_REPORTS = 128
 MAX_BODY = 64 * 1024
+MAX_PREVIEW_ATTEMPTS = 32
 _WEB = Path(__file__).parent / "web" / "practice-review"
 _FILES = {"/": ("index.html", "text/html; charset=utf-8"),
           "/review.js": ("review.js", "text/javascript; charset=utf-8"),
@@ -249,7 +250,7 @@ class _Review:
         try:
             with self.mutex:
                 self._expect(data)
-            request_id = "review-preview-" + item["render"]["sha256"][:40]
+            request_id = self._preview_request(item["render"])
             result = practice_preview(self.store, request_id, item["render"], PREVIEW_PROFILE)
             with self.mutex:
                 state = self.read()
@@ -261,6 +262,26 @@ class _Review:
             return {"item_id": item_id, "warnings": result["warnings"], "state": self.summary()}
         finally:
             self.preview_slot.release()
+
+    def _preview_request(self, render):
+        """Reuse a completed preview request; after a recorded refusal, evaluate afresh.
+
+        A failed journal is never replayed or deleted: the next numbered request ID
+        re-runs the provider, so a deterministic refusal is explained again. An
+        incomplete journal is never stolen.
+        """
+        from .artifact_store import request_status
+        base = "review-preview-" + render["sha256"][:40]
+        for attempt in range(1, MAX_PREVIEW_ATTEMPTS + 1):
+            request_id = base if attempt == 1 else f"{base}-{attempt}"
+            journal = request_status(self.store, request_id)["journal_state"]
+            if journal in ("not_found", "complete"):
+                return request_id
+            if journal != "failed":
+                raise RequestRefused(409, "An earlier preview request for this item is incomplete; "
+                                          "inspect it with request_status before retrying")
+        raise RequestRefused(409, f"This item's preview was refused {MAX_PREVIEW_ATTEMPTS} times; "
+                                  "inspect the retained request journals")
 
     def _expect(self, data):
         state = self.read()

@@ -296,3 +296,48 @@ def test_revision_alignment_follows_explicit_identical_pairs(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_preview_refusals_explain_again_on_every_attempt(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    from pocket_music.assets import sha256_file
+    from pocket_music.audio_regions import audio_region_capture
+    from pocket_music.musical_context import context_create
+    from pocket_music.time_maps import musical_time
+    store, source = str(tmp_path / "store"), tmp_path / "float-take.wav"
+    samples = np.full(16000, 0.2, dtype=np.float32)
+    samples[5000] = 1.5  # an unrepresentable FLOAT sample in the first passage
+    sf.write(source, samples, 8000, subtype="FLOAT")
+    region = audio_region_capture(store_root=store, request_id="capture", source={
+        "path": str(source), "expected_sha256": sha256_file(source), "start_frame": 0, "frames": 16000,
+        "source_origin": "independently_acquired"})["artifacts"]["region"]
+    q = lambda n: {"n": n, "d": 1}  # noqa: E731
+    time_map = musical_time("create", store, request_id="time", definition={
+        "source_context": {"schema": "pocket.time-context/v1", "context_id": "c", "attribution": "Synthetic"},
+        "domain_qn": {"start": q(0), "end": q(4)}, "tempo": [{"at_qn": q(0), "bpm": q(120), "interpolation": "step"}],
+        "host_origin": {"arrangement_qn": q(0), "host_seconds": q(0)}})["artifacts"]["time_map"]
+    who = {"actor": "fixture", "actor_kind": "agent", "statement": "Synthetic", "uncertainty": ["None"]}
+    context = context_create(store, "context", {
+        "context_id": "refusal", "title": "Refusal fixture", "attribution": who,
+        "sources": [{"clock_id": "recording", "region": region}],
+        "timelines": [{"clock_id": "practice", "time_map": time_map}],
+        "occurrences": [{"occurrence_id": name, "source_clock_id": "recording", "timeline_clock_id": "practice",
+                         "source_span_frames": [8000 * i, 8000 * (i + 1)], "timeline_span_qn": [q(2 * i), q(2 * i + 2)]}
+                        for i, name in enumerate(["a", "b"])], "anchors": [], "materials": []})["artifacts"]["context"]
+    first = practice_render(store, "a", context, ["a"])["artifacts"]["render"]
+    second = practice_render(store, "b", context, ["b"])["artifacts"]["render"]
+    handle = practice_compare(store, "cmp", first, [second], "Synthetic refusal")["artifacts"]["comparison"]
+    for session in ("session-1", "session-2"):
+        server, thread = serve(store, handle, tmp_path / session)
+        try:
+            for _ in range(2):
+                status, result, _ = call(server, "/api/review/previews",
+                                         {"expected_revision": state(server)["revision"], "item_id": "baseline"})
+                assert status == 409 and "does not round into PCM16" in result["error"], result
+            assert preview(server, "variant-1")["items"][1]["preview"] is not None
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)

@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -39,10 +40,19 @@ _SCOPE = contextvars.ContextVar("pocket_verification_scope", default=None)
 
 
 class _Snapshot:
-    __slots__ = ("loads", "payloads", "size")
+    __slots__ = ("loads", "open", "owner", "payloads", "roots", "size")
 
     def __init__(self):
-        self.payloads, self.size, self.loads = {}, 0, {}
+        self.payloads, self.size, self.loads, self.roots = {}, 0, {}, {}
+        self.open, self.owner = True, threading.get_ident()
+
+
+def _active():
+    """The caller's open snapshot. A copied context or another thread never reuses one."""
+    scope = _SCOPE.get()
+    if scope is None or not scope.open or scope.owner != threading.get_ident():
+        return None
+    return scope
 
 
 @contextlib.contextmanager
@@ -51,18 +61,35 @@ def verification_scope():
 
     Inside the outermost scope, an identical handle in the same store returns the
     bytes already hash-verified during this call, and a memoized domain load
-    returns a fresh copy of its already-validated result. Nothing is shared with
-    other threads or outlives the scope: the next call re-reads and re-verifies
-    everything. Graph-walk accounting, bounds and error behaviour are unchanged.
+    returns a fresh copy of its already-validated result. Only the thread that
+    opened the scope uses it, and it is closed and emptied when the scope exits,
+    even if a context copied inside it survives: the next call re-reads and
+    re-verifies everything. Graph-walk accounting, bounds and errors are unchanged.
     """
-    if _SCOPE.get() is not None:
+    if _active() is not None:
         yield
         return
-    token = _SCOPE.set(_Snapshot())
+    snapshot = _Snapshot()
+    token = _SCOPE.set(snapshot)
     try:
         yield
     finally:
+        snapshot.open = False
+        snapshot.payloads.clear()
+        snapshot.loads.clear()
+        snapshot.roots.clear()
         _SCOPE.reset(token)
+
+
+def _scoped_root(scope, store_root):
+    """Resolve a store root once per scope, so every spelling of one store shares one identity."""
+    if scope is None or not isinstance(store_root, (str, Path)):
+        return _root(store_root)
+    spelled = os.fspath(store_root)
+    key = ("", spelled) if os.path.isabs(spelled) else (os.getcwd(), spelled)
+    if key not in scope.roots:
+        scope.roots[key] = _root(store_root)
+    return scope.roots[key]
 
 
 def per_call_verification(function):
@@ -74,17 +101,23 @@ def per_call_verification(function):
     return wrapper
 
 
+def _is_handle(value):
+    return (isinstance(value, dict) and value.get("schema") == "pocket.artifact-handle/v1"
+            and set(value) == {"schema", "artifact_uri", "sha256", "artifact_schema"})
+
+
 def call_memo(kind):
     """Memoize a pure (handle, store_root) validator for the current call only."""
     def decorate(function):
         @functools.wraps(function)
         def wrapper(handle, store_root, *args, **kwargs):
-            scope = _SCOPE.get()
-            if scope is None or args or kwargs or MEMO_ENTRIES <= 0:
+            scope = _active()
+            if scope is None or args or kwargs or MEMO_ENTRIES <= 0 or not _is_handle(handle):
                 return function(handle, store_root, *args, **kwargs)
             try:
-                key = (kind, str(_root(store_root)), canonical_bytes(handle))
-            except PocketError:
+                key = (kind, str(_scoped_root(scope, store_root)), canonical_bytes(handle))
+            except (PocketError, OSError, RuntimeError, ValueError, TypeError):
+                # The validator itself raises exactly the error it always raised.
                 return function(handle, store_root)
             if key not in scope.loads:
                 result = function(handle, store_root)
@@ -144,17 +177,13 @@ def read_bytes(handle: ArtifactHandle, store_root: str | Path) -> bytes:
     if not isinstance(uri, str) or not re.fullmatch(
             rf"artifacts/{sha}/[A-Za-z0-9][A-Za-z0-9._-]{{0,127}}", uri):
         raise PocketError("Artifact URI must be a canonical content address")
-    scope = _SCOPE.get()
-    spelled = os.fspath(store_root) if isinstance(store_root, (str, Path)) else ""
-    key = (spelled, uri) if os.path.isabs(spelled) else None
+    scope = _active()
+    root = _scoped_root(scope, store_root)
+    key = (str(root), uri)
     if scope is not None and key in scope.payloads:
-        # Already read, contained and hash-verified in this call; serve that snapshot.
+        # Already contained, read and hash-verified in this call; serve that snapshot.
         return scope.payloads[key]
-    root = _root(store_root)
     path = _contained(root, uri)
-    key = key or (str(root), uri)
-    if scope is not None and key in scope.payloads:
-        return scope.payloads[key]
     try:
         payload = path.read_bytes()
     except OSError as error:

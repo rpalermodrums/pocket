@@ -69,14 +69,13 @@ def quantize_pcm16(samples):
         frame, channel = map(int, np.argwhere(~finite)[0])
         raise PocketError(f"Preview refuses nonfinite sample at frame {frame}, channel {channel}",
                           code="unsupported_profile")
-    # Bound before scaling so the power-of-two product stays exact and finite.
-    if len(samples) and float(np.max(np.abs(samples))) > 2:
-        scaled = None
-    else:
-        scaled = samples * FULL_SCALE
-    rounded = None if scaled is None else np.rint(scaled)
-    if rounded is None or (rounded.size and (rounded.min() < -FULL_SCALE or rounded.max() > FULL_SCALE - 1)):
-        bad = (np.abs(samples) > 2) if rounded is None else ((rounded < -FULL_SCALE) | (rounded > FULL_SCALE - 1))
+    # Scale only bounded values so the power-of-two product stays exact and finite;
+    # anything larger is out of range anyway. One mask names the first bad sample.
+    huge = np.abs(samples) > 2
+    scaled = np.where(huge, 0.0, samples) * FULL_SCALE
+    rounded = np.rint(scaled)
+    bad = huge | (rounded < -FULL_SCALE) | (rounded > FULL_SCALE - 1)
+    if bad.any():
         frame, channel = map(int, np.argwhere(bad)[0])
         raise PocketError(
             f"Preview sample at frame {frame}, channel {channel} does not round into PCM16 "

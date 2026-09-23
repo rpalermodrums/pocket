@@ -149,3 +149,72 @@ def test_tamper_between_calls_is_detected_after_a_successful_call(tmp_path):
     audio.write_bytes(audio.read_bytes()[:-8] + bytes(8))
     with pytest.raises(PocketError, match="integrity"):
         practice_query(store, preview)
+
+
+def test_a_context_captured_inside_a_scope_cannot_reuse_it_later(tmp_path):
+    import contextvars
+    store = tmp_path / "store"
+    handle = put_bytes(b"original", store, "blob.bin", "pocket.test-blob/v1")
+    path = store / handle["artifact_uri"]
+    with verification_scope():
+        read_bytes(handle, store)
+        captured = contextvars.copy_context()
+    path.chmod(0o644)
+    path.write_bytes(b"tampered")
+    with pytest.raises(PocketError, match="integrity"):
+        captured.run(read_bytes, handle, store)
+    errors = []
+
+    def later():
+        try:
+            captured.run(read_bytes, handle, store)
+        except PocketError as error:
+            errors.append(str(error))
+    worker = threading.Thread(target=later)
+    worker.start()
+    worker.join()
+    assert errors and "integrity" in errors[0]
+
+
+def test_a_thread_inheriting_the_callers_context_does_not_share_its_snapshot(tmp_path):
+    import contextvars
+    store = tmp_path / "store"
+    handle = put_bytes(b"original", store, "blob.bin", "pocket.test-blob/v1")
+    path = store / handle["artifact_uri"]
+    errors = []
+    with verification_scope():
+        read_bytes(handle, store)
+        path.chmod(0o644)
+        path.write_bytes(b"tampered")
+        context = contextvars.copy_context()  # what free-threaded builds pass to new threads
+
+        def worker():
+            try:
+                context.run(read_bytes, handle, store)
+            except PocketError as error:
+                errors.append(str(error))
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+    assert errors and "integrity" in errors[0]
+
+
+def test_one_store_identity_for_every_spelling(tmp_path, monkeypatch):
+    store = tmp_path / "store"
+    handle = put_bytes(b"shared", store, "blob.bin", "pocket.test-blob/v1")
+    (tmp_path / "link").symlink_to(store)
+    monkeypatch.chdir(tmp_path)
+    calls = counted_reads(monkeypatch)
+    with verification_scope():
+        for spelling in (store, str(store) + "/", str(tmp_path / "link"), "store", "link"):
+            assert read_bytes(handle, spelling) == b"shared"
+    assert calls.count("blob.bin") == 1
+
+
+@pytest.mark.parametrize("root", ["loop", "bad\x00root", "~no_such_user_for_pocket_tests/store"])
+def test_memoized_validators_keep_their_original_error_for_malformed_handles(tmp_path, monkeypatch, root):
+    from pocket_music.practice_audio import load_practice_render
+    (tmp_path / "loop").symlink_to(tmp_path / "loop")
+    monkeypatch.chdir(tmp_path)
+    with verification_scope(), pytest.raises(PocketError, match="Expected pocket.artifact-handle/v1"):
+        load_practice_render({"schema": "pocket.artifact-handle/v1"}, root)
