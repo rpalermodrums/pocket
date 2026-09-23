@@ -216,3 +216,28 @@ V1 records and receipts remain readable with their original meaning. V2 adds a
 v1 contexts; they cannot downgrade a v2 parent and discard its bindings. Query,
 resolve and exact practice rendering accept both versions. The same operation
 names and closed nested types are exposed through Python, CLI and MCP.
+
+## Literal context edits
+
+`context_edit(context, operations, locks, attribution, ...)` returns a child
+context and a `pocket.context-edit/v1` receipt. `context_edit_query` recomputes the
+change and preservation proof from its exact parent; rehashing a false receipt
+or an unrelated child does not make it valid.
+
+- `occurrence_slip_source`: explicit `occurrence_ids` and integer `delta_frames`;
+  source duration and timeline placement stay fixed.
+- `occurrence_shift_timeline`: explicit `occurrence_ids` and rational `delta_qn`;
+  source windows and duration stay fixed. A linked move names every occurrence.
+- `anchor_rebind`: existing `anchor_id`, exact-parent `interpretation` and
+  `binding_id`; replaces only that anchor's binding and retains other selections.
+
+Each lock names `section` (`occurrences` or `anchors`), `object_id` and `fields`.
+Unknown locks and any protected-field change fail. A field may change only once
+per edit; duplicate linked IDs and zero-delta operations fail. The limits are 32
+operations, 32 explicitly linked IDs per operation and 128 lock records.
+
+The receipt lists changed paths, exact before/after values, and a preservation
+hash for unchanged definition fields. Sources, time maps, material references,
+untargeted objects and parent bytes remain unchanged. Each requested occurrence
+group reports compatibility with the exact PCM renderer. A valid timing intent
+may still need another render profile; no audio is created by a context edit.

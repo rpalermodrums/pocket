@@ -115,7 +115,7 @@ def test_discovery_declares_actual_profiles_and_artifacts(tmp_path):
     for name, row in rows.items():
         assert callable(getattr(pocket_music, name))
         assert row["status"] == "available" and row["native_verified"] is False
-        assert bool(row["side_effects"]) == (name not in ("context_query", "context_resolve", "practice_query"))
+        assert bool(row["side_effects"]) == (name not in ("context_query", "context_resolve", "practice_query", "context_edit_query"))
     result = pocket_music.practice_render(store, "render", context, ["first"])
     assert {h["artifact_schema"] for h in result["artifacts"].values()} == set(rows["practice_render"]["returned_artifact_schemas"])
     assert read_record(result["artifacts"]["render"], store)["musical_verdict"] is None
