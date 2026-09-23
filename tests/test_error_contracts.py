@@ -46,6 +46,20 @@ def test_cli_legacy_and_opt_in_v2_agree_on_exit_and_message(tmp_path):
 def test_real_mcp_v2_input_and_provider_errors(tmp_path):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
+    unavailable = tmp_path/'store-is-a-file'
+    unavailable.write_text('Preserve this file')
+    io_spec = {'store_root': str(unavailable), 'request_id': 'io-error', 'definition': {
+        'context_id': 'io-fixture', 'title': 'I/O failure fixture',
+        'attribution': {'actor': 'Fixture', 'actor_kind': 'agent', 'statement': 'Technical check', 'uncertainty': []},
+        'sources': [], 'timelines': [], 'occurrences': [], 'anchors': [], 'materials': []}}
+    spec_path = tmp_path/'io-spec.json'
+    spec_path.write_text(json.dumps(io_spec))
+    cli = subprocess.run([sys.executable, '-m', 'pocket_music.cli', '--error-format', 'v2',
+                          'context-create', '--spec', str(spec_path)], capture_output=True, text=True,
+                         timeout=30, check=False)
+    assert cli.returncode == 2
+    cli_error = json.loads(cli.stderr)
+    assert cli_error['code'] == 'io_error'
     async def run():
         params = StdioServerParameters(command=sys.executable, args=['-m', 'pocket_music.mcp_server'],
             env={'PYTHONPATH': str(Path(__file__).resolve().parents[1]/'src'), 'POCKET_ERROR_FORMAT': 'v2'})
@@ -59,7 +73,11 @@ def test_real_mcp_v2_input_and_provider_errors(tmp_path):
             assert invalid.isError
             envelope = json.loads(invalid.content[0].text)
             assert envelope['schema'] == 'pocket.error/v2' and envelope['code'] == 'invalid_request'
+            unavailable_result = await session.call_tool('context_create', io_spec)
+            assert unavailable_result.isError
+            assert json.loads(unavailable_result.content[0].text) == cli_error
     asyncio.run(asyncio.wait_for(run(), 60))
+    assert unavailable.read_text() == 'Preserve this file'
 
 
 @pytest.mark.skipif(importlib.util.find_spec('mcp') is None, reason='Optional agent extra')

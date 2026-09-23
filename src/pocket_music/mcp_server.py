@@ -178,6 +178,10 @@ def build_server(error_format=None):
                 except PocketError as error:
                     message = json.dumps(error_envelope(error)) if error_format == "v2" else str(error)
                     raise ToolError(message) from error
+                except (OSError, TypeError, ValueError) as error:
+                    if error_format == "v2":
+                        raise ToolError(json.dumps(error_envelope(error))) from error
+                    raise
             return await super().call_tool(name, arguments)
 
         async def list_tools(self):
