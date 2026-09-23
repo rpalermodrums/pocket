@@ -1,9 +1,9 @@
 # Explicit audio evidence and MIDI timing
 
-From the checkout, run:
+With Pocket installed and its virtual environment active, run:
 
 ```sh
-PYTHONPATH=src .venv/bin/python examples/midi-audio-timing/example.py
+python examples/midi-audio-timing/example.py
 ```
 
 This creates synthetic audio and a new temporary artifact store. Supplied notes

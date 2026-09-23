@@ -2,4 +2,4 @@
 
 Set Workshop is now **Weave**. Read the current [Weave guide](weave.md).
 
-This page preserves existing documentation links. See [name compatibility](compatibility.md) for accepted old commands and imports; saved formats remain unchanged.
+This page keeps old links working. The [name changes](compatibility.md) page lists the old commands and imports that are still accepted. Saved formats are unchanged.

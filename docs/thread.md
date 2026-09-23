@@ -1,5 +1,16 @@
 # Thread
 
+> **In brief.** Thread follows the thread through a saved Ableton Live set. It
+> reads the `.als` file and tells you what's in it: tracks, clips, the audio
+> files behind them, warp markers, devices, tempo and automation. It also maps
+> any moment in the arrangement back to the exact position in the source
+> recording it came from. It never opens Live or changes the set, and it can't
+> tell you how the set sounds.
+>
+> **Reach for it when** you need to know which recording plays at 3:12 in a set,
+> or you want exact source frames to hand to [Peek](peek.md). **You need** a
+> saved Live 12 set.
+
 Thread reads saved Ableton Live 12 intent. It does not open Live, alter a set,
 execute an instrument, or establish what a listener hears.
 
@@ -195,4 +206,4 @@ Generated query tests cover cross-process handles, invalidation after same-size
 source writes with restored mtime, file replacement, symlink retargeting, newly
 appearing media, cache corruption, changing-tempo natural regions, warped
 pickups, MIDI/layers, ambiguous targets, event/byte truncation and complete-frame
-boundaries. Production acceptance artifacts remain private and outside Git.
+boundaries. Real sets used for acceptance checks are not committed to the repository.

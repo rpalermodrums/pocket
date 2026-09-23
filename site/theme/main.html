@@ -3,40 +3,90 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {%- set page_title = page.title if page and page.title else 'Page not found' %}
+  {%- set full_title = 'Pocket · ' ~ config.extra.tagline if page and page.is_homepage else page_title ~ ' · Pocket' %}
+  {%- set outline = (page.toc | first).children if page and not page.is_homepage and page.toc | length else [] %}
+  <title>{{ full_title }}</title>
   <meta name="description" content="{{ config.site_description }}">
-  <meta name="color-scheme" content="light">
-  <title>{{ page.title }} · Pocket</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f5f1e8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#10222f" media="(prefers-color-scheme: dark)">
+  {%- if page and page.canonical_url %}
+  <link rel="canonical" href="{{ page.canonical_url }}">
+  <meta property="og:url" content="{{ page.canonical_url }}">
+  {%- endif %}
+  <meta property="og:site_name" content="Pocket">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ full_title }}">
+  <meta property="og:description" content="{{ config.site_description }}">
+  <meta property="og:image" content="{{ config.site_url }}assets/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Pip the field mouse in a record sleeve beside the Pocket wordmark: composable tools for music.">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="{{ 'style.css' | url }}">
   <link rel="icon" href="{{ 'assets/pip.svg' | url }}" type="image/svg+xml">
   <script src="{{ 'app.js' | url }}" defer></script>
 </head>
-<body data-root="{{ base_url }}" class="{% if page.is_homepage %}home{% endif %}">
+<body data-root="{{ base_url }}" class="{% if page and page.is_homepage %}home{% endif %}{% block body_class %}{% endblock %}">
 <a href="#main" class="skip-link">Skip to content</a>
 <header class="site-header">
   <a class="brand" href="{{ nav.homepage.url | url }}"><img src="{{ 'assets/pip.svg' | url }}" width="44" height="44" alt=""><span>pocket</span></a>
-  <div class="header-links"><a href="{{ 'docs/' | url }}">Documentation</a><a href="{{ 'reference/' | url }}">Tool reference</a><a href="https://github.com/rpalermodrums/pocket">GitHub</a></div>
+  <nav class="header-links" aria-label="Site">
+    <a href="{{ 'docs/getting-started/' | url }}">Get started</a>
+    <a href="{{ 'docs/concepts/' | url }}">Key ideas</a>
+    <a href="{{ 'reference/' | url }}">Reference</a>
+    <a href="https://github.com/rpalermodrums/pocket">GitHub</a>
+  </nav>
 </header>
-<div class="layout">
-<aside class="sidebar">
-  <div class="search-box"><label for="site-search">Search the docs</label><input type="search" id="site-search" placeholder="Try cues, MIDI, feedback…" autocomplete="off"><p id="search-status" role="status"></p><ul id="search-results"></ul><noscript>Use the navigation or your browser’s Find command; search needs JavaScript.</noscript></div>
+<div class="layout{% if outline | length > 1 %} has-toc{% endif %}">
+<aside class="sidebar"><div class="sidebar-inner">
+  <div class="search-box" role="search">
+    <label for="site-search">Search the docs</label>
+    <input type="search" id="site-search" placeholder="Try cue, MIDI, Live…" autocomplete="off" aria-describedby="search-status" aria-controls="search-results">
+    <p id="search-status" role="status"></p>
+    <ul id="search-results"></ul>
+    <noscript><p>Search needs JavaScript. Use the navigation or your browser’s Find command.</p></noscript>
+  </div>
   <details class="navigation" open>
-    <summary>Browse documentation</summary>
+    <summary>Browse the guides</summary>
     <nav aria-label="Documentation">
-    {% for group in nav %}
-      {% if group.children %}
+    {%- for group in nav %}
+      {%- if group.children %}
         <div class="nav-group"><h2>{{ group.title }}</h2>
-        {% for item in group.children %}<a href="{{ item.url | url }}"{% if item.active %} aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}</div>
-      {% else %}<a href="{{ group.url | url }}"{% if group.active %} aria-current="page"{% endif %}>{{ group.title }}</a>{% endif %}
-    {% endfor %}
+        {%- for item in group.children %}<a href="{{ item.url | url }}"{% if item.active %} aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}</div>
+      {%- else %}<a href="{{ group.url | url }}"{% if group.active %} aria-current="page"{% endif %}>{{ group.title }}</a>{% endif %}
+    {%- endfor %}
     </nav>
   </details>
-
-</aside>
+</div></aside>
 <main id="main" tabindex="-1">
-  {% if page.is_homepage %}<div class="home-art"><img src="{{ 'assets/pocket.svg' | url }}" alt="Pip in a record sleeve beside Pocket: the musical toolkit for agents." width="1200" height="400"></div>{% endif %}
-  {% if not page.is_homepage and page.toc %}<details class="page-outline"><summary>On this page</summary><ul>{% for item in page.toc %}{% for child in item.children %}<li><a href="{{ child.url }}">{{ child.title }}</a></li>{% endfor %}{% endfor %}</ul></details>{% endif %}
+  {%- block content %}
+  {%- if not page.is_homepage and page.parent %}<p class="eyebrow">{{ page.parent.title }}</p>{% endif %}
+  {%- if not page.is_homepage and outline | length > 1 %}
+  <details class="page-outline"><summary>On this page</summary><ul>{% for child in outline %}<li><a href="{{ child.url }}">{{ child.title }}</a></li>{% endfor %}</ul></details>
+  {%- endif %}
   <article>{{ page.content }}</article>
-  <footer><p>Composable music tools. Open source, early development.</p><p><a href="{{ 'CONTRIBUTING/' | url }}">Contribute</a> <a href="{{ 'SECURITY/' | url }}">Security</a> <a href="{{ 'license/' | url }}">MIT license</a> <a href="{{ 'publication-manifest.json' | url }}">Build manifest</a></p><p class="build-info">{% if config.extra.dirty %}Local preview · {% endif %}Package {{ config.extra.package_version }} · <a href="https://github.com/rpalermodrums/pocket/tree/{{ config.extra.revision }}">Source {{ config.extra.revision[:8] }}</a></p></footer>
+  {%- if not page.is_homepage and (page.previous_page or page.next_page) %}
+  <nav class="pager" aria-label="Previous and next">
+    {%- if page.previous_page %}<a class="pager-prev" href="{{ page.previous_page.url | url }}" rel="prev"><span>Previous</span>{{ page.previous_page.title }}</a>{% endif %}
+    {%- if page.next_page %}<a class="pager-next" href="{{ page.next_page.url | url }}" rel="next"><span>Next</span>{{ page.next_page.title }}</a>{% endif %}
+  </nav>
+  {%- endif %}
+  {%- set source = config.extra.sources.get(page.file.src_uri) if page.file and not page.is_homepage else None %}
+  {%- if source %}<p class="page-source"><a href="https://github.com/rpalermodrums/pocket/edit/main/{{ source }}">Improve this page on GitHub</a></p>{% endif %}
+  {%- endblock %}
+  <footer class="site-footer">
+    <div class="footer-brand"><img src="{{ 'assets/pip.svg' | url }}" width="36" height="36" alt=""><p><strong>Pocket</strong>: composable tools for music, for people and their agents. Open source, early development.</p></div>
+    <p class="footer-links"><a href="{{ 'CONTRIBUTING/' | url }}">Contribute</a> <a href="{{ 'CODE_OF_CONDUCT/' | url }}">Conduct</a> <a href="{{ 'SECURITY/' | url }}">Security</a> <a href="{{ 'license/' | url }}">MIT license</a> <a href="https://github.com/rpalermodrums/pocket">GitHub</a></p>
+    <p class="build-info">{% if config.extra.dirty %}Local preview · {% endif %}Package {{ config.extra.package_version }} · <a href="https://github.com/rpalermodrums/pocket/tree/{{ config.extra.revision }}">Source {{ config.extra.revision[:8] }}</a> · <a href="{{ 'publication-manifest.json' | url }}">Build manifest</a></p>
+  </footer>
 </main>
+{%- if outline | length > 1 %}
+<aside class="toc" aria-label="On this page">
+  <p class="toc-title">On this page</p>
+  <ul>{% for child in outline %}<li><a href="{{ child.url }}">{{ child.title }}</a></li>{% endfor %}</ul>
+</aside>
+{%- endif %}
 </div>
 </body></html>

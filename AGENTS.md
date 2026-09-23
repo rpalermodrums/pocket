@@ -1,6 +1,6 @@
 # Working on Pocket
 
-Pocket is public and in early development. Do not change repository visibility without the owner's explicit instruction.
+Pocket is public and in early development. Do not change repository visibility without the maintainer's explicit instruction. Read [key ideas](docs/concepts.md) for the vocabulary used below.
 
 The current scope includes Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette. Selection has optional Spotify catalog/playlist, source-acquisition and local-embedding adapters plus a loopback browser workspace. Transcription models, a general audio editor and full-set bounce automation remain follow-up decisions, not implied dependencies.
 
@@ -29,4 +29,6 @@ all other saved XML and media must be preserved. Use normal Thread validation.
 
 For selection work, preserve a deterministic annotated baseline alongside creative variants. Slot contours are planning intent, not measurements. Keep route/pair feedback scoped to exact bag and brief identities; keep live decisions in a revision-checked shared session. Do not interpret playlist order, heuristic score or embedding similarity as audition, phrase alignment or mix compatibility. Models operate on independently sourced local audio and user-authored intent, not imported Spotify content. Never run inference or network requests in the live suggestion loop.
 
-The owner handles version control unless a request explicitly authorizes Git writes. The initial repository creation and implementation commit were authorized; do not assume blanket authorization for unrelated later pushes.
+Documentation should be clear to someone new to Pocket. Follow the voice and brand notes in [maintaining the website](docs/site-maintenance.md#voice-and-brand): open guides with a plain-language summary, link unfamiliar terms to key ideas, and name other software only when Pocket works with it, plans to, or openly takes inspiration from it. Keep private working notes, personal projects and acceptance records out of public docs.
+
+The maintainer handles version control unless a request explicitly authorizes Git writes. Authorization covers the task it was given for; it is not blanket permission for later pushes, publishing, releases or settings changes.

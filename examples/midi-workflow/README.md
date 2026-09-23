@@ -327,6 +327,6 @@ This part is a supervised recipe with native acceptance gates. It is not a claim
 
 Pass optional `related_artifacts` to promotion when the kept package should also retain MIDI derivatives, their fidelity sidecars, the stock preset or comparison attachments. Each must be an actual validated handle; the provider collects their referenced immutable evidence and includes it in lineage. The ordinary promotion call remains valid when this optional list is omitted.
 
-Stitch exposes the same candidate and audition functions; Pipette exposes the same promotion functions. Legacy serialized contracts and guards are preserved. Native parameter writes, preset load/save, MPE, routing and gesture capture are unavailable; native Serum integration is deferred by the user. See the [capability matrix](../../docs/midi-capabilities.md) for all five worked examples and the later-phase gates.
+Stitch exposes the same candidate and audition functions; Pipette exposes the same promotion functions. Legacy serialized contracts and guards are preserved. Native parameter writes, preset load/save, MPE, routing and gesture capture are unavailable; native Serum control is deferred. See [what's supported](../../docs/midi-capabilities.md) for the five worked scenarios and the [roadmap milestones](../../docs/midi-capabilities.md#roadmap-milestones).
 
 Keep the evidence separate: **artifact integrity; native save/reopen verification; rendered audio and measurements; actual human listening; an attributed musical decision.** A successful render is never a listening verdict.

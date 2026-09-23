@@ -1,5 +1,13 @@
 # Practice review
 
+> **In brief.** A local listening page. Open a comparison, play each version,
+> mark the exact stretch you listened to, and save what you heard as a report
+> with your name on it. Pocket records exactly which audio and which frames the
+> report is about, and nothing is saved until you confirm that you listened.
+>
+> **You need** a comparison from the practice tools, such as the one your
+> [first experiment](getting-started.md) makes, and macOS or Linux.
+
 A small local page for listening to one retained comparison and saving your own
 attributed report about the exact audio and interval you heard. It sits on top of
 the same public providers as Python, CLI and MCP: `practice_preview`,

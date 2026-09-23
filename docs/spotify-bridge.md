@@ -1,5 +1,13 @@
 # Spotify bridge
 
+> **In brief.** An optional bridge for moving *lists* of records to and from
+> Spotify. You can import a playlist's catalog details into a record bag, or
+> create a new private playlist from a plan you've reviewed. It never streams
+> or analyzes Spotify audio, and Spotify content is never sent to a model.
+>
+> **You need** nothing extra to import. Creating a playlist needs a Spotify
+> access token in the process environment (`POCKET_SPOTIFY_ACCESS_TOKEN`).
+
 This optional adapter transfers a deterministic catalog/order. It does not stream, analyze Spotify audio, infer musical features, authenticate automatically or send Spotify content to a model. The user interface and API call the same functions in `pocket_music.spotify_bridge`.
 
 ## Import

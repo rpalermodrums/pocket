@@ -1,5 +1,14 @@
 # Whisker
 
+> **In brief.** A mouse feels its way with its whiskers. Whisker helps you feel
+> out the next record during a set. It offers a few candidates in distinct
+> lanes (hold the energy, lift it, or take a left turn), each with its reasons
+> and what it doesn't know. You and your agent share one session, and it
+> refuses to let either of you overwrite a newer choice by accident.
+>
+> **You need** a [record bag](record-bag.md). Whisker never routes audio,
+> controls decks or picks a cue for you.
+
 Whisker returns a small set of next-record proposals and preserves a shared human/agent session. It routes no audio, controls no decks, and does not automatically choose a cue or certify a transition.
 
 CLI `pocket whisker` retains the `prepare`, `snapshot`, `options` and `update` actions. MCP exposes `whisker_prepare`, `whisker_snapshot`, `whisker` (session options) and `whisker_update`. The Python function names below stay unchanged.

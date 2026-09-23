@@ -1,15 +1,69 @@
 ---
 name: pocket
-description: Explore records, edit MIDI material, plan sounds, inspect Ableton sessions, compare exact passages, and preserve explicitly kept saved trials with scoped evidence.
+description: Use Pocket's music tools through MCP, the pocket CLI or Python. Use when a task involves recordings, practice passages, cues and timelines, MIDI material, saved or open Ableton Live sets, transitions between records, planning sets of records, or listening feedback. Covers capturing and comparing exact audio, resolving cues in repeated passages, inspecting timing and tonal evidence, editing and exporting MIDI, reading Live sets, and planning what plays next, while keeping measurements, hypotheses, decisions and human listening separate.
 ---
 
-# Pocket workflow
+# Pocket
 
-Use this skill for Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette. Read the provider documentation when an operation is unfamiliar. The [selection interfaces](../../docs/selection-interfaces.md) document matching CLI/MCP calls; the [workspace](../../docs/workspace.md) gives a local human interface.
+Pocket is a toolkit of small, exact musical operations called providers. Each
+one is an MCP tool (underscores, such as `context_resolve`), a CLI command
+(hyphens, such as `pocket context-resolve --spec args.json`) and a Python
+function in `pocket_music`. All three share one implementation and take the
+same JSON argument object. [Key ideas](../../docs/concepts.md) defines the
+vocabulary used here.
 
-Pocket is a general music toolkit, including acoustic practice and composition.
-Its post-v1 north star includes a responsive “living band in a box” practice partner;
-a DAW, genre or fixed meter is not required for core musical context.
+## Start here
+
+1. Call `capabilities_list` to see what this installation supports. If a
+   capability is missing, or listed as unavailable, you can't call it, and
+   supplying a host profile won't enable it.
+2. Establish the musical question, the exact source files and what must stay
+   unchanged. When a role, pitch, cue or bar-one choice matters, ask the
+   person. Don't infer it.
+3. Choose the smallest provider that answers the question. Read its guide when
+   it's unfamiliar.
+4. Keep the handles and receipts each call returns, and pass handles to later
+   calls.
+5. Report what the receipt says, including `coverage`, warnings and
+   uncertainty. Never describe a check, render or score as a musical verdict.
+
+## Ground rules
+
+- **Never overwrite.** Choose new destinations and new request IDs. Replaying a
+  completed request ID with identical inputs is safe, but changed inputs need a
+  new ID. Inspect an interrupted request with `request_status`, and never steal
+  its lock.
+- **Keep evidence kinds apart.** Measurements, hypotheses, authored decisions
+  and human listening are separate records. Your own analysis is an agent
+  report (`actor_kind: "agent"`). Only a person can supply human listening, and
+  `pocket practice-review` makes that an explicit act.
+- **Keep clocks apart.** Source frames, timeline quarter notes, pulse, bar one
+  and phrase start are different things. In a repeated passage, name the
+  occurrence.
+- **Ask before acting outside the machine.** Downloading recordings, loading
+  models, writing Spotify playlists and working inside Live each need the
+  person's explicit request for this task. Coordinate use of Live with other
+  work first.
+- **Keep private material private.** Keep recordings, credentials, listener
+  notes and machine paths out of Git, and use the ignored `private/` folder.
+
+## The tool family
+
+| Tool | Use it to | Guide |
+|---|---|---|
+| Context and practice | Capture passages, declare clocks and cues, render and compare exact alternatives | [musical context](../../docs/musical-context.md) |
+| Peek | Inspect a recording's attacks, pulse candidates, tempo drift and tonal evidence | [Peek](../../docs/peek.md) |
+| MIDI and sound | Import, generate, edit, structure and export MIDI, curves and sound plans | [MIDI](../../docs/midi.md) |
+| Thread | Read a saved Ableton Live set and map arrangement time to source time | [Thread](../../docs/thread.md) |
+| Stitch | Compare exact renders of a transition, and prepare one controlled native change | [Stitch](../../docs/stitch.md) |
+| Baste | Observe the open Live session, read-only | [Baste](../../docs/baste.md) |
+| Pipette | Promote one explicitly kept, saved Stitch trial into a new project | [Pipette](../../docs/pipette.md) |
+| Weave | Propose several routes through a record bag for a brief | [Weave](../../docs/weave.md) |
+| Whisker | Propose next records in a shared, revision-checked session | [Whisker](../../docs/whisker.md) |
+
+The [selection interfaces](../../docs/selection-interfaces.md) guide lists
+matching CLI and MCP calls, and the [workspace](../../docs/workspace.md) gives a
+person a local browser page for the same work.
 
 ## Standalone musical context and practice
 
@@ -55,20 +109,18 @@ interval heard, plus the mapped render interval. For a person listening, launch
 [practice review guide](../../docs/practice-review.md)); only their explicit save
 creates a human report, and playback never does.
 See the [installed contracts guide](../../docs/contracts.md) for generated current
-Python/CLI/MCP schemas and opt-in versioned errors. The design package's proposed
-HTTP facade is not implemented.
+Python/CLI/MCP schemas and opt-in versioned errors. There is no HTTP API.
 
 The [synthetic demo](../../examples/practice_context.py) exercises the complete
 file-only path. It does not qualify acoustic musical usefulness, native behavior
-or real-time accompaniment. Discover installed operations through `capabilities_list`;
-local development plans are not callable tool contracts.
+or real-time accompaniment. Discover installed operations through `capabilities_list`.
 
 For a real recording, the [reference exercise](../../examples/exercise_practice_recording.py)
 uses explicit twenty-second captures and declared A/B boundary probes. Retain
 abstention and competing pulse candidates; a nominal clock is not detected tempo.
 Preserve decoded overs and mark signal readiness separately. The exercise records
-agent technical reports only. Keep actual recordings and acceptance receipts
-in the ignored `private/audio/` directory.
+agent technical reports only. Keep actual recordings and their receipts in the
+ignored `private/` folder.
 
 ## Selection and improvisation
 
@@ -76,7 +128,7 @@ in the ignored `private/audio/` directory.
 2. Write a setting, duration and musical intent. Use MCP `weave`, CLI `weave plan`, or Python `pocket_music.weave.plan_set_routes` to retain a deterministic annotation baseline and creative alternatives. Relative-order anchors do not pin an opener, closer or timestamp. Positional energy contours are planning targets. Check duration shortfalls and actual phrase possibilities before calling a route viable.
 3. Try alternatives. MCP `weave_feedback` (Python `record_plan_feedback`) binds an exact route or adjacent directed pair to its bag/brief; `weave_replan` (Python `replan_set`) preserves the previous attempt. Do not call a mechanical test or your own inference listener feedback. Compare passages using the existing transition workflow below.
 4. For improvisation, prepare a session before performance with MCP `whisker_prepare` or Python `pocket_music.whisker.prepare_session`. Read bounded MCP `whisker` (Python `session_options`); preserve hold, lift and left-turn choices and their unknowns. Use `whisker_update` (Python `update_session`) with the observed revision and SHA. Refresh with `whisker_snapshot` (Python `session_snapshot`) after a stale-view error rather than silently overwriting the human's newer choice. CLI `whisker` offers the same prepare, snapshot, options and update actions. Manual choices update history; a new session is an explicit reset.
-5. Optional local embeddings add coarse similarity, not beat-one, key, cue or compatibility proof. Verify the pinned model/cache and exact source frames, audio hashes and provenance. Build vectors before the live loop. Keep imported Spotify content out of the model path. The model pilot and its limitations are in [music embeddings](../../docs/music-embeddings.md).
+5. Optional local embeddings add coarse similarity, not beat-one, key, cue or compatibility proof. Verify the pinned model/cache and exact source frames, audio hashes and provenance. Build vectors before the live loop. Keep imported Spotify content out of the model path. Model selection and its limitations are in [music embeddings](../../docs/music-embeddings.md).
 6. When Spotify export is authorized, prepare a new playlist plan and verify actual order/privacy through the API or an honestly labeled UI observation. A planned export is not a created playlist. Reconcile uncertain writes before retrying. Tokens stay in the process environment.
 7. When acquisition is authorized, use yt-dlp's best available audio by default (`bestaudio/best`, the acquisition provider's existing policy). Inspect candidates and choose the recording explicitly; “best audio” chooses an encoding, not the right performance or edition. Retain original codecs and strict decode receipts. `inspect_source_formats` plus a newly sealed `format_id` plan supports a reviewed retry; a decoder error with exit zero still fails. No automatic normalization, fades or claim that a float WAV is a fidelity upgrade.
 
@@ -95,7 +147,7 @@ MCP `stitch_prepare_native` (Python `prepare_native_trial`) prepares only its de
 
 Read artifact validity, signal disposition, native loading, export observation and `ready_to_compare` separately. Silent or near-silent expected music, non-finite samples and sample overload cannot become ready through a successful export alone. Intentional silence requires an explicit expectation and note at preparation. Readiness still carries no listening judgment. Do not overwrite an immutable candidate when Live wants to normalize it—save a separate file and preserve the chain of evidence. Re-preparing from a relocated source with stale absolute references currently requires deliberate relinking; old v1 native trials must remain preserved and be freshly prepared as v2.
 
-Prefer existing local recordings. Follow the current task's authorization for optional model preparation, acquisition and playlist writes; these are not implicit in a read-only map request. General project editing and public sharing remain separate scopes. Keep generated outputs, recordings, personal notes, credentials and machine paths outside Git. Publishing the repository remains a separate owner decision.
+Prefer existing local recordings. Follow the current task's authorization for optional model preparation, acquisition and playlist writes; these are not implicit in a read-only map request. General project editing and public sharing remain separate scopes. Keep generated outputs, recordings, personal notes, credentials and machine paths outside Git. Publishing, releases and repository settings are the maintainer's decisions.
 
 ## Open session observations and saved keep decisions
 
@@ -159,20 +211,9 @@ Use `midi_develop` when the musician or agent explicitly supplies a seed phrase,
 
 Use `midi_arrangement_develop` for several explicitly placed whole-clip sections from an attributed phrase graph. Bind the exact graph revision, preserve locked sections and choose bounded endpoint domains for later unlocked sections. Keep the full unchanged graph and sources, literal A, varied B and the silent destination. Query sections and sparse changes with `midi_arrangement_query`; paginate rather than dropping proof to accommodate a long set. These tools preserve supplied structure and rests. They do not infer an arrangement, prove perceptual motif identity or control native playback. The [long-span recipe](../../examples/midi-arrangement/README.md) is sparse synthetic evidence, not musical acceptance.
 
-
 For per-note pitch, pressure or slide, preserve the supplied rich material and use `midi_expression_plan` with explicit lifecycle, receiver assumptions and error tolerances. The tool allocates channels through declared sustain/tails, refuses exhaustion, and retains exact quantization/reset proof. `midi_export(expression=...)` consumes the same configuration or plan handle for a single-clip step realization. Read the file sidecar and retain the source. A declared bend range or zone is not an observed receiver configuration; no setup, native preservation, audible independence or transport recovery is established. Keep linear/performed gestures separate until a qualified route exists. The [expression recipe](../../examples/midi-expression/README.md) is synthetic file evidence only.
 
-For audio-derived suggestions, identify exact local source bytes and frames before `audio_hypotheses`. Keep the full-set context separately; a bounded analysis crop cannot decide fit across a set. Inspect competing pulse/attack evidence and abstentions before proposing anything. Use `audio_hypothesis_correct` for explicitly attributed alternatives supported by retained evidence; never relabel an authored pitch or phrase as detector output. Retain originals and superseded interpretations. `audio_hypothesis_query` provides bounded revision-bound pages. No automatic kick, instrument, note, harmony or musical-approval inference is available.
-
-For a passage in a long recording, use `audio_region_capture` then `audio_region_hypotheses`, or supply the explicit source inline to the latter. Confirm the supported PCM profile and exact frame range. The full original stays externally retained; Pocket hashes it during capture and stores only exact selected PCM and the original identity/mapping. `audio_region_query` keeps crop-local evidence beside original-source coordinates. Preserve gaps and competing interpretations; joining passage reports does not establish full-set coverage.
-
-Use `audio_region_correct` for an attributed alternative in explicitly declared local or original coordinates. Support pointers still identify the local retained evidence. Preserve uncertain floating pulse estimates separately from exact crop offsets. Use `audio_region_submit` when a long capture needs an owned cancellable worker; its durable job precedes full-file hashing. Read fresh status and distinguish cancellation requested from acknowledged. The [synthetic hour recipe](../../examples/audio-regions/README.md) demonstrates three explicit passages; real musical acceptance still needs the musician's exact source, passages and task intent.
-
-For optional learned pulse evidence, use an explicit local model declaration with `audio_model_inspect` or supply the inline declaration directly to `audio_pulse_hypotheses`. Synthetic qualification establishes the bounded execution profile, not accuracy. Inspect retained raw evidence, fractional source positions and excluded boundaries before proposing timing changes; preserve false or competing hypotheses. Retained model queries and authored corrections use the existing hypothesis tools without rerunning a model. Never install or download a model implicitly.
-
 Use `audition_feedback_query` with explicit feedback handles when recalling earlier decisions. Match exact render bytes and frame intervals, retain the actor and evidence kind, and keep agent reports separate from human listening. An unchanged or no-addition decision remains valid; retrieval never creates approval or a listener preference.
-
-Use `audio_pulse_submit` for the optional learned primitive or `audio_hypothesis_submit` for deterministic analysis only when an owned local worker is useful; synchronous analysis remains independently callable. Inspect fresh state with `job_status`; submit replay is a historical receipt. `job_cancel` needs the exact current revision. Pending cancellation is not acknowledgement, and a held execution lease is not proof of progress. Cancelled/failed/interrupted work has no committed result and must not be retried automatically. Staging artifacts are diagnostics. No worker controls the native host or establishes live-performance readiness. See the [audio recipe](../../examples/audio-hypotheses/README.md).
 
 ### Explicit audio interpretation to MIDI timing
 
@@ -193,6 +234,21 @@ The profile supports at most 16 ordinary notes and two alternatives, with strict
 combined evidence budgets described in `docs/midi.md`. Broader ancestry may need a
 smaller request. The synthetic recipe is `examples/midi-audio-timing/example.py`.
 
+## Audio analysis and hypotheses
+
+These providers analyze exact local recordings and keep every result as a hypothesis until someone authors a correction or decision. The [MIDI guide](../../docs/midi.md) documents their inputs and profiles; Peek covers bounded timing and tonal inspection.
+
+For audio-derived suggestions, identify exact local source bytes and frames before `audio_hypotheses`. Keep the full-set context separately; a bounded analysis crop cannot decide fit across a set. Inspect competing pulse/attack evidence and abstentions before proposing anything. Use `audio_hypothesis_correct` for explicitly attributed alternatives supported by retained evidence; never relabel an authored pitch or phrase as detector output. Retain originals and superseded interpretations. `audio_hypothesis_query` provides bounded revision-bound pages. No automatic kick, instrument, note, harmony or musical-approval inference is available.
+
+For a passage in a long recording, use `audio_region_capture` then `audio_region_hypotheses`, or supply the explicit source inline to the latter. Confirm the supported PCM profile and exact frame range. The full original stays externally retained; Pocket hashes it during capture and stores only exact selected PCM and the original identity/mapping. `audio_region_query` keeps crop-local evidence beside original-source coordinates. Preserve gaps and competing interpretations; joining passage reports does not establish full-set coverage.
+
+Use `audio_region_correct` for an attributed alternative in explicitly declared local or original coordinates. Support pointers still identify the local retained evidence. Preserve uncertain floating pulse estimates separately from exact crop offsets. Use `audio_region_submit` when a long capture needs an owned cancellable worker; its durable job precedes full-file hashing. Read fresh status and distinguish cancellation requested from acknowledged. The [synthetic hour recipe](../../examples/audio-regions/README.md) demonstrates three explicit passages; real musical acceptance still needs the musician's exact source, passages and task intent.
+
+For optional learned pulse evidence, use an explicit local model declaration with `audio_model_inspect` or supply the inline declaration directly to `audio_pulse_hypotheses`. Synthetic qualification establishes the bounded execution profile, not accuracy. Inspect retained raw evidence, fractional source positions and excluded boundaries before proposing timing changes; preserve false or competing hypotheses. Retained model queries and authored corrections use the existing hypothesis tools without rerunning a model. Never install or download a model implicitly.
+
+Use `audio_pulse_submit` for the optional learned primitive or `audio_hypothesis_submit` for deterministic analysis only when an owned local worker is useful; synchronous analysis remains independently callable. Inspect fresh state with `job_status`; submit replay is a historical receipt. `job_cancel` needs the exact current revision. Pending cancellation is not acknowledgement, and a held execution lease is not proof of progress. Cancelled/failed/interrupted work has no committed result and must not be retried automatically. Staging artifacts are diagnostics. No worker controls the native host or establishes live-performance readiness. See the [audio recipe](../../examples/audio-hypotheses/README.md).
+
 For floating-point source recordings, use the qualified exact FLOAT32 passage profile rather than silently converting to integer PCM. Selected finite samples retain their original bits; unsupported headers or selected NaN/infinity refuse. Capture support does not expand any analyzer’s separately qualified input profile.
 
-When uncertain audio-derived pitch would answer a concrete musical question, use the separately optional `audio_note_model_inspect`/`audio_note_hypotheses` providers with explicit existing runtime and known-weight hashes. Do not install or fetch a model implicitly. Its fixed CPU profile accepts narrow PCM16/FLOAT32 mono/stereo source crops; arithmetic downmix can cancel opposite-phase material. Preserve raw windows, alternative note hypotheses, timing estimates, pitch-bin/tuning assumptions and the choice to abstain. Model amplitude is not MIDI velocity, and contour output is not MPE. Use ordinary `audio_hypothesis_query`/`audio_hypothesis_correct` or `audio_region_hypotheses` with `learned_notes` and exact crop mapping. Query/correction need only retained artifacts. Explicitly author corrections before treating model pitches or attacks as musical decisions. The built-in silence/tone qualification and technical model execution do not establish source harmony, bass ownership, actual human listening or E8 acceptance. Optional `audio_note_submit` has owned cancellation; it is not a live scheduling path.
+When uncertain audio-derived pitch would answer a concrete musical question, use the separately optional `audio_note_model_inspect`/`audio_note_hypotheses` providers with explicit existing runtime and known-weight hashes. Do not install or fetch a model implicitly. Its fixed CPU profile accepts narrow PCM16/FLOAT32 mono/stereo source crops; arithmetic downmix can cancel opposite-phase material. Preserve raw windows, alternative note hypotheses, timing estimates, pitch-bin/tuning assumptions and the choice to abstain. Model amplitude is not MIDI velocity, and contour output is not MPE. Use ordinary `audio_hypothesis_query`/`audio_hypothesis_correct` or `audio_region_hypotheses` with `learned_notes` and exact crop mapping. Query/correction need only retained artifacts. Explicitly author corrections before treating model pitches or attacks as musical decisions. The built-in silence/tone qualification and technical model execution do not establish source harmony, bass ownership, actual human listening or musical acceptance on real material. Optional `audio_note_submit` has owned cancellation; it is not a live scheduling path.
+
