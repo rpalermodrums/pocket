@@ -1,0 +1,2 @@
+# Separate from the music runtime. Review updates through Dependabot/PRs.
+mkdocs==1.6.1

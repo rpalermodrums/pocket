@@ -1,0 +1,59 @@
+name: Publish website
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: 'main, or a full previously reviewed main-history SHA for rollback'
+        required: true
+        default: main
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Require verified main history
+        id: revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        run: python site/scripts/check_publish.py
+      - name: Select verified source
+        env:
+          PUBLISH_SHA: ${{ steps.revision.outputs.sha }}
+        run: git checkout --detach "$PUBLISH_SHA"
+      - run: python -m pip install -e '.[agent,dev,midi]' -r requirements-docs.txt
+      - run: python -m pytest -q tests/test_public_site.py
+      - run: python site/build.py --output private/site-build/publish
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: private/site-build/publish/pocket/
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy reviewed artifact
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
