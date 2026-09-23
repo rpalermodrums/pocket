@@ -1,5 +1,15 @@
 # Baste: observe the open Live session
 
+> **In brief.** In sewing, basting is a quick, temporary stitch that holds
+> things in place so you can take a look. Baste does the same for the Live set
+> that's open right now, including unsaved changes. A small Max for Live device
+> reports tracks, clips, devices and parameters as they are at this moment.
+> Baste can't change anything in Live. Each look is a snapshot and never becomes
+> a saved reference.
+>
+> **You need** macOS with Ableton Live 12 Suite (which includes Max for Live).
+> For a saved `.als` file, use [Thread](thread.md) instead.
+
 Baste reads the currently open, possibly unsaved Live session through a real Max
 for Live device. Thread remains the reader for a saved `.als`. Neither observation
 is a substitute for the other, and neither establishes what the audio sounds like.
@@ -74,8 +84,9 @@ Failure responses carry `observation: null`, rather than an empty successful
 session. The reader limits work to 30,000 objects, 300,000 counted reads and 30
 seconds between budget checks. Python accepts a 0.1–60 second transport timeout
 (default 35 seconds). A single host call cannot be preempted; these are resource
-bounds, not a real-time scheduling guarantee. Native latency and limits are in
-[local development notes](README.md#local-development-material).
+bounds, not a real-time scheduling guarantee. Reading a large set takes longer.
+When a read reaches one of these bounds, Baste reports a failure rather than
+returning part of a session.
 
 ## Read-only boundary and transport
 
@@ -122,5 +133,5 @@ resource bounds, dictionary lifetime and the actual HTTP transport. They do not
 prove native behavior. Native acceptance uses an isolated project, GUI comparison,
 a change since Save, repeated observations and saved-byte/mtime preservation.
 
-See [local development notes](README.md#local-development-material) for source specifications and
-[Pipette](pipette.md) for the separate saved-candidate promotion workflow.
+See [Thread](thread.md) for reading the saved file and [Pipette](pipette.md)
+for the separate saved-candidate promotion workflow.

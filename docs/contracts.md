@@ -1,16 +1,21 @@
 # Installed contracts and errors
 
-Python, flat CLI commands and registered MCP tools call the same providers in
-`PUBLIC_CAPABILITIES`. Discover supported artifact schemas and profiles with
-`capabilities_list`; a proposed architecture facade is not an installed API.
-The general HTTP/OpenAPI facade is not implemented. The loopback Weave/Whisker
-workspace and the [practice review page](practice-review.md) serve their own
-browser routes; those routes are separate from the provider contracts exported here.
+> **In brief.** Every Pocket provider has a machine-readable contract: its Python
+> signature, its CLI command and its MCP input schema. You can export them all,
+> opt into structured errors, and retry safely after something goes wrong.
+
+Python, flat CLI commands and registered MCP tools call the same providers,
+listed in `PUBLIC_CAPABILITIES`. Discover supported artifact schemas and
+profiles with `capabilities_list`. There is no general HTTP API. The local
+[workspace](workspace.md) and [practice review page](practice-review.md) serve
+their own browser routes, which are separate from the provider contracts
+exported here. The website's [provider reference](https://rpalermodrums.github.io/pocket/reference/)
+shows the same contracts in a browsable form.
 
 With the optional `agent` extra installed, generate contracts into a new folder:
 
 ```sh
-python examples/export_contracts.py private/docs/contracts/current
+python examples/export_contracts.py private/contracts
 ```
 
 The export includes Python signatures, CLI commands, actual MCP input schemas,
@@ -21,7 +26,7 @@ schemas. Existing destinations are refused so earlier contracts remain intact.
 
 ## Opt-in machine errors
 
-Legacy errors remain the default. For registered provider dispatch, opt in with:
+The original plain-text errors remain the default. For registered providers, opt in to structured errors with:
 
 ```sh
 pocket --error-format v2 context-query --spec arguments.json
@@ -51,5 +56,5 @@ provider failures remain `invalid_request`; no retry guarantee is implied.
 4. A failed artifact check needs intact retained evidence. Relocate the complete
    store, not only its final audio. Output audio alone does not prove lineage.
 
-Planning exports and recording-specific evidence belong in ignored `private/`.
-This guide, examples and provider contracts remain usable from a fresh checkout.
+Keep exports and recording-specific evidence in the ignored `private/` folder.
+Everything this guide describes works from a fresh checkout.

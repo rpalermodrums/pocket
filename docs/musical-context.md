@@ -1,39 +1,42 @@
-# Musical context and standalone practice
+# Musical context and practice
 
-Pocket is a composable toolkit for musical work across recordings, instruments,
-notation, practice, performance and hosts. The post-v1 goal includes a responsive
-“living band in a box”: a practice partner that can listen, follow musical form,
-respond and adapt with a musician. Jazz is an important proving ground; a DAW,
-genre, fixed meter or electronic production workflow is not a core requirement.
+> **In brief.** Tell Pocket which passages of a recording you're working with,
+> how they sit on a timeline and where your cues are. Pocket can then render
+> exact passages and repeats, compare alternatives with a baseline and keep
+> attributed notes about what someone heard. None of this needs a DAW.
+>
+> **Reach for it when** you want to try a passage two ways, loop a section for
+> practice, or pin down exactly where a cue falls the second time around.
 
-This implementation supplies a small foundation for that goal. It binds retained
-recordings, symbolic material, declared clocks, internal musical anchors and
-individual occurrences in an immutable context. A standalone practice profile
-can render exact passages and repetitions, compare alternatives, and retain
-attributed feedback. It does not implement live accompaniment or musical inference.
+This is the foundation for Pocket's longer-term aim of a practice partner that
+listens, follows the form and responds (see [status and direction](status.md)).
+Today it binds retained recordings, symbolic material, declared clocks,
+internal musical anchors and individual occurrences into an immutable
+**context**. It does not accompany a player or infer musical meaning. If the
+vocabulary is new, [key ideas](concepts.md) explains it, and
+[your first experiment](getting-started.md) runs the whole path in a few
+minutes.
 
-## The boundary that matters
+## How the pieces fit
 
-```mermaid
-flowchart LR
-  Agent[Musician / agent] --> API[Python · CLI · MCP]
-  API --> Context[Immutable musical context]
-  Capture[Exact retained audio regions] --> Context
-  Material[Existing symbolic material] --> Context
-  Time[Exact step-tempo maps] --> Context
-  Context --> Resolve[Anchor + occurrence → explicit coordinate]
-  Context --> Render[Original-rate practice render]
-  Render --> Evidence[Shared decoded-signal evidence]
-  Evidence --> Compare[Baseline + alternatives + question]
-  Compare --> Feedback[Attributed interval feedback]
-  Native[Qualified native audition adapter] --> Evidence
-```
+1. **Capture** an exact passage of a recording with `audio_region_capture`.
+   Pocket keeps the passage and its position in the original file.
+2. **Declare a timeline** with a tempo map using `musical_time`.
+3. **Create a context** with `context_create`. It ties the passages, timelines,
+   occurrences and anchors together.
+4. **Resolve** an anchor or position onto another clock with `context_resolve`.
+5. **Render** chosen occurrences, in order, with `practice_render`.
+6. **Compare** a baseline with alternatives around one question using
+   `practice_compare`.
+7. **Listen and report.** `practice_feedback`, or the
+   [practice review page](practice-review.md), records a person's attributed
+   report about an exact interval.
 
-The context owns identity and authored relationships. The existing time provider
-owns step-tempo integration and meter display. The practice renderer owns its
-limited audio realization. Shared evidence code owns signal measurement and
-feedback validation. Native candidate preparation, Live XML, export reports and
-native promotion stay in their adapter.
+Each part has one job. The context owns identity and authored relationships.
+The time provider owns tempo integration and meter display. The practice
+renderer owns its limited audio realization. Shared evidence code owns signal
+measurement and feedback validation. Ableton-specific candidate preparation,
+Live XML, export reports and native promotion stay in their own adapter.
 
 ## Records and coordinates
 
@@ -88,8 +91,8 @@ surfaces; there is no HTTP API for these providers. The loopback
 [practice review page](practice-review.md) is a separate local browser interface
 that calls them.
 
-An already-running Pocket MCP process needs a restart to load the new provider
-registrations. Existing editable installations pick up the Python/CLI changes.
+After you update Pocket, restart any running MCP server so it registers new
+providers. An editable installation picks up Python and CLI changes immediately.
 
 | Provider | Required inputs beyond `store_root` | Result |
 |---|---|---|
@@ -121,17 +124,17 @@ request is inspected before a new attempt; the provider never steals its lock.
 New calls retain `pocket.operation-receipt/v1` and its existing `ok`, `failed`,
 `unsupported`, etc. vocabulary. Their provenance explicitly names
 `musical-context-v1`. Existing receipts retain their old provenance and fields.
-Invalid calls raise `PocketError`; the current CLI returns structured errors with
-exit code 2 and MCP returns tool errors. The proposed future facade's status and
-error vocabulary has not been substituted for these working contracts.
+Invalid calls raise `PocketError`. The CLI returns structured errors with exit
+code 2, and MCP returns tool errors. See [contracts and errors](contracts.md)
+for the opt-in machine-readable format.
 
 ## Run the complete example
 
-Choose a new directory outside the repository:
+Choose a new directory. The ignored `private/` folder in the checkout works well:
 
 ```sh
-python examples/practice_context.py /tmp/pocket-practice-demo
-pocket context-resolve --spec /tmp/pocket-practice-demo/resolve-spec.json
+python examples/practice_context.py private/practice-demo
+pocket context-resolve --spec private/practice-demo/resolve-spec.json
 ```
 
 The demo creates only synthetic audio, captures exact frames, declares a clock
@@ -192,21 +195,19 @@ uses `actor_kind="agent"`. Creating feedback never changes a render's stored
   again, so a changed file is detected. Up to 256 MiB of verified bytes may be
   held in memory during a call.
 
-DOUBLE WAV is an evidence format and is not supported by every browser player.
-Use `practice_preview` for a declared browser copy (see
-[declared browser previews](#declared-browser-previews)). Earlier local
-experiments used separate FLOAT32 review copies; those files are not a public
-processing profile.
+DOUBLE WAV is an evidence format, and not every browser can play it. Use
+`practice_preview` for a declared browser copy (see
+[declared browser previews](#declared-browser-previews)).
 
 This profile does not mix overlapping layers, transpose, stretch, generate a
 count-in, infer meter, or accompany a player in real time. Existing symbolic tools
 remain composable through material references. Those additions need their own
 capability profiles and evidence rather than broader claims attached to this one.
 
-The [local-recording recipe](../examples/exercise_practice_recording.py) exercises
-analysis abstention, competing pulse estimates and overloaded FLOAT32 audio.
-Working plans and private acceptance reports live in the ignored local
-[development material](README.md#local-development-material).
+The [local-recording recipe](../examples/exercise_practice_recording.py) runs the
+same path on a recording you supply. It exercises analysis abstention, competing
+pulse estimates and overloaded FLOAT32 audio. Keep the recording and its results
+under the ignored `private/` folder.
 
 ## Evidence-bound interpretations
 
@@ -334,7 +335,7 @@ visible even when an envelope reduces an output peak. No winner is selected.
 For a retained output of the recording recipe, run:
 
 ```sh
-python examples/exercise_join_envelope.py private/audio/practice-run private/audio/join-experiment
+python examples/exercise_join_envelope.py private/practice-run private/join-experiment
 ```
 
 This creates a new store, 5/15 ms variants, numerical checks and `listen.html`.

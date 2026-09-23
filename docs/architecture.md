@@ -1,15 +1,20 @@
-# One library, shared evidence
+# Architecture
 
-Pocket begins with a local Python package. The CLI and optional MCP server invoke the same functions; they are interfaces, not separate implementations. No hosted service, model download or running Live instance is required for the maps and rendered-audio comparisons.
+Pocket is a local Python package. The `pocket` command line and the optional
+`pocket-mcp` server call the same functions that Python code does. They are
+three doors into one implementation, not three implementations. No hosted
+service, model download or running DAW is needed for the core tools.
 
-The broader goal is an agentic toolkit for music across practice, composition and
-performance. A responsive “living band in a box” jazz practice partner is a
-post-v1 goal; DAWs, electronic music and fixed meters are not core requirements.
-The [musical context layer](musical-context.md) is an additive foundation for
-explicit clocks, authored anchors and repeated occurrences. Its original-rate
-practice renderer uses shared signal evidence with the existing native audition
-adapter. Working contracts remain distinct from proposed facade names and
-from musical acceptance; provider discovery describes the installed surface.
+Pocket's goal is an agentic toolkit for music across practice, composition and
+performance. The design choices below follow from one principle: **a musical
+decision should rest on evidence you can inspect, and every experiment should be
+reversible.** For a gentler introduction to the vocabulary, read
+[key ideas](concepts.md) first.
+
+The [musical context layer](musical-context.md) is the foundation for explicit
+clocks, authored anchors and repeated occurrences. Its original-rate practice
+renderer shares signal-evidence code with the Ableton audition adapter. Provider
+discovery (`capabilities_list`) always describes what is actually installed.
 
 ## Records and clocks
 
@@ -37,20 +42,42 @@ Native v2 preparation first collects supported active dependencies and proves th
 
 Analysis and project outputs can contain local paths. Keep those in a local working directory outside the repository. The package never uploads audio. An MCP client runs with the filesystem access of the local server process; use it with trusted agents.
 
-## What we reused
+## Built on
 
-Pocket extracts the timing, source-identity, native-readback and comparison ideas developed in the Love and Death production work and the owner's Black Seams projects. It replaces song-specific scripts and hardcoded paths with explicit inputs. Runtime DSP, models and transports have not been copied wholesale.
+Pocket stands on a small set of dependencies, each chosen for a specific job:
 
-Black Seams' declarative source/clip contracts were useful architectural precedents. Its incomplete or simulated Live execution paths are not evidence of a working Pocket native backend. The first native trial adapter has a deliberately narrower contract, documented with its limitations.
+- [NumPy](https://numpy.org/), [SciPy](https://scipy.org/) and
+  [soundfile](https://github.com/bastibe/python-soundfile) (with libsndfile)
+  provide numerical and audio-file primitives.
+- The [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+  powers the optional agent interface.
+- [Mido](https://github.com/mido/mido) handles optional Standard MIDI File
+  import and export.
+- Ableton Live 12 and Max for Live are the first supported native hosts. Pocket
+  reads Live's saved-set format and ships its own Max for Live devices.
+- Optional model adapters run [BeatThis](https://github.com/CPJKU/beat_this)
+  (learned pulse), [Basic Pitch](https://github.com/spotify/basic-pitch) (note
+  hypotheses) and [LAION CLAP](https://huggingface.co/laion/clap-htsat-unfused)
+  (music embeddings) in separate environments you set up yourself. Pocket's
+  note decoder adapts part of Basic Pitch under its Apache-2.0 license, which is
+  bundled alongside it.
 
-NumPy, SciPy and soundfile provide numerical and audio-file primitives. The optional interface uses the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk). Core tests use generated material; third-party recordings and model weights are not test fixtures in Git.
+Core tests generate their own material. Third-party recordings and model
+weights are never test fixtures in Git.
 
-## Next review
+## What comes next
 
-Use Peek, Thread and Stitch on unfamiliar transitions. Record where the tool's representation was useful, ambiguous or wrong. Then choose between better beat/downbeat providers, selective note transcription, MuseTok, broader editing or improved native integration.
+Use Peek, Thread and Stitch on unfamiliar transitions, and record where each
+tool's representation was useful, ambiguous or wrong. That evidence decides
+what to build next: better beat and downbeat providers, selective note
+transcription, symbolic music models, broader editing or deeper native
+integration.
 
-The decision criterion is whether a tool improves a musical choice or removes repeated work. A plausible MIDI file, more model confidence or more infrastructure is not sufficient on its own.
+The test is whether a tool improves a musical choice or removes repeated work.
+A plausible MIDI file, a more confident model or more infrastructure isn't
+enough on its own.
 
-[Baste](baste.md) observes a live session; [Pipette](pipette.md) preserves an
-explicitly kept saved candidate. Neither expands Stitch's editing or Max
-dependency collection scope. A future live writer needs separate qualification.
+[Baste](baste.md) observes a live session, and [Pipette](pipette.md) preserves
+an explicitly kept saved candidate. Neither expands Stitch's editing or its Max
+dependency collection. A future live writer will need its own separate
+qualification.

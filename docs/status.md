@@ -1,25 +1,66 @@
 # Status and direction
 
-Pocket is public, MIT-licensed and in early development. The package currently identifies as 0.4.0; [change history](../CHANGELOG.md) distinguishes development notes from published releases.
+Pocket is open source (MIT), public and in early development. The package
+version is 0.4.0. The [changelog](../CHANGELOG.md) separates development
+milestones from published releases. Pocket hasn't been published to a package
+index yet, so install it from a checkout, as described in
+[your first experiment](getting-started.md). Its distribution name is
+`pocket-music`. The package called `pocket` on PyPI is an unrelated project.
 
 ## Available now
 
-The standalone context/practice path connects exact recording regions, explicit source and timeline clocks, repeated occurrences, internal cues, attributed interpretations, literal edits, exact audio comparisons and scoped reports. Explicit join envelopes have their own bounded processing profile.
+**Practice and listening, with no DAW.** The standalone path connects exact
+recording passages, named source and timeline clocks, repeated occurrences,
+internal cues, attributed interpretations, literal edits, exact audio
+comparisons and scoped listening reports. Declared join envelopes add a narrow,
+explicit fade at passage joints. See [musical context and practice](musical-context.md).
 
-A retained comparison can be reviewed in the loopback-only [practice review page](practice-review.md) (`pocket practice-review`). It plays declared PCM16 browser previews (`practice_preview`) and saves attributed reports that name the exact preview and interval reviewed (`pocket.practice-feedback/v2`). Verified preview bytes are the player's input, not proof of device output; only Chromium has been qualified for the preview format.
+**A listening page.** `pocket practice-review` serves a local page that plays a
+comparison through declared browser previews and saves attributed reports naming
+the exact preview and interval heard. Verified preview bytes are the player's
+input. They don't prove what a device played. So far, Chromium is the only
+browser qualified for the preview format. See [practice review](practice-review.md).
 
-MIDI tools, recording analysis, record selection and a local selection workspace also exist. Saved/native Ableton workflows have separate setup and qualification requirements. Inspect current `capabilities_list` results and the [capability matrix](midi-capabilities.md); a named native tool is not a promise that your installation is qualified.
+**Recordings, MIDI and sets.** [Peek](peek.md) inspects recordings. The
+[MIDI and sound tools](midi.md) create, edit and export material. The
+[selection tools](selection-interfaces.md) plan and play sets of records, and
+they include a local workspace page.
 
-## Next practical step
+**Ableton Live, narrowly.** [Thread](thread.md), [Stitch](stitch.md),
+[Baste](baste.md) and [Pipette](pipette.md) work with Ableton Live 12. Each
+native workflow has its own setup and a deliberately narrow, tested profile. A
+tool's name in the list is not a promise that your installation is qualified.
+Check `capabilities_list` and [what's supported](midi-capabilities.md).
 
-Have a musician use the [practice review page](practice-review.md) on a small retained comparison and record attributed interval reports. No human listening has been performed with it yet: automated tests, including optional Chromium browser checks, cover the verified previews, saved reports and page behavior, not musical usefulness or what a device outputs. The installed guide and registry always take precedence over roadmap language.
+## Next
 
-## After v1
+The next step is for a musician to use the [practice review page](practice-review.md)
+on a small real comparison and record attributed reports. Nobody has done this
+yet. The automated tests, including optional Chromium browser checks, cover the
+previews, saved reports and page behavior. They say nothing about musical
+usefulness or what a speaker plays.
 
-The broader goal is an agentic toolkit for music across acoustic/electronic instruments and genres. A responsive, living “band in a box” for jazz practice is one important direction: following, comping, trading and adjusting to the musician.
+The installed provider reference and `capabilities_list` always take precedence
+over roadmap language.
 
-That work needs latency/recovery design, musical interaction and listening evaluation. Offline evidence, a synthetic test or a saved DAW project does not establish those abilities. There is no announced ship date, universal DAW support or automatic musical judgment.
+## Where it's heading
+
+Pocket isn't exclusive to any one genre, instrument, or DAW. It's a toolkit for
+music in general, spanning practice, composition and performance.
+
+After version 1, the aim is a responsive, living "band in a box": a practice
+partner that follows the form, comps, trades and adjusts to the musician in real
+time. Jazz is an important proving ground.
+
+That work needs real-time design, recovery when things go wrong, genuine musical
+interaction and careful listening evaluation. Offline evidence, synthetic tests
+and saved projects can't establish those abilities. There's no announced date,
+no promise of universal DAW support and no plan for automatic musical judgment.
 
 ## Evidence you can inspect
 
-Public tests generate their own material. Provider input contracts come from the installed package and actual MCP discovery. Real recordings and personal acceptance notes stay private. A native observation, rendered audio, signal check and human listening report each answer a different question; none silently substitutes for another.
+Public tests generate their own audio. Provider contracts come from the
+installed package and live MCP discovery. Real recordings and listening notes
+stay on the machines of the people who made them. A native observation, a
+rendered file, a signal check and a human listening report each answer a
+different question, and none of them stands in for another.

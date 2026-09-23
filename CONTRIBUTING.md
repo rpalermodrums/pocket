@@ -1,6 +1,6 @@
 # Contributing to Pocket
 
-Pocket is a musician-centered toolkit with small, composable operations. Start with a concrete musical or user problem. For a new public capability, processing profile or artifact schema, open a proposal before building a large feature. A focused bug fix can start with a reproducible case.
+Thanks for helping. Pocket is a musician-centered toolkit made of small, composable operations. If you're new, read [key ideas](docs/concepts.md) first; it explains the vocabulary the rules below rely on. Start with a concrete musical or user problem. For a new public capability, processing profile or artifact schema, open a proposal before building a large feature. A focused bug fix can start with a reproducible case.
 
 ## Set up and check your change
 
@@ -17,7 +17,7 @@ python -m pytest -q -o tmp_path_retention_policy=failed
 
 Run focused tests while developing, then the relevant full checks before submission. The MIDI extra is required for full test collection even when your change does not process MIDI. Optional acquisition tools and model environments are separate; skipped optional tests must remain visible in your report. Never relax native deadlines or evidence checks merely to get a passing run.
 
-[Building the public docs](docs/site-maintenance.md) uses a separate, pinned documentation toolchain. It does not change Pocket's runtime dependencies.
+[Building the website](docs/site-maintenance.md) uses a separate, pinned documentation toolchain. It does not change Pocket's runtime dependencies. When you change behavior, update the guide that describes it in the same pull request, and follow the site's [voice and brand notes](docs/site-maintenance.md#voice-and-brand).
 
 ## Keep the musical contracts precise
 
@@ -44,7 +44,7 @@ A fake-host test, saved-project inspection, native save/reopen, actual render an
 
 Keep changes reviewable and explain the before/after behavior. Include compatibility impact, tests actually run, skipped/unperformed acceptance and known limits. For agent-assisted work, the submitter remains responsible for correctness and evidence; identify assistance when it helps explain how the work was validated. An automated review is not a human approval.
 
-Use a branch and PR. The maintainer currently operates solo with required CI and an administrator bypass for exceptional owner decisions. Passing tests is the normal merge gate; do not disable protection to avoid a failure. The owner merges and chooses any bypass explicitly. No outside reviewer or response-time guarantee is implied.
+Use a branch and PR. Pocket currently has a single maintainer. Required CI is the normal merge gate, and an administrator bypass exists for exceptional maintainer decisions. Don't disable protection to get past a failure. The maintainer merges and chooses any bypass explicitly. There is no outside reviewer or response-time guarantee.
 
 For agents, Git writes, publishing, releases and settings changes require task-specific authorization. Read [AGENTS.md](AGENTS.md) and preserve unrelated working changes.
 

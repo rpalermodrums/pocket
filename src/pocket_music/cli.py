@@ -164,10 +164,10 @@ def parser() -> argparse.ArgumentParser:
     for group, operations in _SPEC_OPERATIONS.items():
         help_text = {
             "pipette": "Promote a kept Stitch candidate into a new collected saved project",
-            "bag": "Create or navigate a sealed record catalogue",
+            "bag": "Create or navigate a sealed record catalog",
             "weave": "Explore routes through a set and refine them with feedback",
             "whisker": "Feel out the next record in a shared live session",
-            "spotify": "Import a catalogue or execute a reviewed fresh-playlist plan",
+            "spotify": "Import a catalog or execute a reviewed fresh-playlist plan",
             "acquire": "Discover candidates or acquire an explicitly selected recording",
             "embeddings": "Inspect an optional model cache or use prepared local receipts",
         }[group]

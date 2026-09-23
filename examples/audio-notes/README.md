@@ -40,7 +40,7 @@ The public `audio_hypothesis_correct` call shown in the script is also artifact-
 
 ## What the evidence means
 
-The **public inspection qualification contains only two two-second mono 22050Hz silence/tone cases**, with full raw repeats checked for finite values and exact equality. It does not imply that a broader format, duration or musical-accuracy suite ran. Separate private prerequisite experiments informed the adapter; actual public-path format/rate/long-source gates remain separate evidence and must be completed before relying on that broader execution scope. A successful example establishes only the calls and synthetic input it actually executed.
+The **public inspection qualification contains only two two-second mono 22050Hz silence/tone cases**, with full raw repeats checked for finite values and exact equality. It does not imply that a broader format, duration or musical-accuracy suite ran. Broader checks of formats, rates and long sources through the public path are separate evidence, and must be completed before you rely on that wider scope. A successful example establishes only the calls and synthetic input it actually executed.
 
 The declared source profile accepts 2–20-second mono/stereo PCM16 or IEEE FLOAT32 WAV crops at 22050/44100/48000Hz, with an original-source limit of 256MiB. Arithmetic-mean downmix can cancel antiphase channels. No normalization or clipping is applied. Base artifact replay verifies source decoding, downmix and retained resampled bytes, and independently recomputes the entire note ledger; it does not rerun optional soxr resampling.
 

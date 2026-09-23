@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- Source for assets/social-card.png, the link-preview image. Render at 1200×630;
+     see docs/site-maintenance.md. It uses only the bundled font and artwork. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pocket social card</title>
+<style>
+  @font-face { font-family:PocketText; src:url('../assets/fonts/AtkinsonHyperlegibleNext.ttf') format('truetype'); font-weight:200 800 }
+  html,body { margin:0; width:1200px; height:630px; overflow:hidden }
+  body {
+    display:grid; grid-template-columns:1fr 360px; align-items:center; gap:56px;
+    box-sizing:border-box; padding:0 88px;
+    background:#f5f1e8; color:#17364d; font-family:PocketText,sans-serif;
+    border-bottom:18px solid #c7795c
+  }
+  .eyebrow { font-size:24px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:#8b432e; margin:0 0 22px }
+  .wordmark { font-size:132px; font-weight:780; letter-spacing:-.045em; line-height:.9; color:#254f70; margin:0 0 30px }
+  .line { font-size:40px; font-weight:650; line-height:1.18; margin:0 0 26px; letter-spacing:-.01em }
+  .meta { font-size:24px; color:#446174; margin:0 }
+  img { width:360px; height:360px; border-radius:56px; box-shadow:0 2px 4px rgb(23 54 77 / 8%),0 18px 40px rgb(23 54 77 / 14%) }
+</style>
+</head>
+<body>
+  <div>
+    <p class="eyebrow">The musical toolkit for agents</p>
+    <p class="wordmark">pocket</p>
+    <p class="line">Composable tools for music.</p>
+    <p class="meta">Recordings · MIDI · Arrangements · Python, CLI and MCP</p>
+  </div>
+  <img src="../assets/pip.svg" alt="">
+</body>
+</html>

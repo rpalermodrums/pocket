@@ -1,5 +1,11 @@
 # Reusing a listening correction
 
+> **In brief.** When someone listens to a [Stitch](stitch.md) trial and says
+> "bar two lands late", that note is stored against the exact audio and time
+> span they heard. This page shows how to find those notes again later, filtered
+> by version, span or topic, without stretching them to cover anything they
+> didn't say.
+
 `record_feedback` stores a listener's words against one exact output hash, a local frame interval and a scope such as `bar_phase`, `timing` or `tonal_overlap`. `query_feedback` retrieves these records without broadening their meaning or resolving disagreements on the listener's behalf.
 
 ```python
