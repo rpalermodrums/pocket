@@ -21,13 +21,15 @@ from pocket_music import (
     audio_region_query,
     context_bind_interpretation,
     context_create,
+    context_edit,
     context_query,
     context_resolve,
     identify_audio,
     interpretation_create,
     musical_time,
-    practice_compare,
+    practice_compare_revisions,
     practice_feedback,
+    practice_feedback_query,
     practice_query,
     practice_render,
 )
@@ -104,7 +106,7 @@ def exercise(source: Path, destination: Path, starts: list[Fraction]):
                         "source_span_frames": [begin + delta, begin + delta + count],
                         "timeline_span_qn": [q(i * quarter_length), q((i + 1) * quarter_length)]}
                        for i, (label, delta) in enumerate([
-                           ("baseline", 0), ("baseline-repeat", 0), ("shifted", int(shift)), ("shifted-repeat", int(shift))])]
+                           ("baseline", 0), ("baseline-repeat", 0)])]
         definition = {"context_id": name, "title": "Exact acoustic recording boundary probe", "attribution": attribution,
                       "sources": [{"clock_id": "recording", "region": region}],
                       "timelines": [{"clock_id": "practice", "time_map": time_map}],
@@ -129,11 +131,17 @@ def exercise(source: Path, destination: Path, starts: list[Fraction]):
         assert inverse["output"]["value"] == cue
         conflict = reject(partial(context_create, store, name + "-context", {**definition, "title": "changed"}),
                           "idempotency_conflict")
+        edited = context_edit(store, name + "-edit", context,
+            [{"kind": "occurrence_slip_source", "occurrence_ids": ["baseline", "baseline-repeat"],
+              "delta_frames": int(shift)}],
+            [{"section": "occurrences", "object_id": identifier, "fields": ["timeline_span_qn", "source_clock_id"]}
+             for identifier in ("baseline", "baseline-repeat")], attribution)
         rendered = []
-        for label, ids, delta in [("baseline", ["baseline", "baseline-repeat"], 0),
-                                  ("shifted", ["shifted", "shifted-repeat"], int(shift))]:
-            result = practice_render(store, name + "-" + label, context, ids)
-            assert result == practice_render(store, name + "-" + label, context, ids)
+        ids = ["baseline", "baseline-repeat"]
+        for label, render_context, delta in [("baseline", context, 0),
+                                             ("shifted", edited["artifacts"]["context"], int(shift))]:
+            result = practice_render(store, name + "-" + label, render_context, ids)
+            assert result == practice_render(store, name + "-" + label, render_context, ids)
             with sf.SoundFile(source) as audio:
                 audio.seek(begin + delta)
                 expected_audio = audio.read(count, dtype="float64", always_2d=True)
@@ -144,16 +152,23 @@ def exercise(source: Path, destination: Path, starts: list[Fraction]):
             rendered.append({"label": label, "result": result, "signal": summary["signal"],
                              "audio_relative": str(audio_path.relative_to(destination)),
                              "original_start_frame": begin + delta, "decoded_samples_exact": True})
-        comparison = practice_compare(store, name + "-comparison", rendered[0]["result"]["artifacts"]["render"],
-            [rendered[1]["result"]["artifacts"]["render"]],
+        variant = rendered[1]["result"]["artifacts"]["render"]
+        comparison = practice_compare_revisions(store, name + "-comparison", rendered[0]["result"]["artifacts"]["render"],
+            [variant], [edited["artifacts"]["edit"]],
+            [{"variant": variant, "pairs": [{"baseline_occurrence_id": identifier, "variant_occurrence_id": identifier,
+               "baseline_interval_frames": [i * count, (i + 1) * count],
+               "variant_interval_frames": [i * count, (i + 1) * count]} for i, identifier in enumerate(ids)]}],
             "Do the internal cue and repetition join feel better at either explicit boundary? Musical review pending.")
         feedback = practice_feedback(store, name + "-technical-report", comparison["artifacts"]["comparison"],
             rendered[0]["result"]["artifacts"]["render"], [0, 2 * count], "Pocket reference exercise", "agent",
             "Exact decoded samples, source mapping, repeat occurrence, inverse conversion and replay verified. No listening performed.")
         assert practice_query(store, feedback["artifacts"]["feedback"])["summary"]["evidence_kind"] == "agent_report"
+        queried_reports = practice_feedback_query(store, [feedback["artifacts"]["feedback"]],
+            render=rendered[0]["result"]["artifacts"]["render"], actor_kind="agent", interval_frames=[0, 2 * count])
+        assert queried_reports["total"] == 1 and queried_reports["items"][0]["decision"] is None
         reports.append({"name": name, "capture_start_frame": start, "capture_seconds": float(starts[index]),
                         "region": region, "hypotheses": hypotheses, "context": context, "interpretation": interpretation,
-                        "context_summary": context_query(store, context)["summary"],
+                        "context_summary": context_query(store, context)["summary"], "edit": edited, "reports": queried_reports,
                         "pulse_candidates_bpm": [r["local"]["annotation"]["bpm"] for r in pulses],
                         "nominal_clock_bpm": q(bpm), "clock_basis": clock_reason,
                         "analysis_probe_beats_per_bar": 4, "anchor_evidence": anchor,

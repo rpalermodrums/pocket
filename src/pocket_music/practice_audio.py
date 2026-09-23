@@ -211,6 +211,9 @@ def practice_compare(store_root: str, request_id: str, baseline: ArtifactHandle,
 
 
 def load_comparison(handle, store_root):
+    if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.practice-revision-comparison/v1":
+        from .practice_comparisons import load_revision_comparison
+        return load_revision_comparison(handle, store_root)
     _verify_handles(handle, store_root)
     record = read_record(handle, store_root, COMPARISON_SCHEMA)
     fields(record, {"schema", "baseline", "variants", "question", "allow_duration_mismatch", "context",
@@ -245,6 +248,29 @@ def practice_feedback(store_root: str, request_id: str, comparison: ArtifactHand
     return run_request(store_root, request_id, "practice_feedback", inputs, work)
 
 
+def load_practice_feedback(handle, store_root, cache=None):
+    """Validate exact comparison membership, render identity and attributed interval."""
+    _verify_handles(handle, store_root)
+    record = read_record(handle, store_root, FEEDBACK_SCHEMA)
+    cache = {} if cache is None else cache
+    fields(record, {"schema", "comparison", "render", "interval_frames", "actor", "actor_kind", "note",
+                    "decision", "evidence_kind", "render_sha256"})
+    key = canonical_bytes(record["comparison"])
+    if key not in cache:
+        cache[key] = load_comparison(record["comparison"], store_root)
+    comparison, renders = cache[key]
+    handles = [comparison["baseline"], *comparison["variants"]]
+    if record["render"] not in handles:
+        raise PocketError("Feedback render is not in this comparison")
+    render = renders[handles.index(record["render"])]
+    validate_feedback_report(record["interval_frames"], render["signal"]["frames"], record["actor"],
+                             record["actor_kind"], record["note"], record["decision"])
+    kind = "attributed_human_listening" if record["actor_kind"] == "human" else "agent_report"
+    if record["evidence_kind"] != kind or record["render_sha256"] != render["audio"]["sha256"]:
+        raise PocketError("Feedback attribution or render identity mismatch")
+    return record, render
+
+
 def practice_query(store_root: str, artifact: ArtifactHandle,
                    section: Literal["summary", "mappings"] = "summary", offset: int = 0, limit: int = 32) -> dict:
     """Verify retained practice records; mappings use bounded pagination."""
@@ -257,21 +283,10 @@ def practice_query(store_root: str, artifact: ArtifactHandle,
     schema = record["schema"]
     if schema == RENDER_SCHEMA:
         record = load_practice_render(artifact, store_root)
-    elif schema == COMPARISON_SCHEMA:
+    elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1"):
         record, _ = load_comparison(artifact, store_root)
     elif schema == FEEDBACK_SCHEMA:
-        fields(record, {"schema", "comparison", "render", "interval_frames", "actor", "actor_kind", "note",
-                        "decision", "evidence_kind", "render_sha256"})
-        comparison, renders = load_comparison(record["comparison"], store_root)
-        handles = [comparison["baseline"], *comparison["variants"]]
-        if record["render"] not in handles:
-            raise PocketError("Feedback render is not in this comparison")
-        render = renders[handles.index(record["render"])]
-        validate_feedback_report(record["interval_frames"], render["signal"]["frames"], record["actor"],
-                                 record["actor_kind"], record["note"], record["decision"])
-        kind = "attributed_human_listening" if record["actor_kind"] == "human" else "agent_report"
-        if record["evidence_kind"] != kind or record["render_sha256"] != render["audio"]["sha256"]:
-            raise PocketError("Feedback attribution or render identity mismatch")
+        record, _ = load_practice_feedback(artifact, store_root)
     else:
         raise PocketError("Unknown practice artifact schema")
     common = {"artifacts": {"artifact": artifact}, "coverage": {"profile": PROFILE, "provider_playback": False}}

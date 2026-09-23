@@ -241,3 +241,41 @@ hash for unchanged definition fields. Sources, time maps, material references,
 untargeted objects and parent bytes remain unchanged. Each requested occurrence
 group reports compatibility with the exact PCM renderer. A valid timing intent
 may still need another render profile; no audio is created by a context edit.
+
+## Compare across revisions
+
+`practice_compare` retains its original same-context contract. Use
+`practice_compare_revisions` for edited children. It requires the exact baseline
+render, variant renders, verified `edit_receipts`, an explicit `correspondence`
+for every variant, and a musical question. The new record family is
+`pocket.practice-revision-comparison/v1`; it is not a relaxation of comparison v1.
+
+Each correspondence pairs baseline/variant occurrence IDs and their full output
+frame intervals. Every output occurrence must be covered exactly once. There is
+no automatic alignment or implied phrase match. `duration_policy="equal"` checks
+both total and paired durations; `"allow_mismatch"` explicitly permits differences.
+The limits are eight variants, sixteen edit receipts and thirty-two pairs per
+variant. Unrelated or missing ancestry, unused receipts and forged changes fail.
+
+`practice_query` revalidates either comparison family. `practice_feedback` accepts
+both and still binds a report to the exact render hash and interval. Signal flags,
+unchanged baseline bytes and conflicting interpretations stay visible. Neither
+creating a comparison nor reading feedback supplies a listening verdict.
+
+## Retrieve scoped reports
+
+`practice_feedback_query` takes 1–128 explicit feedback handles. Optional filters
+include an exact `render` handle, `actor`, `actor_kind`, `decision` and
+`interval_frames`; an interval requires the render handle. An audio hash alone
+cannot distinguish identical PCM belonging to different context revisions.
+
+Queries validate all supplied reports before filtering. Pages retain input order,
+original intervals, text and contradictory decisions. An overlap match does not
+extend a keep decision. Cursors bind the exact input/filter identities; changed
+filters or reports invalidate them. Limits are 1–128 rows and 4–64 KiB per response.
+An oversized report returns `needs_input` with a resumable cursor, without silently
+truncating its note.
+
+The shared selection/pagination implementation also serves native
+`audition_feedback_query`; its existing fields and cursor behavior are preserved.
+Native attachment validation and standalone render validation remain separate.
