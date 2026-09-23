@@ -44,6 +44,13 @@ PUBLIC_CAPABILITIES = (
     ('job_cancel', 'audio_hypothesis_jobs', 'job', 'cancel', False, 'Request cancellation at the next analysis boundary using an exact job revision.'),
     ('curve_transform', 'curves', 'expression', 'transform', False, 'File-only control curves; native execution separately gated.'),
     ('musical_time', 'time_maps', 'time', 'map', False, 'Exact declared step-tempo clocks, meter displays and independent local cycles.'),
+    ('context_create', 'musical_context', 'context', 'create', False, 'Immutable musical context with explicit clocks, authored anchors and occurrence identities; no host required.'),
+    ('context_query', 'musical_context', 'context', 'query', True, 'Bounded pages of an exact musical context revision.'),
+    ('context_resolve', 'musical_context', 'context', 'resolve', True, 'Resolve an internal anchor or explicit position through a named occurrence; ambiguous mappings are refused.'),
+    ('practice_render', 'practice_audio', 'practice', 'render', False, 'Exact original-rate PCM passages and repetitions from declared occurrences; no implicit DSP.'),
+    ('practice_compare', 'practice_audio', 'practice', 'compare', False, 'Bind a baseline and alternatives to a question; measurements and listening remain separate.'),
+    ('practice_feedback', 'practice_audio', 'practice', 'feedback', False, 'Attributed, exact-render and interval-bound feedback without inferred listening or preferences.'),
+    ('practice_query', 'practice_audio', 'practice', 'query', True, 'Verify retained practice evidence and read bounded render, comparison or feedback records.'),
     ('instrument_inspect', 'instruments.core', 'instrument', 'inspect', False, 'Bounded installation and attributed state inspection.'),
     ('instrument_parameters', 'instruments.core', 'instrument', 'parameter_read', True, 'Query captured exposed descriptors without loading a patch.'),
     ('preset_catalog', 'instruments.core', 'instrument', 'catalog', False, 'Hash and query opaque local presets without loading them.'),
@@ -137,6 +144,14 @@ _HANDLE_FAMILIES = {
                        'pocket.audio-region-capture/v1', 'pocket.audio-region-hypotheses/v1', 'pocket.audio-note-hypotheses/v1']),
     'curve_transform': (['pocket.curve/v1', 'pocket.context/v1'], ['pocket.curve/v1', 'pocket.curve-edit/v1']),
     'musical_time': (['pocket.time-map/v1'], ['pocket.time-map/v1']),
+    'context_create': (['pocket.musical-context/v1', 'pocket.audio-region-capture/v1', 'pocket.time-map/v1', 'pocket.material/v1'], ['pocket.musical-context/v1']),
+    'context_query': (['pocket.musical-context/v1'], ['pocket.musical-context/v1']),
+    'context_resolve': (['pocket.musical-context/v1'], ['pocket.musical-context/v1']),
+    'practice_render': (['pocket.musical-context/v1'], ['pocket.practice-render/v1', 'pocket.render-audio/v1']),
+    'practice_compare': (['pocket.practice-render/v1'], ['pocket.practice-comparison/v1']),
+    'practice_feedback': (['pocket.practice-comparison/v1', 'pocket.practice-render/v1'], ['pocket.practice-feedback/v1']),
+    'practice_query': (['pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-feedback/v1'],
+                       ['pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-feedback/v1']),
     'instrument_inspect': ([], ['pocket.instrument-state/v1', 'pocket.instrument-inventory/v1', 'pocket.environment/v1']),
     'instrument_parameters': (['pocket.instrument-state/v1'], ['pocket.instrument-state/v1']),
     'preset_catalog': (['pocket.preset-catalog/v1'], ['pocket.preset-catalog/v1']),
@@ -197,6 +212,9 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         prerequisites = []
         profile = None
         side_effects = [] if read_only else ['new_local_artifacts']
+        if module in ('musical_context', 'practice_audio'):
+            profile = 'authored-occurrences-exact-step/v1' if module == 'musical_context' else 'exact-pcm-occurrences/v1'
+            prerequisites = ['Verified retained source regions and explicit authored coordinates; no model, instrument or DAW']
         if name == 'midi_timing_query':
             side_effects = ['temporary_local_proof_replay; caller_store_unchanged']
         if name in ('audio_region_hypotheses', 'audio_region_submit'):
