@@ -5,6 +5,7 @@ If you're new, start with the first two.
 
 ## Start here
 
+- [What’s Pocket?](about.md): why Pocket exists and where it came from.
 - [Your first experiment](getting-started.md): install Pocket and run a complete
   example in a few minutes, with no DAW, model or account.
 - [Key ideas](concepts.md): stores, receipts, clocks, occurrences and the kinds

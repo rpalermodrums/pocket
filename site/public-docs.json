@@ -6,6 +6,10 @@
       "target": "index.md"
     },
     {
+      "source": "docs/about.md",
+      "target": "docs/about.md"
+    },
+    {
       "source": "docs/README.md",
       "target": "docs/README.md"
     },
@@ -200,6 +204,9 @@
     },
     {
       "Start here": [
+        {
+          "What’s Pocket?": "docs/about.md"
+        },
         {
           "Your first experiment": "docs/getting-started.md"
         },
