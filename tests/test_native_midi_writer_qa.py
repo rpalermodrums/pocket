@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent writer adversaries; all native calls use synthetic LiveAPI only."""
 import shutil
 import subprocess

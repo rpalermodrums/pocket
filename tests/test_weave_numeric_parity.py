@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Numeric spelling parity and preserved pre-normalization feedback evidence."""
 from copy import deepcopy
 from pathlib import Path

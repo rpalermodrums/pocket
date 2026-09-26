@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent bounded candidate response and preservation checks; synthetic only."""
 from __future__ import annotations
 

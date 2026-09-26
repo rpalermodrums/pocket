@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent multi-section identities, complete spans and public failure boundaries."""
 from __future__ import annotations
 

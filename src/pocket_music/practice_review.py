@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Loopback-only practice review over one selected comparison.
 
 The launcher is an adapter, not a provider: every preview and report goes

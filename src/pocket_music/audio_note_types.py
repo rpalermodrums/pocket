@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict optional ONNX note-hypothesis declarations, independent of MIDI/native work."""
 from typing import Literal
 

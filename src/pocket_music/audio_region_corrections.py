@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Compose the public correction primitive with explicit crop coordinate translation."""
 from __future__ import annotations
 

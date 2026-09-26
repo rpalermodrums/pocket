@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Stage only reviewed public inputs; build and verify a portable Pages artifact."""
 from __future__ import annotations
 
@@ -64,10 +65,18 @@ def rewrite_link(url, source, target, mapping, root, tracked, revision):
     return f'https://github.com/rpalermodrums/pocket/blob/{revision}/{resolved}' + ('#' + parsed.fragment if parsed.fragment else '')
 
 
+def verbatim_page(text, title):
+    # Plain-text sources such as LICENSE are shown exactly as written, never parsed as Markdown.
+    fence = '`' * max(3, 1 + max(map(len, re.findall('`+', text)), default=0))
+    body = text.rstrip('\n')
+    return f'# {title}\n\n{fence}text\n{body}\n{fence}\n'
+
+
 def stage_sources(root, destination, manifest, revision):
     tracked = tracked_files(root)
     rows = manifest['pages'] + manifest['assets']
     mapping = {}
+    titles = {}
     targets = set()
     for row in rows:
         source, target = row['source'], safe_target(row['target'])
@@ -75,6 +84,7 @@ def stage_sources(root, destination, manifest, revision):
             raise ValueError('Duplicate publication source or target')
         safe_source(root, source, tracked)
         mapping[source] = target
+        titles[source] = row.get('title', PurePosixPath(source).name)
         targets.add(target)
     evidence = []
     for source, target in mapping.items():
@@ -85,6 +95,8 @@ def stage_sources(root, destination, manifest, revision):
             content = re.sub(r'(?<!!)(\[[^\]\n]+\]\()([^\s)]+)(\))',
                 lambda m: m[1] + rewrite_link(m[2], source, target, mapping, root, tracked, revision) + m[3], content)
             data = content.encode()
+        elif target.endswith('.md'):
+            data = verbatim_page(original.decode(), titles[source]).encode()
         if re.search(rb'/Users/[^\s"<>]+|/home/(?!runner/)[^\s"<>]+', data):
             raise ValueError(f'Personal filesystem path in public source: {source}')
         output = destination / target

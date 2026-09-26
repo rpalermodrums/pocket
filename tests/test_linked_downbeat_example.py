@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """The linked-downbeat example keeps the tempo step, clip boundaries and source downbeat distinct."""
 import hashlib
 import importlib.util

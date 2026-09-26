@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Acoustic phase evidence, deliberately separate from musical bar orientation.
 
 All phases describe periodic attack layers. A syncopation, instrumentation change

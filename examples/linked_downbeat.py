@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Land a repeated passage's internal downbeat on its handover without moving the clip or tempo step.
 
 Run: python examples/linked_downbeat.py /path/to/new/private-directory

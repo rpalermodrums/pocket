@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Literal output-frame join envelopes; no inferred seam or musical alignment."""
 from typing import Literal
 

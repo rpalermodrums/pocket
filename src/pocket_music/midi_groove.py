@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Exact supplied-template timing for the shared selected-material editor."""
 from __future__ import annotations
 

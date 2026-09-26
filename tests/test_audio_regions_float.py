@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic IEEE FLOAT32 capture: exact sample bits, not audio interpretation."""
 import hashlib
 import struct

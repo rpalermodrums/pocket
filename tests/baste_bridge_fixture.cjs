@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Real loopback transport, simulated Max dictionaries. No claim of native execution.
 const {startBridge} = require("../src/pocket_music/devices/baste/baste_bridge.js");
 const handlers = {};

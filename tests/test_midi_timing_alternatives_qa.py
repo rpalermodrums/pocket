@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent exact clock bridge and retained authored-evidence adversaries."""
 import copy
 import hashlib

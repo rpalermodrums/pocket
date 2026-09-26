@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """A bounded standalone practice path built on existing capture and evidence.
 
 No model, MIDI codec, instrument or DAW is needed. Explicit occurrences are

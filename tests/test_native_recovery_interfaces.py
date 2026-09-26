@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual transports over synthetic recovery evidence, never native acceptance."""
 import asyncio
 import importlib.util

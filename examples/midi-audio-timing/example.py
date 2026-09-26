@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Explicit audio interpretation to supplied MIDI timing, without a model or DAW."""
 import hashlib
 import json

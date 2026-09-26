@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Coordinate math, not an Ableton audio renderer.
 
 Float-event tempo values interpolate linearly in *beats*. Their elapsed seconds

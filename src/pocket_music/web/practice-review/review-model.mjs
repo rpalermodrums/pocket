@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Pure review-state helpers shared by the page and Node tests. No DOM, network or playback.
 
 export const DECISIONS = [

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit, relocatable immutable artifacts and local request journals.
 
 Domain providers validate content. This layer validates byte identity, containment,

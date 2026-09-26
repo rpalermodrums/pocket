@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent expected placements, preservation and refusal checks for sequences."""
 import copy
 import json

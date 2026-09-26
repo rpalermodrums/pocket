@@ -34,11 +34,23 @@ Add regression tests for actual failure modes. For audio transformations, use in
 
 Generate public test audio at runtime. Do not commit real recordings, full mixes, native projects, credentials, model weights, personal listener notes, machine paths or retained user stores. Use ignored `private/` for local plans and acceptance evidence. Sanitize issue reports and inspect staged filenames/content before committing. Do not force-add ignored files to make a test pass.
 
-The MIT license covers this project's code. You are responsible for permission and compatible licensing for contributed code/assets. Preserve third-party notices. Public examples must use synthetic or explicitly cleared material.
+Pocket's core is licensed under AGPL-3.0-only, and `examples/` and `skills/` under MIT. [NOTICE](NOTICE) has the details, and [licensing](LICENSING.md) explains them in plain language. You are responsible for permission and compatible licensing for contributed code/assets. Preserve third-party notices. Public examples must use synthetic or explicitly cleared material.
+
+Start each new source file with an SPDX line naming its license: `# SPDX-License-Identifier: AGPL-3.0-only`, or `MIT` under `examples/`. A few files must never get one, because their exact bytes are recorded identities; `tests/test_license_headers.py` lists them.
 
 ## Native and online work
 
 A fake-host test, saved-project inspection, native save/reopen, actual render and human listening are separate acceptance steps. State which you performed. Coordinate use of Live; use disposable projects and never assume the active user session is a test fixture. Do not silently install models, acquire music, access online accounts or broaden a native profile.
+
+## Contributor license agreement
+
+Pocket asks contributors to sign a [contributor license agreement](CLA.md) (CLA) before their first contribution is merged.
+
+**Why.** Pocket is free for everyone under the AGPL. To pay for its maintenance, the project also offers a commercial license to people who want to build closed products on it. Offering both licenses means the project needs the right to license every part of the code both ways, and the CLA grants that right. It's a license, not a transfer: you keep the copyright in your work and can use it however you like. In return, the CLA promises that your contribution will always stay available under an open source license. That's how Pocket can stay free while funding itself.
+
+**How.** The first time you open a pull request, a bot asks you to sign by posting a comment. Signing once covers your future contributions. Bots such as Dependabot don't sign.
+
+**Status.** The CLA is a draft pending legal review and isn't in effect yet. Until it is, please open an issue before starting a code contribution. Pull requests from outside contributors will wait to be merged until the CLA is in effect, so that every contribution can be offered under both licenses.
 
 ## Pull requests
 

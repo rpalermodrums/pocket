@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real loopback requests to the practice review adapter over generated comparisons."""
 import http.client
 import json

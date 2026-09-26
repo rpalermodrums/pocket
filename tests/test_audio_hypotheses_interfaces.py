@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real CLI/stdio composition for retained audio evidence and corrections."""
 import asyncio
 import importlib.util

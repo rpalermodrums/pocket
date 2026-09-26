@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable host-independent workspaces with explicit clocks and occurrences.
 
 This is separate from the selection browser's pocket.workspace/v1 and the

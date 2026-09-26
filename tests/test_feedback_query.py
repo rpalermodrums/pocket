@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic attribution only; fixtures establish no actual native or listening evidence."""
 import shutil
 from pathlib import Path

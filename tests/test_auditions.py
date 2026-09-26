@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated render evidence only: tests do not claim rendering or human listening."""
 import shutil
 from pathlib import Path

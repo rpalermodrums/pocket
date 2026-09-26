@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Canonical rational-time control curves, independent of instruments and DAWs."""
 from __future__ import annotations
 

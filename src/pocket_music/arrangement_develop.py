@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded multi-section choices composed from explicit whole-clip graph nodes.
 
 Publication uses public sequence/edit primitives. Read-only verification rebuilds

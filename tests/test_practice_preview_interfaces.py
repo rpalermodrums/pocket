@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real CLI and stdio MCP call the same preview provider with a closed declared profile."""
 import asyncio
 import importlib.util

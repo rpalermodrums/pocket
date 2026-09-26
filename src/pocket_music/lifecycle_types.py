@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict declared inputs for offline symbolic note/sustain reservations."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual public interface and external-material composition acceptance."""
 from __future__ import annotations
 

@@ -1,8 +1,25 @@
 # Changelog
 
-Notable changes to Pocket, newest first. Package versions and the versions of serialized artifacts and profiles are independent of each other. Pocket has no published releases or release tags yet, so the version headings below mark development milestones, not publication dates.
+Notable changes to Pocket, newest first. Package versions and the versions of serialized artifacts and profiles are independent of each other. Pocket hasn't been published to a package index. 0.4.0 is tagged as the last version released under the MIT License; the other version headings mark development milestones, not publication dates.
 
 ## Unreleased
+
+### Changed
+
+- **Pocket is now licensed under the GNU Affero General Public License, version 3 only (AGPL-3.0-only)**, with [additional permissions](LICENSE-EXCEPTION.md) for output and for unmodified Pocket Max for Live devices shared inside musical projects. Using Pocket stays free, including commercially, and what you make with it is yours; a commercial license is available for closed products. [Licensing](LICENSING.md) explains the change in plain language. **0.4.0 is the last version released under the MIT License**, and copies of it and earlier versions keep that license. `examples/` and `skills/` stay MIT licensed.
+- The package version is now 0.5.0.dev0, so no AGPL-licensed build reports 0.4.0.
+- Package metadata now declares `License-Expression: AGPL-3.0-only AND Apache-2.0` (Pocket, plus the Apache-2.0 Basic Pitch decoder derivative) and ships `LICENSE`, `LICENSE-EXCEPTION.md`, `NOTICE` and the Basic Pitch license. Building requires setuptools 77 or later.
+
+### Added
+
+- `NOTICE`: which license applies to which files, the MIT notice for earlier versions, and third-party notices. It now includes Basic Pitch's upstream notice, which its Apache-2.0 license requires alongside the adapted decoder.
+- SPDX license identifiers at the top of source files. A test keeps new files labeled and keeps byte-pinned files (the decoder derivative, the model runners and the Max for Live devices) unchanged, so recorded identities, qualifications and native acceptance stay valid.
+- A draft [contributor license agreement](CLA.md), pending legal review and not yet in effect, and a CLA workflow that stays off until the maintainer enables it.
+- The website publishes the plain-language licensing page, the notices, the additional permissions and the draft agreement, and shows plain-text license files verbatim.
+
+## 0.4.0: last MIT-licensed version
+
+The last version released under the MIT License: the source at commit `3ba9a4f`, tagged `v0.4.0`. It wasn't published to a package index. It includes the [Baste and Pipette](docs/releases/0.4.0.md) milestone (fresh read-only Live observation and preservation of explicitly kept saved trials; existing names and serialized identifiers remain compatible) and the changes below.
 
 ### Added
 
@@ -30,10 +47,6 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 - The selection workspace refuses a non-ASCII `X-Pocket-CSRF` header with 403 instead of dropping the connection.
 
 The music-tool foundation landed in [PR #2](https://github.com/rpalermodrums/pocket/pull/2). It preserves legacy defaults; no human musical approval or new native qualification is implied. The public-site and policy entries landed in [PR #3](https://github.com/rpalermodrums/pocket/pull/3). Browser previews, v2 reports and the practice review page come from [PR #4](https://github.com/rpalermodrums/pocket/pull/4); no human listening, device-output check or native qualification has been performed with them.
-
-## 0.4 development milestone
-
-[Baste and Pipette](docs/releases/0.4.0.md): fresh read-only Live observation and preservation of explicitly kept saved trials. Existing names and serialized identifiers remain compatible.
 
 ## 0.2 development milestone
 

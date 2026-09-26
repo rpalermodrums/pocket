@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import http.client
 import json
 import os

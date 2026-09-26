@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real transport exchanges use the same providers, handles and failure semantics."""
 import asyncio
 import importlib.util

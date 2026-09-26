@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 "use strict";
 const ui = {snapshot: null, busy: false, nextOffset: null, searchTimer: null, searchToken: 0};
 const $ = (id) => document.getElementById(id);

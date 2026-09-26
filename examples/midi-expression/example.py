@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Run with an installed Pocket MIDI extra; outputs stay in a new local directory."""
 import json
 import tempfile

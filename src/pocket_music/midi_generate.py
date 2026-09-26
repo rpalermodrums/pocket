@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit deterministic pattern proposals, never a native scheduler or taste score."""
 from __future__ import annotations
 

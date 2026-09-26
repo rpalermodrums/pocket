@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent candidate/runtime evidence attacks; synthetic files only."""
 import copy
 import shutil

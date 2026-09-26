@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit independently sourced local PCM region capture input."""
 from typing import Literal
 

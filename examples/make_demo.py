@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Generate authored signals and a comparison recipe. No downloaded recordings."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Practice review page. All text from the server is inserted with textContent.
 // Media events only move the playhead; a report exists only after an explicit save.
 import {

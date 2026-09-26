@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real local adapters and generated evidence; external actions are not executed."""
 from __future__ import annotations
 
@@ -98,7 +99,7 @@ def test_public_exports_are_lazy_and_metadata_matches():
     import pocket_music
     from pocket_music.record_bag import create_record_bag
     assert pocket_music.create_record_bag is create_record_bag
-    assert pocket_music.__version__ == '0.4.0'
+    assert pocket_music.__version__ == '0.5.0.dev0'
     import tomllib
     metadata = tomllib.loads((Path(__file__).parents[1] / 'pyproject.toml').read_text())
     assert metadata['project']['version'] == __version__

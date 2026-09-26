@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Typed transport records for explicit instrument observations and offline plans."""
 from __future__ import annotations
 

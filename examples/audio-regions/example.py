@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Three explicit passages in a synthetic hour; public providers only."""
 import hashlib
 import json

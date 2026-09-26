@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Forward-only filesystem ownership/recovery; no native app is involved."""
 import json
 import os

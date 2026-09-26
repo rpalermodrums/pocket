@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded seal responses retain complete immutable source evidence elsewhere."""
 from __future__ import annotations
 

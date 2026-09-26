@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated route/feedback mechanics; scoring itself belongs to Whisker tests."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent byte/sample oracle and provenance checks for declared browser previews."""
 import copy
 import io

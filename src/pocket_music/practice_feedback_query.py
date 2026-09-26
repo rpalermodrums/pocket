@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit standalone feedback retrieval; no native imports or inferred preferences."""
 from __future__ import annotations
 

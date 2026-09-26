@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """A small JSON CLI over the same public functions used by the MCP server."""
 
 from __future__ import annotations

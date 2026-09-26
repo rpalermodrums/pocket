@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real CLI and stdio MCP create and read preview-aware reports through the same providers."""
 import asyncio
 import importlib.util

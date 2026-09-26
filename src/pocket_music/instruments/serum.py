@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Serum-specialist planning over public general providers; no native adapter yet."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Canonical Pocket tool names preserve legacy CLI and MCP behavior."""
 from __future__ import annotations
 

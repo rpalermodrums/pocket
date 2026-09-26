@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent expression-allocation numerics and source-preserving fixtures."""
 from __future__ import annotations
 

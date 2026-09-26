@@ -5,7 +5,7 @@ Composable tools for recordings, MIDI and arrangements. Use them from Python, th
 
 <p align="center">
 <a href="https://github.com/rpalermodrums/pocket/actions/workflows/tests.yml"><img src="https://github.com/rpalermodrums/pocket/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-254f70" alt="MIT license"></a>
+<a href="LICENSING.md"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-254f70" alt="License: AGPL-3.0-only"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-254f70" alt="Python 3.11 or later">
 </p>
 
@@ -126,7 +126,20 @@ planned.
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Security](SECURITY.md): report vulnerabilities privately
 - [Changelog](CHANGELOG.md)
+- [Licensing](LICENSING.md): free to use, your music is yours, and the
+  commercial license
 
-Pocket is released under the [MIT License](LICENSE). Bundled third-party code
-keeps its own license notices. The repository license grants no rights to
-recordings, models or other independently sourced material.
+## License
+
+Pocket is free and open source under the
+[GNU Affero General Public License, version 3](LICENSE) (AGPL-3.0-only), with
+[additional permissions](LICENSE-EXCEPTION.md) that keep your music and
+projects free of license conditions. Using Pocket is free, including for paid
+gigs and releases. A commercial license is available for anyone who wants to
+build a closed product on it. [Licensing](LICENSING.md) explains it all in plain
+language.
+
+Pocket 0.4.0 and earlier were released under the MIT License. The examples and
+the agent skill remain MIT licensed, and bundled third-party code keeps its own
+license notices; see [NOTICE](NOTICE). The repository license grants no rights
+to recordings, models or other independently sourced material.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual public transport parity for synthetic region and attributed feedback evidence."""
 from __future__ import annotations
 

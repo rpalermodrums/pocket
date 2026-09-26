@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic metadata predicates, never copied native projects or musical evidence."""
 import copy
 import xml.etree.ElementTree as ET

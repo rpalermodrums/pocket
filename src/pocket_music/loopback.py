@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Shared guards for Pocket's loopback-only browser adapters.
 
 These checks protect a local browser boundary: exact Host, same-origin writes

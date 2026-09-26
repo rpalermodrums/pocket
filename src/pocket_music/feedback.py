@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Retrieve listener claims without widening their identity, interval or scope."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded exact integer/float sample capture from an externally retained original."""
 from __future__ import annotations
 

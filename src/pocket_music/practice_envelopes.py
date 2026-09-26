@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit, independently verifiable gain envelopes at retained occurrence joins."""
 from __future__ import annotations
 

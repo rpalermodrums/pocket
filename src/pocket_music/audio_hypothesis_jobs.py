@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Owned local audio analysis with cooperative, publication-boundary cancellation.
 
 POSIX execution leases are inherited through exec, never inferred from a PID.

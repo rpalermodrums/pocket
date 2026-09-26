@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent adversarial expectations: literal records and a tiny wire decoder.
 
 These tests are file verification only, never native or listening evidence.

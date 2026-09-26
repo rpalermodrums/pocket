@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent instrument, preset and sound-planning capabilities."""
 from .core import instrument_inspect, instrument_parameters, preset_catalog, sound_plan
 from .serum import serum_inspect, serum_plan, serum_presets

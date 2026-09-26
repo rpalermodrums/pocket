@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Loopback-only human workspace over the shared Weave and Whisker providers."""
 
 from __future__ import annotations

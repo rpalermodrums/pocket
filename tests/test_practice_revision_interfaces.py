@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Cross-revision comparisons and scoped feedback agree on every current transport."""
 import asyncio
 import importlib.util

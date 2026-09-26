@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Attributed revisions of retained learned note evidence; never reruns a model."""
 from __future__ import annotations
 

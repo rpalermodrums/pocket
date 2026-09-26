@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Literal edit contracts agree through the public library, CLI and real MCP."""
 import asyncio
 import importlib.util

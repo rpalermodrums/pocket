@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent discovery families and optional-codec boundary checks."""
 from __future__ import annotations
 

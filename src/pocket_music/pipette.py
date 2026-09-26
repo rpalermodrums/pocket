@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Pipette promotes explicit kept, saved Stitch candidates into collected children.
 
 Checksums establish artifact identity, not authenticity or a musical verdict.

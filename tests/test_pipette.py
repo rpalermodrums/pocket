@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated audio and ALS fixtures only; native acceptance is recorded separately."""
 import hashlib
 import json

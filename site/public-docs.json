@@ -162,8 +162,26 @@
       "target": "skills/pocket/SKILL.md"
     },
     {
+      "source": "LICENSING.md",
+      "target": "licensing.md"
+    },
+    {
       "source": "LICENSE",
-      "target": "license.md"
+      "target": "license.md",
+      "title": "GNU Affero General Public License"
+    },
+    {
+      "source": "LICENSE-EXCEPTION.md",
+      "target": "license-exception.md"
+    },
+    {
+      "source": "NOTICE",
+      "target": "notice.md",
+      "title": "Notices"
+    },
+    {
+      "source": "CLA.md",
+      "target": "cla.md"
     }
   ],
   "assets": [
@@ -334,7 +352,10 @@
           "Maintaining the site": "docs/site-maintenance.md"
         },
         {
-          "License": "license.md"
+          "Licensing": "licensing.md"
+        },
+        {
+          "License text": "license.md"
         }
       ]
     }

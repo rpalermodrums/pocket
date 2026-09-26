@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Evidence-bound choices, independent of detector confidence and declared clocks."""
 from __future__ import annotations
 

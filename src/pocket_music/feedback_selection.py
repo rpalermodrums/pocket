@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded feedback selection and pagination, independent of native/render adapters."""
 from __future__ import annotations
 

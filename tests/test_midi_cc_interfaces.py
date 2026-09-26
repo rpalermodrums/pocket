@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual CLI/MCP composition for explicit file-only canonical curve export."""
 from __future__ import annotations
 

@@ -21,7 +21,7 @@ Run `python -m pytest -q tests/test_public_site.py` for publication boundary reg
 
 ## Update content
 
-Edit each guide once, in place. Don't create a second copy for the website. Add new public pages and assets to the allowlist and the navigation explicitly. Links to repository code and examples resolve to the source revision used in the build. If a guide is missing, write it. Never publish ignored material to fill the gap.
+Edit each guide once, in place. Don't create a second copy for the website. Add new public pages and assets to the allowlist and the navigation explicitly. A plain-text source published as a page, such as `LICENSE` or `NOTICE`, is shown verbatim in a text block under its `title`, so license texts are never reflowed as Markdown. Links to repository code and examples resolve to the source revision used in the build. If a guide is missing, write it. Never publish ignored material to fill the gap.
 
 The home page is `site/home.md`. It uses `md_in_html` blocks for the hero, principle and tool cards, and ordinary Markdown links so the builder can check them. Most guides open with a short `> **In brief.**` blockquote, which the theme styles as a summary callout. Keep the opening plain enough for someone new to Pocket, and link unfamiliar terms to [key ideas](concepts.md).
 

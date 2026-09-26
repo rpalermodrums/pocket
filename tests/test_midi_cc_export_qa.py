@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent exact-byte CC1/11 export expectations; no native or listening claims."""
 from __future__ import annotations
 

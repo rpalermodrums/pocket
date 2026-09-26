@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Test the installed interfaces, including a real local MCP stdio exchange."""
 
 import asyncio

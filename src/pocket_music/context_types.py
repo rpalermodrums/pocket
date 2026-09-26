@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit clocks and authored musical anchors; none imply native execution."""
 from typing import Literal
 

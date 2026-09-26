@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated fixtures only: no recordings, personal feedback or local media paths."""
 
 import copy

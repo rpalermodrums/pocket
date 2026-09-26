@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded motif choices composed from the same public sequence and edit tools.
 
 The source clip and every realized choice are retained. This optional composer

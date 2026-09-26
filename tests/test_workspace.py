@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real loopback requests against shared providers, using fictional catalog fixtures."""
 import http.client
 import json

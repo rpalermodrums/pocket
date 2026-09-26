@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Baste: fresh, read-only observations from the local Max for Live device.
 
 Connection descriptors are not observations. Nothing here accepts a saved session
