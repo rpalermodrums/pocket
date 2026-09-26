@@ -8,8 +8,9 @@ const vm = require("node:vm");
 const readerPath = path.resolve(__dirname, "../src/pocket_music/devices/baste/baste_reader.js");
 const {readSession} = require(readerPath);
 
-function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3) {
-    const data = new Map();
+function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3,
+        {quoted = false, ignoreRelease = [], refuseRelease = []} = {}) {
+    const data = new Map(), created = [], clock = {tick: 0};
     function add(p, props = {}, counts = {}) { data.set(p, {id: data.size + 1, props, counts}); }
     function device(p, rack = false) {
         add(p, {name: "Device <text>", class_name: rack ? "AudioEffectGroupDevice" : "Eq8",
@@ -41,13 +42,33 @@ function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3) {
         const indexed = byId.get(/^id \d+$/.test(requestedPath) ? Number(requestedPath.slice(3)) : id);
         const p = indexed ? indexed.p : requestedPath;
         const row = indexed ? indexed.row : data.get(p);
+        // Every constructed object is recorded so a test can prove its release.
+        const live = {path: p, released: false, releasedAt: 0, lastRead: 0};
+        created.push(live);
+        const quote = text => quoted ? '"' + text + '"' : text;
         // A capability trap makes mutation/property access fail the unchanged
         // reader tests, even if someone adds it under a conditional branch.
-        return new Proxy({}, {set() { throw new Error("Forbidden Live property write"); },
+        return new Proxy({}, {
+            // Releasing is the one permitted write: an empty path retargets this
+            // object to nothing. Any other value or property is a navigation or
+            // a mutation.
+            set(_, key, value) {
+                if (key !== "path") throw new Error("Forbidden Live property write");
+                if (value !== "") throw new Error("Forbidden Live retarget");
+                if (live.released) throw new Error("Live object released twice");
+                if (refuseRelease.includes(p)) throw new Error("Live refused to clear " + p);
+                if (!ignoreRelease.includes(p)) { live.released = true; live.releasedAt = ++clock.tick; }
+                return true;
+            },
             defineProperty() { throw new Error("Forbidden Live property definition"); },
             deleteProperty() { throw new Error("Forbidden Live property deletion"); },
             get(_, key) {
-            if (!["id", "children", "get", "getcount"].includes(key)) throw new Error("Forbidden Live capability " + key);
+            if (!["id", "path", "children", "get", "getcount"].includes(key)) throw new Error("Forbidden Live capability " + key);
+            if (key === "path") return quote(live.released ? "" : p);
+            // A released object no longer names anything. Reading it means the
+            // reader released an object before its result was complete.
+            if (live.released) throw new Error("Live object read after release: " + p + " / " + key);
+            live.lastRead = ++clock.tick;
             if (key === "id") return row ? row.id : 0;
             if (key === "children") return row ? Object.keys(row.counts) : [];
             if (key === "get") return prop => {
@@ -62,12 +83,26 @@ function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3) {
             return child => row.counts[child];
         }});
     };
-    return {data, factory};
+    return {data, factory, created};
+}
+
+// Reads through the unchanged reader, then proves every object built for this
+// read was released, and only after the result was complete.
+function read(f, factory = f.factory, clock = Date.now) {
+    const first = f.created.length, result = readSession(factory, clock), built = f.created.slice(first);
+    assert.deepEqual(built.filter(o => !o.released).map(o => o.path), []);
+    const lastRead = built.reduce((n, o) => Math.max(n, o.lastRead), 0);
+    assert.ok(built.every(o => o.releasedAt > lastRead), "released before the result was complete");
+    assert.equal(result.live_objects_created, built.length);
+    assert.equal(result.live_objects_released, built.length);
+    assert.equal(result.release_error, null);
+    assert.ok(result.release_elapsed_ms >= 0);
+    return result;
 }
 
 test("both clip views, absent slots, nested devices and raw/display values", () => {
     const f = fixture(), before = JSON.stringify([...f.data]);
-    const result = readSession(f.factory, Date.now);
+    const result = read(f);
     assert.equal(result.disposition, "ok");
     const t = result.observation.tracks[0];
     assert.equal(t.session_clips[0].view, "session");
@@ -81,54 +116,59 @@ test("both clip views, absent slots, nested devices and raw/display values", () 
     assert.equal(JSON.stringify([...f.data]), before);
 });
 test("reads changed unsaved state afresh; no persistent identity handle", () => {
-    const f = fixture(), first = readSession(f.factory, Date.now);
+    const f = fixture(), first = read(f);
     f.data.get("live_set tracks 0").props.name = "Changed since Save";
-    const second = readSession(f.factory, Date.now);
+    const second = read(f);
     assert.notEqual(first.observation.tracks[0].name, second.observation.tracks[0].name);
     assert.equal(second.observation.tracks[0].name, "Changed since Save");
     assert.equal(second.handle, undefined); assert.equal(second.observed_revision, undefined);
 });
 test("empty tracks is a successful reachable song, not a missing device", () => {
-    const f = fixture(0, 0, 0), result = readSession(f.factory, Date.now);
+    const f = fixture(0, 0, 0), result = read(f);
     assert.equal(result.disposition, "ok"); assert.deepEqual(result.observation.tracks, []);
 });
 test("deleted/reordered object mid-read fails with no partial observation", () => {
     const f = fixture(), seen = new Map();
-    const result = readSession(p => {
+    const result = read(f, p => {
         seen.set(p, (seen.get(p) || 0) + 1);
         if (p === "live_set tracks 0 devices 1" && seen.get(p) === 2) f.data.get(p).id += 1000;
         return f.factory(p);
-    }, Date.now);
+    });
     assert.equal(result.disposition, "path_invalid"); assert.equal(result.observation, null);
 });
 test("unsupported parameter is explicit, not invented", () => {
     const f = fixture(); delete f.data.get("live_set tracks 0 devices 0 parameters 0").props.display_value;
-    const result = readSession(f.factory, Date.now);
+    const result = read(f);
     assert.equal(result.disposition, "unsupported_property"); assert.match(result.error, /display_value/);
 });
 test("same-count parameter reorder during a read invalidates the entire observation", () => {
     const f = fixture(), seen = {n: 0};
-    const result = readSession((p, id) => {
+    const result = read(f, (p, id) => {
         if (p === "live_set tracks 0 devices 0" && ++seen.n === 2) {
             const a = f.data.get(p + " parameters 0"), b = f.data.get(p + " parameters 1");
             f.data.set(p + " parameters 0", b); f.data.set(p + " parameters 1", a);
         }
         return f.factory(p, id);
-    }, Date.now);
+    });
     assert.equal(result.disposition, "path_invalid"); assert.equal(result.observation, null);
+    assert.match(result.error, /identity_validation/);
 });
 test("MIDI/unwarped markers retain distinct units", () => {
     const f = fixture();
     f.data.get("live_set tracks 0 arrangement_clips 0").props.warping = 0;
     f.data.get("live_set tracks 0 clip_slots 0 clip").props.is_audio_clip = 0;
-    const t = readSession(f.factory, Date.now).observation.tracks[0];
+    const t = read(f).observation.tracks[0];
     assert.equal(t.arrangement_clips[0].markers.unit, "source_seconds");
     assert.equal(t.session_clips[0].warp_on, null);
 });
 test("budget failure is bounded and does not expose partial success", () => {
     const f = fixture(), ticks = {n: 0};
-    const result = readSession(f.factory, () => (ticks.n += 31000));
+    const result = read(f, f.factory, () => (ticks.n += 31000));
     assert.equal(result.disposition, "read_limit"); assert.equal(result.observation, null);
+    // A deadline reached partway through still releases everything built so far.
+    const late = {n: 0}, partway = read(f, f.factory, () => (++late.n > 40 ? 31000 * late.n : 0));
+    assert.equal(partway.disposition, "read_limit"); assert.equal(partway.observation, null);
+    assert.ok(partway.live_objects_created > 0);
 });
 test("production reader exposes no mutation operation and builds no eval code", () => {
     const api = fixture().factory("live_set");
@@ -136,12 +176,60 @@ test("production reader exposes no mutation operation and builds no eval code", 
     assert.throws(() => { api.id = 0; }, /Forbidden Live property write/);
     assert.throws(() => Object.defineProperty(api, "path", {value: "anything"}), /Forbidden/);
     assert.throws(() => { delete api.id; }, /Forbidden/);
+    // Releasing clears the path; it cannot retarget, and nothing reads afterward.
+    assert.throws(() => { api.path = "live_set tracks 1"; }, /Forbidden Live retarget/);
+    assert.throws(() => { api.mode = 1; }, /Forbidden Live property write/);
+    api.path = "";
+    assert.equal(api.path, "");
+    assert.throws(() => api.get("name"), /read after release/);
+    assert.throws(() => { api.path = ""; }, /released twice/);
+    assert.deepEqual(Object.keys(require(readerPath)), ["readSession"]);
     for (const file of [readerPath, readerPath.replace("baste_reader", "baste_device")]) {
         const code = fs.readFileSync(file, "utf8");
         assert.doesNotMatch(code, /\.(?:call|set|goto)\s*\(/);
         assert.doesNotMatch(code, /\[\s*["'](?:call|set|goto)["']\s*\]/);
         assert.doesNotMatch(code, /\beval\s*\(|new Function/);
+        assert.doesNotMatch(code, /\.(?:id|mode|property|unquotedpath)\s*=(?!=)/);
+        assert.doesNotMatch(code, /\[\s*["'](?:id|mode|path|property)["']\s*\]\s*=(?!=)/);
+        for (const write of code.match(/\.path\s*=(?!=)[^;\n]*/g) || []) assert.equal(write, '.path = ""');
     }
+});
+test("a failing constructor still releases every object already built", () => {
+    const f = fixture();
+    const result = read(f, (p, id) => {
+        if (p === "live_set tracks 1") throw new Error("LiveAPI construction failed");
+        return f.factory(p, id);
+    });
+    assert.equal(result.disposition, "path_invalid"); assert.equal(result.observation, null);
+    assert.match(result.error, /construction failed/);
+    assert.ok(result.live_objects_created > 0);
+});
+test("an ignored or refused release is reported, and the rest are still released", () => {
+    for (const quoted of [false, true]) {
+        const f = fixture(2, 2, 3, {quoted, ignoreRelease: ["live_set tracks 0"],
+            refuseRelease: ["live_set tracks 1 devices 0"]});
+        const result = readSession(f.factory, Date.now);
+        const stuck = f.created.filter(o => o.path === "live_set tracks 0" || o.path === "live_set tracks 1 devices 0");
+        // Each path is built more than once: in traversal and again when owners
+        // are re-resolved. Every one of those objects stays stuck.
+        assert.ok(stuck.length > 2);
+        assert.deepEqual(f.created.filter(o => !o.released), stuck);
+        // The observation was complete before release; a stuck listener is
+        // reported beside it rather than hidden or turned into another result.
+        assert.equal(result.disposition, "ok"); assert.equal(result.observation.tracks.length, 2);
+        assert.equal(result.live_objects_created, f.created.length);
+        assert.equal(result.live_objects_released, f.created.length - stuck.length);
+        assert.equal(result.release_error, "path did not clear: live_set tracks 0");
+    }
+    const f = fixture(1, 1, 1, {refuseRelease: ["live_set"]}), result = readSession(f.factory, Date.now);
+    const refused = f.created.filter(o => o.path === "live_set");
+    assert.deepEqual(f.created.filter(o => !o.released), refused);
+    assert.equal(result.release_error, "Live refused to clear live_set");
+    assert.equal(result.live_objects_released, result.live_objects_created - refused.length);
+});
+test("a quoted path that reads back empty counts as released", () => {
+    const result = read(fixture(2, 2, 3, {quoted: true}));
+    assert.equal(result.disposition, "ok");
 });
 test("Max entry point waits for live.thisdevice, releases replies and returns a fresh read", () => {
     const f = fixture(), messages = [], dictionaries = new Map();
@@ -161,6 +249,10 @@ test("Max entry point waits for live.thisdevice, releases replies and returns a 
     context.observe("a"); assert.equal(result("a").disposition, "device_not_loaded");
     context.release("a"); context.bang(); context.probe(); assert.deepEqual(messages.at(-1), [0, "ready"]);
     context.observe("b"); assert.equal(result("b").disposition, "ok");
+    assert.ok(f.created.length > 0 && f.created.every(o => o.released));
+    assert.equal(result("b").live_objects_created, f.created.length);
+    assert.equal(result("b").live_objects_released, f.created.length);
+    assert.equal(result("b").release_error, null);
     assert.equal(result("b").observation.tracks[0].session_clips[1].present, false);
     assert.equal(result("b").observation.tracks[0].devices[0].enabled, true);
     assert.ok(dictionaries.get("pocket_baste_b").json_chunks.length > 1);
@@ -172,8 +264,9 @@ test("Max entry point waits for live.thisdevice, releases replies and returns a 
     context.release("b"); assert.equal(dictionaries.size, 0);
 });
 test("representative generated read has an explicit latency budget", () => {
-    const f = fixture(24, 6, 16), start = performance.now(), result = readSession(f.factory, Date.now);
+    const f = fixture(24, 6, 16), start = performance.now(), result = read(f);
     const elapsed = performance.now() - start;
     assert.equal(result.disposition, "ok"); assert.ok(elapsed < 1000);
-    console.log(JSON.stringify({generated_read_ms: elapsed, objects: result.observation.objects_read}));
+    console.log(JSON.stringify({generated_read_ms: elapsed, objects: result.observation.objects_read,
+        released: result.live_objects_released, release_ms: result.release_elapsed_ms}));
 });

@@ -52,6 +52,8 @@ def test_real_transport_fresh_requests(bridge):
     assert "token" not in json.dumps(a)
     assert len(list(bridge.iterdir())) == 1  # connection only, no saved observations
     assert "atomic" in a["consistency"]
+    assert a["live_objects_created"] == a["live_objects_released"] == 5
+    assert a["release_error"] is None and a["release_elapsed_ms"] == 0
 
 
 def test_transport_rejects_unauthenticated_foreign_origin_and_other_routes(bridge):
@@ -97,11 +99,28 @@ def test_device_failure_never_becomes_empty_success(bridge, monkeypatch, failure
     def request(descriptor, route, timeout, payload=None):
         if payload:
             return {"schema": baste.SCHEMA, "request_id": payload["request_id"], "disposition": failure,
-                    "observation": {"partial": "discard me"}, "error": "test failure"}
+                    "observation": {"partial": "discard me"}, "error": "test failure",
+                    "live_objects_created": 12, "live_objects_released": 12, "release_error": None}
         return original(descriptor, route, timeout, payload)
     monkeypatch.setattr(baste, "_request", request)
     result = baste.observe_live(bridge_dir=str(bridge))
     assert result["disposition"] == failure and result["observation"] is None
+    # A failed read still reports that it released what it built.
+    assert result["live_objects_created"] == result["live_objects_released"] == 12
+
+
+def test_release_shortfall_is_reported_beside_a_complete_observation(bridge, monkeypatch):
+    original = baste._request
+    def request(descriptor, route, timeout, payload=None):
+        result = original(descriptor, route, timeout, payload)
+        if payload:
+            result.update(live_objects_released=3, release_error="path did not clear: live_set tracks 0")
+        return result
+    monkeypatch.setattr(baste, "_request", request)
+    result = baste.observe_live(bridge_dir=str(bridge))
+    assert result["disposition"] == "ok" and result["observation"]["tracks"] == []
+    assert (result["live_objects_created"], result["live_objects_released"]) == (5, 3)
+    assert result["release_error"] == "path did not clear: live_set tracks 0"
 
 
 def test_stale_reply_and_timeout_fail_closed(bridge, monkeypatch):

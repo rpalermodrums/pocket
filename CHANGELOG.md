@@ -16,6 +16,11 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 - SPDX license identifiers at the top of source files. A test keeps new files labeled and keeps byte-pinned files (the decoder derivative, the model runners and the Max for Live devices) unchanged, so recorded identities, qualifications and native acceptance stay valid.
 - A draft [contributor license agreement](CLA.md), pending legal review and not yet in effect, and a CLA workflow that stays off until the maintainer enables it.
 - The website publishes the plain-language licensing page, the notices, the additional permissions and the draft agreement, and shows plain-text license files verbatim.
+- `examples/measure_baste_observations.py` records what a series of Baste observations costs the running Live process (read times, Live's memory, log growth and a timed track add and delete) as numbers only.
+
+### Fixed
+
+- Baste now releases every LiveAPI object it builds once each read's result is complete, failed reads included. It clears each object's path and reads it back, because Live keeps a listener armed along an uncleared path and each one slows later edits to the set. Observation records gain `live_objects_created`, `live_objects_released`, `release_elapsed_ms` and `release_error`; a shortfall is reported beside the observation rather than changing it. This hasn't been measured in Live yet, and the reader change needs native acceptance again. See [Baste](docs/baste.md#keep-live-responsive-across-observations).
 
 ## 0.4.0: last MIT-licensed version
 

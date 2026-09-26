@@ -1,11 +1,43 @@
 /* ES5 for Max's js runtime; also exercised unchanged in Node with a fake factory.
  * The factory's raw LiveAPI object never escapes the read-only facade.
- * No Live objects or observations survive readSession's stack frame.
+ * No Live objects or observations survive readSession's stack frame: every
+ * object the factory built is released once the result is complete.
  */
 var BasteReader = (function () {
     "use strict";
+    // Live arms a listener on each collection along a LiveAPI object's path and
+    // keeps it armed until the path is cleared; freepeer() and garbage collection
+    // leave it in place. Each armed listener is notified of later structural
+    // edits to the set, so objects left behind slow Live itself down. Assigning
+    // an empty path retargets the object to nothing and leaves the set alone.
+    // It is the only write this reader makes to a Live object, and its value is
+    // always the empty string, never one a caller supplies.
+    function release(created) {
+        var failures = 0, first = null;
+        for (var i = 0; i < created.length; i += 1) {
+            try {
+                created[i].path = "";
+                // Live can ignore a path write without an error, so read it back.
+                // LiveAPI's path property can come back quoted; compare inside.
+                var left = String(created[i].path).replace(/^"(.*)"$/, "$1");
+                if (left !== "") {
+                    failures += 1;
+                    if (first === null) { first = "path did not clear: " + left; }
+                }
+            } catch (err) {
+                failures += 1;
+                if (first === null) { first = String((err && err.message) || err); }
+            }
+        }
+        return {released: created.length - failures, error: first};
+    }
     function readSession(factory, clock) {
-        var began = clock(), checks = [], objects = 0, reads = 0, phase = "traversal";
+        var began = clock(), checks = [], created = [], objects = 0, reads = 0, phase = "traversal";
+        function build(path, id) {
+            var raw = factory(path, id);
+            created.push(raw);
+            return raw;
+        }
         function fail(code, path, property) {
             var err = new Error(code + ": " + path + (property ? " / " + property : ""));
             err.disposition = code;
@@ -19,7 +51,7 @@ var BasteReader = (function () {
         }
         function object(path, expectedId) {
             budget(); objects += 1;
-            var raw = factory(path, expectedId), id = Number(raw.id);
+            var raw = build(path, expectedId), id = Number(raw.id);
             if (!id || (expectedId && id !== expectedId)) { fail("path_invalid", path); }
             checks.push({path: path, id: id});
             return {
@@ -143,6 +175,7 @@ var BasteReader = (function () {
             return {path: path, runtime_id: t.id, name: text(t, "name"), kind: kind,
                 session_clips: session, arrangement_clips: arrangement, devices: devices(path, 0)};
         }
+        var result, released, releaseBegan;
         try {
             var song = object("live_set"), tracks = [], returns = [];
             var count = song.count("tracks"), returnCount = song.count("return_tracks");
@@ -180,7 +213,7 @@ var BasteReader = (function () {
             }
             for (var ownerPath in owners) {
                 budget();
-                var current = factory(ownerPath);
+                var current = build(ownerPath);
                 if (Number(current.id) !== known[ownerPath]) { fail("path_invalid", ownerPath); }
                 for (var property in owners[ownerPath]) {
                     var expected = owners[ownerPath][property];
@@ -197,13 +230,24 @@ var BasteReader = (function () {
                     }
                 }
             }
-            return {disposition: "ok", observation: {tracks: tracks, return_tracks: returns, main_track: main,
+            result = {disposition: "ok", observation: {tracks: tracks, return_tracks: returns, main_track: main,
                 objects_read: objects, property_reads: reads}, read_elapsed_ms: clock() - began};
         } catch (err) {
-            return {disposition: err.disposition || "path_invalid", observation: null,
+            result = {disposition: err.disposition || "path_invalid", observation: null,
                 error: String(err.message || err) + " (" + phase + "; objects=" + objects + "; reads=" + reads + ")",
                 read_elapsed_ms: clock() - began};
+        } finally {
+            // The result, identity validation included, is complete before any
+            // object is released, on success and failure alike. Nothing reads a
+            // raw object after this point.
+            releaseBegan = clock();
+            released = release(created);
         }
+        result.live_objects_created = created.length;
+        result.live_objects_released = released.released;
+        result.release_elapsed_ms = clock() - releaseBegan;
+        result.release_error = released.error;
+        return result;
     }
     return {readSession: readSession};
 }());
