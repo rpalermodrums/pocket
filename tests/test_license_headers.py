@@ -6,8 +6,8 @@ ROOT = Path(__file__).parents[1]
 SOURCES = ('.py', '.js', '.cjs', '.mjs', '.css', '.html')
 # A header here would change a pinned decoder hash, a qualified model-runner profile or a natively
 # accepted Max for Live device package. NOTICE lists these files and their license.
-PINNED = {'src/pocket_music/audio_note_projection.py', 'src/pocket_music/audio_model_runner.py',
-          'src/pocket_music/audio_note_runner.py'}
+PINNED = {'src/pocket_music/audio_note_projection.py', 'src/pocket_music/audio_note_projection_v2.py',
+          'src/pocket_music/audio_model_runner.py', 'src/pocket_music/audio_note_runner.py'}
 PINNED_DIRECTORY = 'src/pocket_music/devices/'
 
 

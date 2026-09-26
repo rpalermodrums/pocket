@@ -19,6 +19,8 @@ from typing import Literal
 import numpy as np
 import scipy
 
+from . import audio_note_projection as _decoder_v1
+from . import audio_note_projection_v2 as _decoder_v2
 from .artifact_store import (
     _verify_handles,
     canonical_bytes,
@@ -32,7 +34,7 @@ from .artifact_store import (
 )
 from .audio_hypotheses import _attribution, _fields, prepare_hypothesis_input
 from .audio_hypothesis_types import AudioHypothesisAttribution, AudioHypothesisSource
-from .audio_note_projection import SETTINGS, TRANSFORM, project_note_arrays
+from .audio_note_projection import project_note_arrays
 from .audio_note_types import AudioNoteModel, AudioNoteModelDeclaration, AudioNoteSettings
 from .audio_pulse_hypotheses import _CONTEXT, _cancel, _file, _sha, model_execution_context
 from .audio_regions import _parse
@@ -41,6 +43,7 @@ from .errors import PocketError
 __all__ = [
     'audio_note_hypotheses',
     'audio_note_model_inspect',
+    'decoder_for_settings',
     'load_audio_note_model',
     'load_note_hypotheses',
     'model_execution_context',
@@ -58,7 +61,15 @@ QUAL_SCOPE = 'Two synthetic2-second mono22050 silence/tone finite/repeat cases; 
 PROFILE_SCHEMA = 'pocket.audio-note-runtime-profile/v1'
 ARRAY_SCHEMA = 'pocket.model-activations-float32le/v1'
 PROJECTION_SHA256 = 'a1f962248b7ba2a735c1bf8b3da090dc3e04b5a66f956861461b088ef11ba70e'
+PROJECTION_V2_SHA256 = '85ea6c28fe0f2d30cfbc9c28ff44d0e3edafca08b42477ab35929493c99c0348'
 VENDOR_DECODER_SHA256 = '9c813509acf57ed9b902d2b9fcd9f8118b2c5ffe568a06df9cfa60f5c5ee2572'
+# Each record replays under the decoder its settings name. v1 keeps basic-pitch 0.4.0's
+# retained-frame count and can drop a note still sounding at the end of a region; v2 keeps
+# upstream e989e40's count.
+DECODERS = {_decoder_v1.DECODER: {'module': _decoder_v1, 'file': 'audio_note_projection.py', 'sha256': PROJECTION_SHA256},
+            _decoder_v2.DECODER: {'module': _decoder_v2, 'file': 'audio_note_projection_v2.py', 'sha256': PROJECTION_V2_SHA256}}
+# v1's, under the names existing importers use.
+SETTINGS, TRANSFORM = _decoder_v1.SETTINGS, _decoder_v1.TRANSFORM
 PROJECTION_REPLAY = 'Complete exact ledger replay in current base runtime; no cross-version numerical equivalence claim'
 LIMITATIONS = ['Uncalibrated note hypotheses; no human listening, voice, tuning, instrument, MIDI or native qualification.',
                'Vendor timestamps are float estimates; outward source envelopes are not measured acoustic onset intervals.',
@@ -123,9 +134,16 @@ def validate_note_source_bytes(payload, source):
     return copy.deepcopy(source)
 
 
+def decoder_for_settings(settings, message='Unsupported note settings'):
+    """Name the decoder whose exact settings these are; anything else is refused."""
+    for decoder, profile in DECODERS.items():
+        if canonical_bytes(settings) == canonical_bytes(profile['module'].SETTINGS): return decoder
+    raise PocketError(message)
+
+
 def prepare_note_input(*, source: AudioHypothesisSource, settings: AudioNoteSettings,
                        attribution: AudioHypothesisAttribution, store_root: str):
-    if canonical_bytes(settings) != canonical_bytes(SETTINGS): raise PocketError('Unsupported note settings')
+    decoder_for_settings(settings)
     prepared = prepare_hypothesis_input(source=source, settings={'bpm_hint': None, 'beats_per_bar': 4}, attribution=attribution, store_root=store_root)
     validate_note_source_bytes(read_bytes(prepared['source_handle'], store_root), prepared['source_metadata'])
     prepared['settings'] = copy.deepcopy(settings)
@@ -423,25 +441,26 @@ def _annotations(evidence, projection):
     return rows
 
 
-def _projection_provenance():
+def _projection_provenance(decoder):
     """Capture the base decoder independently from the optional model runtime."""
-    implementation = Path(__file__).with_name('audio_note_projection.py').read_bytes()
-    if hashlib.sha256(implementation).hexdigest() != PROJECTION_SHA256:
+    profile = DECODERS[decoder]
+    implementation = Path(__file__).with_name(profile['file']).read_bytes()
+    if hashlib.sha256(implementation).hexdigest() != profile['sha256']:
         raise PocketError('Decoder source differs from this versioned projection profile')
     result = {'schema': 'pocket.note-projection-provenance/v1',
-              'profile': SETTINGS['decoder'], 'implementation_sha256': PROJECTION_SHA256,
+              'profile': decoder, 'implementation_sha256': profile['sha256'],
               'vendor_source_sha256': VENDOR_DECODER_SHA256,
               'numpy_version': np.__version__, 'scipy_version': scipy.__version__,
               'replay_semantics': PROJECTION_REPLAY}
-    _validate_projection_provenance(result)
+    _validate_projection_provenance(result, decoder)
     return result
 
 
-def _validate_projection_provenance(value):
+def _validate_projection_provenance(value, decoder):
     _fields(value, {'schema', 'profile', 'implementation_sha256', 'vendor_source_sha256',
                     'numpy_version', 'scipy_version', 'replay_semantics'}, 'projection provenance')
-    if (value['schema'] != 'pocket.note-projection-provenance/v1' or value['profile'] != SETTINGS['decoder']
-            or value['implementation_sha256'] != PROJECTION_SHA256
+    if (value['schema'] != 'pocket.note-projection-provenance/v1' or value['profile'] != decoder
+            or value['implementation_sha256'] != DECODERS[decoder]['sha256']
             or value['vendor_source_sha256'] != VENDOR_DECODER_SHA256
             or value['replay_semantics'] != PROJECTION_REPLAY):
         raise PocketError('Unknown projection provenance profile')
@@ -452,7 +471,7 @@ def _validate_projection_provenance(value):
     # path. The caller still recomputes and compares the entire current ledger.
 
 
-def _projection(raw, source, payload, root):
+def _projection(raw, source, payload, root, decoder):
     mono = _decoded(payload, source)
     windows = _windows(raw, root, source=True)
     if raw['mono_sha256'] != hashlib.sha256(mono).hexdigest(): raise PocketError('Decoded source/downmix proof mismatch')
@@ -460,7 +479,7 @@ def _projection(raw, source, payload, root):
     expected = ((source['end_frame_exclusive'] - source['start_frame']) * 22050 * 2 + source['sample_rate']) // (2 * source['sample_rate'])
     if resampled.shape != (expected,) or raw['resampled_frames'] != expected: raise PocketError('Resampled frame count mismatch')
     if source['sample_rate'] == 22050 and resampled.tobytes() != mono: raise PocketError('Identity-rate source was altered')
-    return project_note_arrays(windows, source, expected)
+    return DECODERS[decoder]['module'].project_note_arrays(windows, source, expected)
 
 
 def load_note_hypotheses(handle, store_root):
@@ -469,21 +488,24 @@ def load_note_hypotheses(handle, store_root):
     try:
         record = read_record(handle, store_root, SCHEMA)
         _fields(record, {'schema', 'source', 'original', 'analysis', 'model', 'annotations', 'parent', 'revision_index', 'annotation_count', 'request_attribution', 'settings', 'limitations'}, 'initial note hypotheses')
-        if canonical_bytes(record['settings']) != canonical_bytes(SETTINGS) or record['limitations'] != LIMITATIONS: raise PocketError('Note settings/limitations mismatch')
+        decoder = decoder_for_settings(record['settings'], 'Note settings/limitations mismatch')
+        if record['limitations'] != LIMITATIONS: raise PocketError('Note settings/limitations mismatch')
         _attribution(record['request_attribution']); load_audio_note_model(record['model'], store_root)
         evidence = read_record(record['analysis'], store_root, ANALYSIS_SCHEMA)
         base_fields = {'schema', 'analysis', 'original', 'model', 'transform'}
         if isinstance(evidence, dict) and 'projection_provenance' in evidence:
             _fields(evidence, base_fields | {'projection_provenance'}, 'note analysis')
-            _validate_projection_provenance(evidence['projection_provenance'])
+            _validate_projection_provenance(evidence['projection_provenance'], decoder)
         else:
             # Exact legacy v1 records remain valid; their base decoder provenance
             # was not retained and must not be inferred from the model profile.
+            # Every v2 record retains it.
+            if decoder != _decoder_v1.DECODER: raise PocketError('Note analysis lacks its decoder provenance')
             _fields(evidence, base_fields, 'legacy note analysis')
         _fields(evidence['analysis'], {'raw', 'projection'}, 'note analysis payload')
-        if canonical_bytes(evidence['transform']) != canonical_bytes(TRANSFORM) or evidence['original'] != record['original'] or evidence['model'] != record['model']:
+        if canonical_bytes(evidence['transform']) != canonical_bytes(DECODERS[decoder]['module'].TRANSFORM) or evidence['original'] != record['original'] or evidence['model'] != record['model']:
             raise PocketError('Note source/model/transform binding mismatch')
-        projection = _projection(evidence['analysis']['raw'], record['source'], read_bytes(record['original'], store_root), store_root)
+        projection = _projection(evidence['analysis']['raw'], record['source'], read_bytes(record['original'], store_root), store_root, decoder)
         if canonical_bytes(projection) != canonical_bytes(evidence['analysis']['projection']) or record['annotations'] != _annotations(record['analysis'], projection):
             raise PocketError('Note ledger/annotations differ from complete retained tensors')
         if record['parent'] is not None or type(record['revision_index']) is not int or record['revision_index'] != 0 or type(record['annotation_count']) is not int or record['annotation_count'] != len(record['annotations']):
@@ -498,6 +520,7 @@ def audio_note_hypotheses(*, store_root: str, request_id: str, source: AudioHypo
     """Retain uncertain note hypotheses from an explicit local source and model."""
     declaration = prepare_note_model(model=model, store_root=store_root)
     prepared = prepare_note_input(source=source, settings=settings, attribution=attribution, store_root=store_root)
+    decoder = decoder_for_settings(prepared['settings'])
     executed = False
     def work():
         nonlocal executed
@@ -507,10 +530,11 @@ def audio_note_hypotheses(*, store_root: str, request_id: str, source: AudioHypo
         retained = model['model'] if model['kind'] == 'inspected' else None
         model_handle, raw = _capture(declaration, 'none' if retained else 'synthetic_onnx_cpu_v1', store_root,
                                       (mono, prepared['source_metadata']['sample_rate']), retained)
-        projection = _projection(raw, prepared['source_metadata'], payload, store_root)
+        projection = _projection(raw, prepared['source_metadata'], payload, store_root, decoder)
         evidence = put_record({'schema': ANALYSIS_SCHEMA, 'analysis': {'raw': raw, 'projection': projection},
-                               'original': prepared['source_handle'], 'model': model_handle, 'transform': copy.deepcopy(TRANSFORM),
-                               'projection_provenance': _projection_provenance()}, store_root)
+                               'original': prepared['source_handle'], 'model': model_handle,
+                               'transform': copy.deepcopy(DECODERS[decoder]['module'].TRANSFORM),
+                               'projection_provenance': _projection_provenance(decoder)}, store_root)
         rows = _annotations(evidence, projection); _cancel()
         handle = put_record({'schema': SCHEMA, 'source': prepared['source_metadata'], 'original': prepared['source_handle'],
                              'analysis': evidence, 'model': model_handle, 'annotations': rows, 'parent': None,

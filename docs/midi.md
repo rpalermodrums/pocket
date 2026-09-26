@@ -466,8 +466,25 @@ to 22050 Hz uses soxr HQ and retains the resulting bytes separately.
 The complete settings are:
 
 ```json
-{"device":"cpu","dtype":"float32","threads":1,"downmix":"arithmetic_mean","resampler":"soxr_hq","decoder":"basic_pitch_0_4_0_false_false_v1","onset_threshold":0.5,"frame_threshold":0.3,"min_note_frames":11,"energy_tol":11,"infer_onsets":false,"melodia_trick":false}
+{"device":"cpu","dtype":"float32","threads":1,"downmix":"arithmetic_mean","resampler":"soxr_hq","decoder":"basic_pitch_0_4_0_false_false_v2","onset_threshold":0.5,"frame_threshold":0.3,"min_note_frames":11,"energy_tol":11,"infer_onsets":false,"melodia_trick":false}
 ```
+
+`decoder` chooses how many model frames are kept at the end of the region. Every
+other setting is the same for both decoders.
+
+- `basic_pitch_0_4_0_false_false_v2` is the one to use for new work. It keeps the
+  frames that the model's windows actually cover, as upstream Basic Pitch has
+  since commit e989e40 (#179). A note still sounding at the end of the region is
+  kept, ending at the region's end.
+- `basic_pitch_0_4_0_false_false_v1` keeps Basic Pitch 0.4.0's count, which stops
+  about 0.6% short of the region's end: 11 frames, or about 0.13 s, for a
+  20-second region. A note still sounding in that span can fall under the
+  12-frame minimum and be dropped entirely, not just shortened. It stays
+  supported so earlier records and requests replay exactly.
+
+Each record replays under the decoder its settings name. Relabeling a record as
+the other decoder is refused, because replaying its retained tensors gives a
+different ledger.
 
 This is a fixed, explicitly different decoder interpretation from the vendor's
 inferred-onset/energy-fill defaults. The narrow Apache-licensed decoder runs in
@@ -479,7 +496,8 @@ source decoding/downmix and retained resampling bytes; it does not rerun the
 optional soxr resampler or ONNX model.
 
 New analysis records separately retain the base decoder's NumPy/SciPy versions,
-projection-module hash, vendor source hash and replay semantics. Exact earlier
+its projection-module hash, the vendor source hash and replay semantics. Every v2
+record retains them. Exact earlier
 records remain readable with `projection_provenance_status="legacy_not_retained"`;
 they are not rewritten. Replay recomputes the complete ledger in the current base
 environment, without a blanket claim of numerical equivalence across versions.

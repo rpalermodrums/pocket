@@ -356,3 +356,30 @@ def test_note_region_worker_same_public_primitive_and_declared_mapping(note_fixt
     state = jobs.job_status(f['store_root'], submitted['job']['job_id'])
     assert state['state'] == 'completed'
     assert state['result'] == direct['artifacts']['hypotheses']
+
+
+@pytest.mark.parametrize('family', ['note', 'region'])
+def test_v2_decoder_jobs_commit_what_the_direct_call_does(note_fixture, monkeypatch, family):  # noqa: F811
+    from pocket_music.audio_note_hypotheses import DECODERS
+    f = note_fixture
+    f['settings'] = copy.deepcopy(DECODERS['basic_pitch_0_4_0_false_false_v2']['module'].SETTINGS)
+    captured = {}
+    def spawn(root, job_id, nonce, lease_fd):
+        captured.update(root=root, job_id=job_id, nonce=nonce, lease_fd=os.dup(lease_fd))
+    monkeypatch.setattr(jobs, '_spawn', spawn)
+    if family == 'note':
+        direct = make_note(f)
+        submitted = audio_note_submit(request_id='note-job', **args(f))
+    else:
+        arguments = {'store_root': f['store_root'], 'region': {'kind': 'inline', 'source': f['source']},
+                     'analysis': {'kind': 'learned_notes', 'model': f['model'], 'settings': f['settings']}, 'attribution': f['attribution']}
+        direct = audio_region_hypotheses(request_id='direct-region', **arguments)['artifacts']['hypotheses']
+        submitted = jobs.audio_region_submit(request_id='region-job', **arguments)
+    try:
+        jobs._run_worker(**captured)
+    finally:
+        try: os.close(captured['lease_fd'])
+        except OSError: pass
+    state = jobs.job_status(f['store_root'], submitted['job']['job_id'])
+    assert state['state'] == 'completed'
+    assert state['result'] == direct

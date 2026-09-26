@@ -12,6 +12,7 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 
 ### Added
 
+- Note hypotheses decoder `basic_pitch_0_4_0_false_false_v2`. It keeps the model frames the analysis windows cover, following upstream Basic Pitch commit e989e40 (#179), so a note still sounding at the end of a region is kept. The v1 decoder stops 11 frames (about 0.13 s) short of a 20-second region's end and can drop such a note entirely. **Migration:** set `settings.decoder` to the v2 value for new work. v1 settings are still accepted, and existing v1 records, requests and jobs replay exactly under v1; each record verifies only under the decoder it names. The v1 projection file is unchanged. The v2 projection is a new byte-pinned file, `audio_note_projection_v2.py`, listed in `NOTICE`. Restart a running MCP server to accept the new value.
 - `NOTICE`: which license applies to which files, the MIT notice for earlier versions, and third-party notices. It now includes Basic Pitch's upstream notice, which its Apache-2.0 license requires alongside the adapted decoder.
 - SPDX license identifiers at the top of source files. A test keeps new files labeled and keeps byte-pinned files (the decoder derivative, the model runners and the Max for Live devices) unchanged, so recorded identities, qualifications and native acceptance stay valid.
 - A draft [contributor license agreement](CLA.md), pending legal review and not yet in effect, and a CLA workflow that stays off until the maintainer enables it.

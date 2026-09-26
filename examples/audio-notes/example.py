@@ -29,7 +29,7 @@ START = 5513
 END = 38587
 SETTINGS = {'device': 'cpu', 'dtype': 'float32', 'threads': 1,
             'downmix': 'arithmetic_mean', 'resampler': 'soxr_hq',
-            'decoder': 'basic_pitch_0_4_0_false_false_v1',
+            'decoder': 'basic_pitch_0_4_0_false_false_v2',
             'onset_threshold': .5, 'frame_threshold': .3,
             'min_note_frames': 11, 'energy_tol': 11,
             'infer_onsets': False, 'melodia_trick': False}
