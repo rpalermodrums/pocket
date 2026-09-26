@@ -9,6 +9,7 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 - **Pocket is now licensed under the GNU Affero General Public License, version 3 only (AGPL-3.0-only)**, with [additional permissions](LICENSE-EXCEPTION.md) for output and for unmodified Pocket Max for Live devices shared inside musical projects. Using Pocket stays free, including commercially, and what you make with it is yours; a commercial license is available for closed products. [Licensing](LICENSING.md) explains the change in plain language. **0.4.0 is the last version released under the MIT License**, and copies of it and earlier versions keep that license. `examples/` and `skills/` stay MIT licensed.
 - The package version is now 0.5.0.dev0, so no AGPL-licensed build reports 0.4.0.
 - Package metadata now declares `License-Expression: AGPL-3.0-only AND Apache-2.0` (Pocket, plus the Apache-2.0 Basic Pitch decoder derivative) and ships `LICENSE`, `LICENSE-EXCEPTION.md`, `NOTICE` and the Basic Pitch license. Building requires setuptools 77 or later.
+- Baste releases every LiveAPI object it builds once each read's result is complete, whether the read succeeded or failed. The device clears each object's path and reads the path and `id` back, because an object that keeps its path keeps listeners armed in Live and slows structural edits in the open set. `pocket.live-observation/v1` records gain `live_objects_created`, `live_objects_released`, `release_elapsed_ms` and `release_error`; a shortfall leaves the disposition and observation unchanged and also writes a warning to the Max window. This hasn't been measured in Live yet, and the changed device needs native acceptance again. See [object lifetime](docs/baste.md#object-lifetime).
 
 ### Added
 
@@ -16,6 +17,7 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 - SPDX license identifiers at the top of source files. A test keeps new files labeled and keeps byte-pinned files (the decoder derivative, the model runners and the Max for Live devices) unchanged, so recorded identities, qualifications and native acceptance stay valid.
 - A draft [contributor license agreement](CLA.md), pending legal review and not yet in effect, and a CLA workflow that stays off until the maintainer enables it.
 - The website publishes the plain-language licensing page, the notices, the additional permissions and the draft agreement, and shows plain-text license files verbatim.
+- `examples/measure_baste_observations.py` records what a series of Baste observations costs the running Live process: read times, release counts, Live's memory and log growth, and timed track adds and deletes at chosen points, with an optional control series that keeps the same pacing but reads nothing. It writes numbers only.
 
 ## 0.4.0: last MIT-licensed version
 

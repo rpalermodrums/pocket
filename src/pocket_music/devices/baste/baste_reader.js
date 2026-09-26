@@ -1,11 +1,20 @@
 /* ES5 for Max's js runtime; also exercised unchanged in Node with a fake factory.
  * The factory's raw LiveAPI object never escapes the read-only facade.
- * No Live objects or observations survive readSession's stack frame.
+ * Every object the factory builds goes back to its release hook once the
+ * result is complete, on success or failure, so no Live objects or
+ * observations survive readSession's stack frame. The reader itself never
+ * writes to a Live object; releasing belongs to the caller.
  */
 var BasteReader = (function () {
     "use strict";
-    function readSession(factory, clock) {
-        var began = clock(), checks = [], objects = 0, reads = 0, phase = "traversal";
+    function readSession(factory, clock, release) {
+        if (typeof release !== "function") { throw new TypeError("readSession requires a release function"); }
+        var began = clock(), checks = [], opened = [], objects = 0, reads = 0, phase = "traversal";
+        function open(path, id) {
+            var raw = factory(path, id);
+            opened.push(raw);
+            return raw;
+        }
         function fail(code, path, property) {
             var err = new Error(code + ": " + path + (property ? " / " + property : ""));
             err.disposition = code;
@@ -19,7 +28,7 @@ var BasteReader = (function () {
         }
         function object(path, expectedId) {
             budget(); objects += 1;
-            var raw = factory(path, expectedId), id = Number(raw.id);
+            var raw = open(path, expectedId), id = Number(raw.id);
             if (!id || (expectedId && id !== expectedId)) { fail("path_invalid", path); }
             checks.push({path: path, id: id});
             return {
@@ -143,6 +152,7 @@ var BasteReader = (function () {
             return {path: path, runtime_id: t.id, name: text(t, "name"), kind: kind,
                 session_clips: session, arrangement_clips: arrangement, devices: devices(path, 0)};
         }
+        var result, built = 0, unreleased = 0, releaseError = null, releaseBegan;
         try {
             var song = object("live_set"), tracks = [], returns = [];
             var count = song.count("tracks"), returnCount = song.count("return_tracks");
@@ -180,7 +190,7 @@ var BasteReader = (function () {
             }
             for (var ownerPath in owners) {
                 budget();
-                var current = factory(ownerPath);
+                var current = open(ownerPath);
                 if (Number(current.id) !== known[ownerPath]) { fail("path_invalid", ownerPath); }
                 for (var property in owners[ownerPath]) {
                     var expected = owners[ownerPath][property];
@@ -197,13 +207,34 @@ var BasteReader = (function () {
                     }
                 }
             }
-            return {disposition: "ok", observation: {tracks: tracks, return_tracks: returns, main_track: main,
+            result = {disposition: "ok", observation: {tracks: tracks, return_tracks: returns, main_track: main,
                 objects_read: objects, property_reads: reads}, read_elapsed_ms: clock() - began};
         } catch (err) {
-            return {disposition: err.disposition || "path_invalid", observation: null,
+            result = {disposition: err.disposition || "path_invalid", observation: null,
                 error: String(err.message || err) + " (" + phase + "; objects=" + objects + "; reads=" + reads + ")",
                 read_elapsed_ms: clock() - began};
+        } finally {
+            // The result, identity validation included, is complete before any
+            // object is released, and nothing reads a raw object afterwards.
+            // Newest first. One failed release must not skip the rest or keep
+            // the reply from being sent.
+            releaseBegan = clock();
+            built = opened.length;
+            while (opened.length) {
+                try { release(opened.pop()); } catch (releaseFailure) {
+                    unreleased += 1;
+                    if (releaseError === null) { releaseError = releaseFailure; }
+                }
+            }
         }
+        // A shortfall is reported beside the result. The read was complete
+        // before release, so its disposition and observation stand.
+        result.live_objects_created = built;
+        result.live_objects_released = built - unreleased;
+        result.release_elapsed_ms = clock() - releaseBegan;
+        result.release_error = unreleased ? unreleased + " of " + built + " Live objects were not released: " +
+            String((releaseError && releaseError.message) || releaseError) : null;
+        return result;
     }
     return {readSession: readSession};
 }());

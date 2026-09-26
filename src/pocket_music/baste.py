@@ -142,9 +142,15 @@ def observe_live(*, timeout_seconds: float = 35, bridge_dir: str | None = None) 
                                      or not isinstance(observation.get("return_tracks"), list)
                                      or not isinstance(observation.get("main_track"), dict)):
             raise PocketError("Incomplete Baste observation")
+        # Release counts describe the device's cleanup of its own LiveAPI objects,
+        # reported for failures too. A shortfall leaves the observation intact.
         return finish(disposition, observation=observation if disposition == "ok" else None,
                       read_started_at=record.get("read_started_at"), read_ended_at=record.get("read_ended_at"),
-                      read_elapsed_ms=record.get("read_elapsed_ms"), error=record.get("error"))
+                      read_elapsed_ms=record.get("read_elapsed_ms"), error=record.get("error"),
+                      live_objects_created=record.get("live_objects_created"),
+                      live_objects_released=record.get("live_objects_released"),
+                      release_elapsed_ms=record.get("release_elapsed_ms"),
+                      release_error=record.get("release_error"))
     except TimeoutError:
         return finish("observation_timeout")
     except (OSError, ValueError, PocketError, http.client.HTTPException) as exc:
