@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real CLI/stdio transports with a synthetic Max bridge, never native acceptance."""
 from __future__ import annotations
 

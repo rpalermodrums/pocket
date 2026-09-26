@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable, attributed phrase graphs over exact material revisions.
 
 This provider records boundaries and relationships; it does not infer motif

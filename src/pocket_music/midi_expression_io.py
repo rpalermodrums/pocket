@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Exact SMF serialization of recomputed declared expression plans.
 
 This profile deliberately has one clip/track and no receiver setup authority.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable local catalogues; attributed annotation is not measured sound."""
 from __future__ import annotations
 

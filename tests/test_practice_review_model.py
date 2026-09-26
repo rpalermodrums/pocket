@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Run the page's pure review-state tests under Node when it is available (CI provides it)."""
 import shutil
 import subprocess

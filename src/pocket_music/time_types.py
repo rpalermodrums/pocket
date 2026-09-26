@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict transport schemas for exact, declared musical clock mappings."""
 from __future__ import annotations
 

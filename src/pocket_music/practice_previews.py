@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Declared browser previews of exact practice renders.
 
 A preview is a separately identified derivative for a browser player, never a

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent learned-pulse protocol and evidence adversaries; no optional inference."""
 import copy
 import hashlib

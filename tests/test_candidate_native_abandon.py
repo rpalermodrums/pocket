@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Permanent supervised abandonment; native closure helpers are explicit fakes."""
 import copy
 import json

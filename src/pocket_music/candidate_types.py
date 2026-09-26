@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Transport contracts for supervised native candidates; no host driver."""
 from typing import Literal, NotRequired
 

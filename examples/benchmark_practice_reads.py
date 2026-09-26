@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Measure verified practice reads on generated fixtures; changes no algorithm.
 
 Run: python examples/benchmark_practice_reads.py /path/to/new/private-directory

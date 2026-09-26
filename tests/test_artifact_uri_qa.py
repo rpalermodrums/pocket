@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent canonical artifact URI and unchanged integrity checks."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Literal context edits and explicit protected fields; no implicit linked selection."""
 from typing import Literal
 

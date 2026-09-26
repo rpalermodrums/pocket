@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional, local stdio adapter. All tools call the public library functions."""
 
 from __future__ import annotations

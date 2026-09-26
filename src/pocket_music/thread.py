@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Thread: read saved Live 12 intent without changing projects or executing devices."""
 from __future__ import annotations
 

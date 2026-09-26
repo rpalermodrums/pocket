@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent preservation adversaries; all project data is generated here."""
 from __future__ import annotations
 

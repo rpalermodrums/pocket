@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Whisker: offline next-record proposals and immutable, compare-and-swap session history.
 
 Heuristics use attributed annotations; they do not certify a musical transition.

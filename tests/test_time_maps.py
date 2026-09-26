@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent rational clock fixtures; no native clocks or listening are implied."""
 from __future__ import annotations
 

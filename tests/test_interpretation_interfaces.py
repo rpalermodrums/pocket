@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real transports share interpretation providers, typed contracts and failures."""
 import asyncio
 import importlib.util

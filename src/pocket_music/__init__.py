@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Pocket: evidence-linked musical tools with lazy, offline-capable providers."""
 import sys
 from importlib import import_module
 from types import ModuleType
 
-__version__ = "0.4.0"
+__version__ = "0.5.0.dev0"
 
 # Importing Pocket does not load a model, contact a service, or start a workspace.
 _PUBLIC = {

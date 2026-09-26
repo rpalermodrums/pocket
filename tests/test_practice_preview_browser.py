@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional decoder qualification: Chromium recovers the exact PCM16 integers in declared previews.
 
 This establishes the encoded input a browser player receives for each declared

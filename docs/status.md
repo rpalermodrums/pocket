@@ -1,9 +1,11 @@
 # Status and direction
 
-Pocket is open source (MIT), public and in early development. The package
-version is 0.4.0. The [changelog](../CHANGELOG.md) separates development
-milestones from published releases. Pocket hasn't been published to a package
-index yet, so install it from a checkout, as described in
+Pocket is open source under the AGPL ([licensing](../LICENSING.md)), public and
+in early development. The package version is 0.5.0.dev0, a development version;
+0.4.0 was the last version released under the MIT License. The
+[changelog](../CHANGELOG.md) separates development milestones from published
+releases. Pocket hasn't been published to a package index yet, so install it
+from a checkout, as described in
 [your first experiment](getting-started.md). Its distribution name is
 `pocket-music`. The package called `pocket` on PyPI is an unrelated project.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual transports for an explicit material amendment; no native acceptance claim."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Per-note attributed harmonic alternatives remain explicit symbolic edits."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Adapter owner checks: actual loopback transport and independent saved XML binding."""
 from __future__ import annotations
 

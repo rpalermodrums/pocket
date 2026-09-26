@@ -12,7 +12,7 @@ whatever your music needs.
 [Run your first experiment](../docs/getting-started.md){: .primary-link }
 [Learn the key ideas](../docs/concepts.md){: .secondary-link }
 
-<p class="hero-meta">Python 3.11+ · Command line · MCP · MIT licensed · Early development</p>
+<p class="hero-meta">Python 3.11+ · Command line · MCP · Free and open source (AGPL) · Early development</p>
 </div>
 <div class="hero-art"><img src="assets/pip.svg" width="300" height="300" alt=""></div>
 </div>

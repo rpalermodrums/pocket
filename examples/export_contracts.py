@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Generate installed Python/CLI/MCP contracts into a new local documentation folder.
 
 Requires the optional agent extra. It uses actual MCP discovery and the shared

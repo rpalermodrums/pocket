@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent request/status/promotion integration QA; generated local evidence only."""
 from __future__ import annotations
 

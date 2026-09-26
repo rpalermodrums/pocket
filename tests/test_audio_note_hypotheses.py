@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic protocol fixtures; mocks establish no model or musical qualification."""
 import copy
 import hashlib

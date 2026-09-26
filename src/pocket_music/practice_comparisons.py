@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Cross-revision comparisons with explicit edit ancestry and full occurrence pairs."""
 from __future__ import annotations
 

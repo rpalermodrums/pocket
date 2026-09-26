@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Per-call verified-read snapshots: reuse inside one public call, never across calls or stores."""
 import copy
 import shutil

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional local learned-pulse inspection and immutable uncertain evidence.
 
 Base imports never load torch. The owned subprocess receives explicit inherited

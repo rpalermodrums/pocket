@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent revoicing expectations; no native or musical acceptance implied."""
 import asyncio
 import copy

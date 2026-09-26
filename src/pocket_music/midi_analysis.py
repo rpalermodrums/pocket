@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded symbolic measurements, kept separate from listening and musical judgment."""
 from __future__ import annotations
 

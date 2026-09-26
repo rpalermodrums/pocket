@@ -1,3 +1,4 @@
+{# SPDX-License-Identifier: AGPL-3.0-only #}
 <!doctype html>
 <html lang="en">
 <head>
@@ -78,7 +79,7 @@
   {%- endblock %}
   <footer class="site-footer">
     <div class="footer-brand"><img src="{{ 'assets/pip.svg' | url }}" width="36" height="36" alt=""><p><strong>Pocket</strong>: composable tools for music, for people and their agents. Open source, early development.</p></div>
-    <p class="footer-links"><a href="{{ 'CONTRIBUTING/' | url }}">Contribute</a> <a href="{{ 'CODE_OF_CONDUCT/' | url }}">Conduct</a> <a href="{{ 'SECURITY/' | url }}">Security</a> <a href="{{ 'license/' | url }}">MIT license</a> <a href="https://github.com/rpalermodrums/pocket">GitHub</a></p>
+    <p class="footer-links"><a href="{{ 'CONTRIBUTING/' | url }}">Contribute</a> <a href="{{ 'CODE_OF_CONDUCT/' | url }}">Conduct</a> <a href="{{ 'SECURITY/' | url }}">Security</a> <a href="{{ 'licensing/' | url }}">AGPL license</a> <a href="https://github.com/rpalermodrums/pocket">GitHub</a></p>
     <p class="build-info">{% if config.extra.dirty %}Local preview · {% endif %}Package {{ config.extra.package_version }} · <a href="https://github.com/rpalermodrums/pocket/tree/{{ config.extra.revision }}">Source {{ config.extra.revision[:8] }}</a> · <a href="{{ 'publication-manifest.json' | url }}">Build manifest</a></p>
   </footer>
 </main>

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent code-review regressions for the selected-note extension boundary."""
 from __future__ import annotations
 

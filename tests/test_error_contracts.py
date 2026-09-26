@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Opt-in transport errors retain legacy behavior and stable machine dispositions."""
 import asyncio
 import importlib.util

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Owned optional note workers using the existing revisioned job engine."""
 from __future__ import annotations
 

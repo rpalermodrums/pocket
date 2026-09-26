@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent note integration and shared worker publication boundaries."""
 import builtins
 import copy

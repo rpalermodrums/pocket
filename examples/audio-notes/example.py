@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Explicit local note hypotheses; synthetic protocol example, never an audition."""
 from __future__ import annotations
 

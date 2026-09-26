@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Durable-before-capture jobs, cooperative block cancellation and strict v3 proof."""
 import copy
 import hashlib

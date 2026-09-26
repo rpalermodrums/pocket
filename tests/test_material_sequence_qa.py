@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent exact placement, parent retention and refusal expectations."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent real worker completion and public CLI/stdio cancellation boundaries."""
 from __future__ import annotations
 

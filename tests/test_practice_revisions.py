@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable edit ancestry and exact correspondence, independently checked output samples."""
 import copy
 import io

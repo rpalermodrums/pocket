@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional isolated runtime entry point. No remote requests or auto-downloads."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Exercise public practice tools on explicit passages in a local recording.
 
 All artifacts and measurements go to a new destination outside the repository.

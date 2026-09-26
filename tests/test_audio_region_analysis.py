@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Public region composition and exact original coordinates, without inferred musical truth."""
 import builtins
 import hashlib

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent supervised abandonment with actual providers and synthetic LiveAPI."""
 import json
 import shutil

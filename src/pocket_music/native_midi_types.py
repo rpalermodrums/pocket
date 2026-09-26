@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict transport inputs for the separate native MIDI adapter."""
 from typing import Literal, NotRequired
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """File-based, supervised MIDI candidate lifecycle, isolated from Stitch v2.
 
 No function in this module controls Live. Native reports are attributed evidence,

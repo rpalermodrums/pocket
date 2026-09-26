@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent ownership/publication attacks on queued region capture."""
 import hashlib
 import json

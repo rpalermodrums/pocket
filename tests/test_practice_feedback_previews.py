@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Preview-aware reports: exact heard preview, parent render membership and unchanged v1 records."""
 import copy
 import shutil

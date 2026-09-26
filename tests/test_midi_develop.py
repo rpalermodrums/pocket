@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Motif choices preserve fixed material and compose real public providers."""
 import copy
 import importlib

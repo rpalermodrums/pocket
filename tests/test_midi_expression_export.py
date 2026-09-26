@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Expression serialization boundaries and source/plan preservation."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional offline CLAP evidence. Importing this module does not load torch.
 
 Only independently acquired local audio and user-authored text are eligible.

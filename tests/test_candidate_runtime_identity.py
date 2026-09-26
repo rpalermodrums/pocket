@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Full retained reader graph tests. Fake Max transport is not native acceptance."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable literal context revisions with replayable preservation evidence."""
 from __future__ import annotations
 

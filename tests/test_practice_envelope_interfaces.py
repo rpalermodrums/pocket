@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real CLI and MCP use the same declared join provider and closed nested shape."""
 import asyncio
 import importlib.util

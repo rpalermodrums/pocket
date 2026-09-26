@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent role expectations for a pure seven-leaf metadata predicate."""
 import copy
 import xml.etree.ElementTree as ET

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent final-material QA: exact edits and relocated evidence validation."""
 import copy
 import gzip

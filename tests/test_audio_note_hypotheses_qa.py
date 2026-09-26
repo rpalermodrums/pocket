@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent synthetic decoder/projection expectations; no optional model runtime."""
 import copy
 from fractions import Fraction

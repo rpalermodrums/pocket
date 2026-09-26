@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable, rational-time musical material; independent of any DAW or instrument."""
 from __future__ import annotations
 

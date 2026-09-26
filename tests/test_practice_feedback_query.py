@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Scoped contradictory reports remain attributed facts, without inferred preference."""
 import builtins
 from pathlib import Path

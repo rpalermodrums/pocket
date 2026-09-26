@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Opt-in machine error envelope; legacy messages, exception type and exit codes stay intact."""
 from __future__ import annotations
 

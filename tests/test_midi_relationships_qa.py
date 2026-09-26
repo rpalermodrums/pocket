@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent hand-expected F3 relationships; no native or listening evidence."""
 from __future__ import annotations
 

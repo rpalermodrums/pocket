@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional browser checks for the practice review screen in headless Chromium.
 
 Skipped unless Playwright and a Chromium build are available. These drive the real

@@ -91,6 +91,8 @@ Each of these needs its own setup and is never used unless you ask for it.
   notes for [0.4](releases/0.4.0.md) and [0.2](releases/0.2.0.md).
 - [Contributing](../CONTRIBUTING.md), [code of conduct](../CODE_OF_CONDUCT.md)
   and [security](../SECURITY.md).
+- [Licensing](../LICENSING.md): Pocket is free to use, including commercially,
+  and your music is yours.
 - [Maintaining the website](site-maintenance.md).
 
 Runnable examples live in [`examples/`](https://github.com/rpalermodrums/pocket/tree/main/examples). They generate their own

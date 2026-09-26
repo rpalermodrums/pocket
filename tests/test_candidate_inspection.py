@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Workspace inspection is a bounded current summary with explicit history pages."""
 from __future__ import annotations
 

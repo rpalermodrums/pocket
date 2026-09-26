@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent synthetic feedback retrieval QA; no actual export or listening evidence."""
 import copy
 import hashlib

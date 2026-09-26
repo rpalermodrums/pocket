@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Peek: bounded, deterministic source evidence; never a downbeat or key authority."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Pure practice-review page rules: drafts never retarget, playback never reports.
 import assert from "node:assert/strict";
 import test from "node:test";

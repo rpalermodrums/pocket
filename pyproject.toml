@@ -1,13 +1,17 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pocket-music"
-version = "0.4.0"
+version = "0.5.0.dev0"
 description = "The musical toolkit for agents: composable tools for recordings, MIDI and arrangements."
 requires-python = ">=3.11"
 readme = "README.md"
+# Pocket, plus the Apache-2.0 Basic Pitch decoder derivative. The section 7 permissions in
+# LICENSE-EXCEPTION.md only add rights; packaging tools reject custom SPDX exception identifiers.
+license = "AGPL-3.0-only AND Apache-2.0"
+license-files = ["LICENSE", "LICENSE-EXCEPTION.md", "NOTICE", "src/pocket_music/basic_pitch_LICENSE.txt"]
 dependencies = ["numpy>=1.26,<3", "scipy>=1.12,<2", "soundfile>=0.12,<1", "typing_extensions>=4.9,<5"]
 
 [project.optional-dependencies]

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Deterministic catalog transfer; no streaming, recommendations or model ingestion."""
 
 from __future__ import annotations

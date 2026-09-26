@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded capability discovery. Descriptors never dispatch an operation."""
 from __future__ import annotations
 

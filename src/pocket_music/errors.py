@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 class PocketError(ValueError):
     """An invalid request, retaining its legacy message with an optional stable code."""
 

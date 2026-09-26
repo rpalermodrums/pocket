@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Reusable decoded-signal evidence, independent of native candidates and hosts."""
 import math
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent real CLI and stdio MCP parity, including invalid-request behavior."""
 import asyncio
 import copy

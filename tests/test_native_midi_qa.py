@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent native-adapter QA against fake LiveAPI and actual local transports.
 
 No test controls Live, claims native acceptance, or supplies private music.
