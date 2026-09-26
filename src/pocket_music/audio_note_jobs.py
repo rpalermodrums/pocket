@@ -37,14 +37,13 @@ def validate_note_job_arguments(record, root):
     """Validate v4 immutable source and settings, without optional execution."""
     from .assets import identify_audio
     from .audio_hypotheses import _attribution, _fields, _source
-    from .audio_note_hypotheses import SETTINGS, validate_note_source_bytes
+    from .audio_note_hypotheses import decoder_for_settings, validate_note_source_bytes
 
     args = record['arguments']
     _fields(args, {'source', 'settings', 'attribution', 'model'}, 'note job arguments')
     _source(args['source'], {'bpm_hint': None, 'beats_per_bar': 4})
     _attribution(args['attribution'])
-    if canonical_bytes(args['settings']) != canonical_bytes(SETTINGS):
-        raise PocketError('Unsupported retained note settings')
+    decoder_for_settings(args['settings'], 'Unsupported retained note settings')
     source, handle = args['source'], record['source']
     if (not isinstance(handle, dict) or handle.get('artifact_schema') != 'pocket.audio-source-bytes/v1'
             or source['expected_sha256'] != handle.get('sha256')

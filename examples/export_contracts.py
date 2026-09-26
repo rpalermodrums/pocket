@@ -16,7 +16,7 @@ from pathlib import Path
 
 from pocket_music import __version__
 from pocket_music.capabilities import PUBLIC_CAPABILITIES
-from pocket_music.error_contracts import JSON_SCHEMA
+from pocket_music.error_contracts import JSON_SCHEMA, JSON_SCHEMA_V3
 from pocket_music.mcp_server import build_server
 
 
@@ -42,8 +42,11 @@ async def build_contracts():
             'scope': 'All registered composable provider Python/flat-CLI/MCP bindings; complete MCP discovery also includes legacy branded tools and aliases.',
             'http': {'implemented': False, 'openapi': None},
             'registered_providers': registered, 'mcp_tools': manifest, 'error_envelope_v2': JSON_SCHEMA,
+            'error_envelope_v3': JSON_SCHEMA_V3,
             'errors': {'legacy_default': True, 'cli_v2': 'Global --error-format v2; dispatch errors only; exit 2 remains unchanged.',
                        'mcp_v2': 'POCKET_ERROR_FORMAT=v2 opts registered strict providers into JSON tool-error text. Legacy branded tools retain their established SDK errors.',
+                       'cli_v3': 'Global --error-format v3; the v2 fields plus an optional corrective hint. Exit 2 remains unchanged.',
+                       'mcp_v3': 'POCKET_ERROR_FORMAT=v3 adds the optional hint to the same registered strict providers. v2 and legacy output are unchanged.',
                        'successful_receipts': 'Unchanged pocket.operation-receipt/v1; no retry or native-outcome inference.'}}
 
 
@@ -53,7 +56,8 @@ def export_contracts(destination: Path):
     data = asyncio.run(build_contracts())
     destination.mkdir(parents=True, exist_ok=False)
     files = {'installed-contracts.json': data, 'mcp-tools.json': data['mcp_tools'],
-             'python-cli.json': data['registered_providers'], 'error-v2.schema.json': data['error_envelope_v2']}
+             'python-cli.json': data['registered_providers'], 'error-v2.schema.json': data['error_envelope_v2'],
+             'error-v3.schema.json': data['error_envelope_v3']}
     for name, value in files.items():
         (destination/name).write_text(json.dumps(value, indent=2)+'\n')
     manifest = [{'path': name, 'sha256': hashlib.sha256((destination/name).read_bytes()).hexdigest()} for name in files]

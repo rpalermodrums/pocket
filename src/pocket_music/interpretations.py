@@ -42,10 +42,14 @@ def _evidence(evidence, source_handle, store_root):
     text(evidence["annotation_id"], "annotation_id", 240)
     hypotheses = evidence["hypotheses"]
     if not isinstance(hypotheses, dict) or evidence["expected_revision"] != hypotheses.get("sha256"):
-        raise PocketError("Stale interpretation evidence revision", code="stale_revision")
+        raise PocketError("Stale interpretation evidence revision", code="stale_revision",
+                          hint="Pass the hypotheses handle you chose annotation_id from, with expected_revision "
+                               "set to that handle's sha256.")
     wrapper = load_audio_region_hypotheses(hypotheses, store_root)
     if wrapper["region"] != source_handle:
-        raise PocketError("Interpretation evidence belongs to another source or crop", code="source_mismatch")
+        raise PocketError("Interpretation evidence belongs to another source or crop", code="source_mismatch",
+                          hint="Use hypotheses of the exact region that source_clock_id names in this context; "
+                               'context_query with section "sources" shows that region.')
     selected, superseded, cursor = None, set(), None
     for _ in range(4097):  # Provider enforces 4096 retained annotations; each page must advance.
         result = audio_region_query(store_root=store_root, hypotheses=hypotheses, view="annotations",
@@ -65,7 +69,9 @@ def _evidence(evidence, source_handle, store_root):
     if selected is None:
         raise PocketError("Annotation does not belong to the specified evidence revision")
     if evidence["annotation_id"] in superseded:
-        raise PocketError("Selected annotation is superseded in this evidence revision", code="stale_revision")
+        raise PocketError("Selected annotation is superseded in this evidence revision", code="stale_revision",
+                          hint='audio_region_query with view "annotations" shows which annotation supersedes it; '
+                               "choose annotation_id from that revision.")
     return selected
 
 
@@ -184,7 +190,9 @@ def _anchor(binding, interpretation, author):
         raise PocketError("Only a resolved point interpretation can bind an anchor")
     frame = fraction(claim["source_frame_q"])
     if frame.denominator != 1:
-        raise PocketError("Context anchor requires an exact integer frame; retain fractional evidence as a selection", code="unsupported_profile")
+        raise PocketError("Context anchor requires an exact integer frame; retain fractional evidence as a selection", code="unsupported_profile",
+                          hint='Bind this interpretation with binding kind "selection". An anchor needs an integer '
+                               "source frame, and Pocket doesn't round.")
     return {"anchor_id": binding["anchor_id"], "label": binding["label"], "kind": claim["kind"],
             "position": {"clock_id": interpretation["source_clock_id"], "space": "source_frame", "value": frame.numerator},
             "attribution": copy.deepcopy(author)}

@@ -104,7 +104,8 @@ def pcm16_wav(values, sample_rate):
 def _parent(render, store_root):
     if not isinstance(render, dict) or render.get("artifact_schema") not in PARENT_SCHEMAS:
         raise PocketError("A preview requires an exact practice render or join-envelope render; "
-                          "previews, comparisons and reports are not preview parents", code="unsupported_profile")
+                          "previews, comparisons and reports are not preview parents", code="unsupported_profile",
+                          hint="Pass as render the render handle from practice_render or practice_envelope.")
     return load_practice_audio(render, store_root)
 
 
@@ -170,7 +171,8 @@ def practice_preview(store_root: str, request_id: str, render: ArtifactHandle,
     def work():
         if profile != PROFILE:
             raise PocketError("Unknown preview profile; alternative encodings need their own profile",
-                              code="unsupported_profile")
+                              code="unsupported_profile",
+                              hint=f'Pass profile "{PROFILE}", the only preview profile.')
         parent = _parent(render, store_root)
         payload, described, stats, measured = _encode(parent, store_root)
         audio = put_bytes(payload, store_root, "preview.wav", AUDIO_SCHEMA)

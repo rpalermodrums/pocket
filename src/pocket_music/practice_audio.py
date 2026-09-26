@@ -89,7 +89,10 @@ def _sequence(context, occurrence_ids, store_root):
             step_end = fraction(tempo[index + 1]["at_qn"]) if index + 1 < len(tempo) else end_qn
             if (max(begin_qn, step_start) < min(end_qn, step_end)
                     and frames_per_qn != 60 * rate / fraction(step["bpm"])):
-                raise PocketError("Authored occurrence requires time stretch; exact PCM profile refuses it", code="unsupported_profile")
+                raise PocketError("Authored occurrence requires time stretch; exact PCM profile refuses it", code="unsupported_profile",
+                                  hint="Give each rendered occurrence a timeline_span_qn that lasts exactly as long "
+                                       "as its source_span_frames at the tempo in effect over that span. This "
+                                       "profile never time-stretches.")
         mappings.append({"occurrence_id": occurrence["occurrence_id"],
                          "source_clock_id": occurrence["source_clock_id"],
                          "source_sha256": original["sha256"], "source_span_frames": [start, end],
@@ -253,7 +256,9 @@ def _reviewed_preview(preview, render, store_root):
     from .practice_previews import load_practice_preview
     record, _ = load_practice_preview(preview, store_root)
     if canonical_bytes(record["parent"]) != canonical_bytes(render):
-        raise PocketError("Feedback preview is not the selected render's preview", code="source_mismatch")
+        raise PocketError("Feedback preview is not the selected render's preview", code="source_mismatch",
+                          hint="Pass a preview that practice_preview made from this render, or omit preview to "
+                               "report on the render itself.")
     return record
 
 

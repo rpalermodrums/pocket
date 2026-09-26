@@ -39,7 +39,7 @@ class AudioNoteSettings(TypedDict):
     threads: Literal[1]
     downmix: Literal['arithmetic_mean']
     resampler: Literal['soxr_hq']
-    decoder: Literal['basic_pitch_0_4_0_false_false_v1']
+    decoder: Literal['basic_pitch_0_4_0_false_false_v1', 'basic_pitch_0_4_0_false_false_v2']
     onset_threshold: Literal[0.5]
     frame_threshold: Literal[0.3]
     min_note_frames: Literal[11]

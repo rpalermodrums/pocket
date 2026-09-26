@@ -2,7 +2,8 @@
 
 > **In brief.** Every Pocket provider has a machine-readable contract: its Python
 > signature, its CLI command and its MCP input schema. You can export them all,
-> opt into structured errors, and retry safely after something goes wrong.
+> opt into structured errors that say how to fix a refused call, and retry safely
+> after something goes wrong.
 
 Python, flat CLI commands and registered MCP tools call the same providers,
 listed in `PUBLIC_CAPABILITIES`. Discover supported artifact schemas and
@@ -19,8 +20,8 @@ python examples/export_contracts.py private/contracts
 ```
 
 The export includes Python signatures, CLI commands, actual MCP input schemas,
-the complete MCP manifest (including legacy tools), the optional error schema,
-and file hashes. It reads discovery without invoking providers or a DAW. Output
+the complete MCP manifest (including legacy tools), the optional v2 and v3 error
+schemas, and file hashes. It reads discovery without invoking providers or a DAW. Output
 receipts remain dynamic dictionaries: this export does not invent closed output
 schemas. Existing destinations are refused so earlier contracts remain intact.
 
@@ -29,15 +30,35 @@ schemas. Existing destinations are refused so earlier contracts remain intact.
 The original plain-text errors remain the default. For registered providers, opt in to structured errors with:
 
 ```sh
-pocket --error-format v2 context-query --spec arguments.json
-POCKET_ERROR_FORMAT=v2 pocket-mcp
+pocket --error-format v3 context-query --spec arguments.json
+POCKET_ERROR_FORMAT=v3 pocket-mcp
 ```
 
-The envelope contains `schema: pocket.error/v2`, `code`, `error` (exception class)
-and the unchanged `message`. CLI errors still exit 2; successful receipts are
-unchanged. CLI argument-parser usage errors and legacy branded MCP tools retain
-their established error handling. MCP v2 envelopes are JSON text in tool errors,
-not successful structured outputs.
+The v2 envelope contains `schema: pocket.error/v2`, `code`, `error` (exception class)
+and the unchanged `message`. The v3 envelope, `schema: pocket.error/v3`, has the
+same fields plus an optional `hint`: a sentence or two that names the argument to
+supply or the call to make first. Here is a cue inside a passage that plays twice:
+
+```json
+{"schema": "pocket.error/v3", "code": "ambiguous_mapping", "error": "PocketError",
+ "message": "Ambiguous repeated passage; supply occurrence_id",
+ "hint": "Name the occurrence with occurrence_id; context_query with section \"occurrences\" lists them."}
+```
+
+A hint comes from the place that refused or from the error's code, never from the
+message's wording. It says what to change. It doesn't promise that a retry will
+succeed, and it never implies an approval or a
+[native](concepts.md#working-with-ableton-live) outcome. On MCP, when a value
+fails the input schema, the hint names that argument, because the schema error
+itself doesn't. When a write fails after it has started, Pocket records its request
+ID as failed, and the hint adds that the corrected call needs a new request ID.
+Most unclassified `invalid_request` errors have no hint; one appears only where the
+place that refused has specific guidance.
+
+CLI errors still exit 2; successful receipts are unchanged. CLI argument-parser
+usage errors and legacy branded MCP tools retain their established error handling.
+MCP v2 and v3 envelopes are JSON text in tool errors, not successful structured
+outputs.
 
 Codes distinguish invalid requests/arguments, I/O failures, request-ID conflicts,
 incomplete requests, stale revisions, source mismatch, ambiguous mappings,
@@ -45,12 +66,22 @@ unsupported profiles, locked fields and evidence mismatch. Specific codes come
 from explicit failure sites, never guesses from message wording. Unclassified
 provider failures remain `invalid_request`; no retry guarantee is implied.
 
+### Moving from v2 to v3
+
+The v2 schema forbids extra fields, so adding a hint to it would break a strict v2
+reader. Hints therefore arrive as a new version. v2 and the legacy format stay
+exactly as they were, byte for byte, and remain supported. To move, change `v2` to
+`v3` and accept one optional `hint` string. Every other field keeps its meaning,
+and the codes are the same. `--error-format` and `POCKET_ERROR_FORMAT` refuse any
+value other than `legacy`, `v2` or `v3`.
+
 ## Recovery
 
 1. Retain the request ID, exact input handles and error. Read request status using
    the existing journal/status surface before retrying an interrupted operation.
 2. An identical successful request replays a reverified receipt. Changed inputs
-   require a new request ID. Never remove a lock to manufacture successful replay.
+   require a new request ID, and so does a corrected call after a write failed.
+   Never remove a lock to manufacture successful replay.
 3. Resolve stale revisions against an exact retained revision; identify the source
    clock or occurrence when mapping is ambiguous. Do not round or guess a cue.
 4. A failed artifact check needs intact retained evidence. Relocate the complete

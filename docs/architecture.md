@@ -59,8 +59,8 @@ Pocket stands on a small set of dependencies, each chosen for a specific job:
   (learned pulse), [Basic Pitch](https://github.com/spotify/basic-pitch) (note
   hypotheses) and [LAION CLAP](https://huggingface.co/laion/clap-htsat-unfused)
   (music embeddings) in separate environments you set up yourself. Pocket's
-  note decoder adapts part of Basic Pitch under its Apache-2.0 license, which is
-  bundled alongside it.
+  note decoders adapt part of Basic Pitch under its Apache-2.0 license, which is
+  bundled alongside them.
 
 Core tests generate their own material. Third-party recordings and model
 weights are never test fixtures in Git.

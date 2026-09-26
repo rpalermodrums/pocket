@@ -49,7 +49,8 @@ def _gains(parent, joins):
         out = integer(join["fade_out_frames"], "fade_out_frames", 1, rate // 4)
         into = integer(join["fade_in_frames"], "fade_in_frames", 1, rate // 4)
         if join["curve"] != "linear":
-            raise PocketError("Only an explicit linear join envelope is supported", code="unsupported_profile")
+            raise PocketError("Only an explicit linear join envelope is supported", code="unsupported_profile",
+                              hint='Set each join\'s curve to "linear", the only supported join envelope.')
         if boundary not in boundaries:
             raise PocketError("Envelope boundary must be an actual occurrence join")
         start, end = boundary - out, boundary + into
@@ -137,7 +138,8 @@ def _comparison(baseline, variants, question, store_root):
     original = load_practice_render(baseline, store_root)
     processed = [load_practice_envelope(h, store_root) for h in variants]
     if any(r["parent_render"] != baseline for r in processed):
-        raise PocketError("Processed comparison requires derivatives of its exact baseline", code="source_mismatch")
+        raise PocketError("Processed comparison requires derivatives of its exact baseline", code="source_mismatch",
+                          hint="Pass as baseline the render that practice_envelope made every variant from.")
     return [original, *processed]
 
 

@@ -270,10 +270,9 @@ def _validate_region_job_arguments(record, root):
         validate_peek({'path': 'retained-region', 'expected_sha256': '0'*64, 'start_frame': 0,
                        'frames': 1, 'source_origin': 'independently_acquired'}, analysis['settings'])
     elif analysis['kind'] == 'learned_notes':
-        from .audio_note_hypotheses import SETTINGS
+        from .audio_note_hypotheses import decoder_for_settings
         from .audio_note_jobs import validate_retained_note_model
-        if canonical_bytes(analysis['settings']) != canonical_bytes(SETTINGS):
-            raise PocketError('Unsupported region learned note settings')
+        decoder_for_settings(analysis['settings'], 'Unsupported region learned note settings')
         validate_retained_note_model(analysis['model'], root)
     else:
         from .audio_pulse_hypotheses import SETTINGS

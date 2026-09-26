@@ -24,8 +24,10 @@ additional permissions in LICENSE-EXCEPTION.md, except:
 
 - examples/ and skills/ are licensed under the MIT License. The MIT notice
   below applies to them, with "Software" meaning those files.
-- src/pocket_music/audio_note_projection.py adapts part of Basic Pitch 0.4.0.
-  Spotify AB's portions are licensed under the Apache License, Version 2.0
+- src/pocket_music/audio_note_projection.py adapts part of Basic Pitch 0.4.0,
+  and src/pocket_music/audio_note_projection_v2.py adapts the same part plus
+  the retained-frame count from Basic Pitch commit e989e40. Spotify AB's
+  portions are licensed under the Apache License, Version 2.0
   (src/pocket_music/basic_pitch_LICENSE.txt); Pocket's changes are licensed
   under AGPL-3.0-only. Basic Pitch's notice is reproduced below.
 - assets/fonts/ contains the Atkinson Hyperlegible Next font, licensed under
@@ -38,11 +40,12 @@ are part of a recorded identity, where adding a line would invalidate existing
 records, qualifications or native acceptance. Those are:
 
 - src/pocket_music/audio_note_projection.py (see above)
+- src/pocket_music/audio_note_projection_v2.py (see above)
 - src/pocket_music/audio_model_runner.py
 - src/pocket_music/audio_note_runner.py
 - every file in src/pocket_music/devices/
 
-Apart from the Basic Pitch derivative, they are licensed under AGPL-3.0-only
+Apart from the Basic Pitch derivatives, they are licensed under AGPL-3.0-only
 like the rest of the core.
 
 
@@ -90,8 +93,10 @@ Third-party notices
 
 Basic Pitch (https://github.com/spotify/basic-pitch) is licensed under the
 Apache License, Version 2.0. src/pocket_music/audio_note_projection.py is
-adapted from its note_creation.py at version 0.4.0. Basic Pitch's NOTICE file
-at that version reads:
+adapted from its note_creation.py at version 0.4.0.
+src/pocket_music/audio_note_projection_v2.py is adapted from the same file and
+from the retained-frame count in inference.py at commit e989e40. Basic Pitch's
+NOTICE file reads the same at both versions:
 
 Basic Pitch
 Copyright 2022 Spotify AB

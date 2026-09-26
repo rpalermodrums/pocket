@@ -239,7 +239,7 @@ def test_odd44100_resample_rounds_half_up(note_fixture):  # noqa: F811
     payload=output.getvalue();src={**body['source'],'sample_rate':44100,'frames':88201,'end_frame_exclusive':88201,'sha256':hashlib.sha256(payload).hexdigest()}
     raw['mono_sha256']=hashlib.sha256(bytes(88201*4)).hexdigest();raw['resampled_frames']=44101
     raw['resampled']={'shape':[44101],'dtype':'float32le','handle':put_bytes(bytes(44101*4),f['store_root'],'resampled.f32',notes.ARRAY_SCHEMA)}
-    assert notes._projection(raw,src,payload,f['store_root'])['frame_count']==172
+    assert notes._projection(raw,src,payload,f['store_root'],notes.SETTINGS['decoder'])['frame_count']==172
 
 
 @pytest.mark.parametrize('mutation', ['name', 'bytes', 'shape', 'boolshape', 'endian', 'hash', 'nonfinite', 'truncated', 'symlink'])

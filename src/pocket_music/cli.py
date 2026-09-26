@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .assets import identify_audio
+from .error_contracts import FORMATS as _ERROR_FORMATS
 from .errors import PocketError
 
 # (module, public function, provider destination argument or None).
@@ -95,8 +96,8 @@ def parser() -> argparse.ArgumentParser:
         "The musical toolkit for agents: Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette."
     ))
     root.add_argument("--version", action="version", version=__version__)
-    root.add_argument("--error-format", choices=("legacy", "v2"), default="legacy",
-                      help="Opt-in versioned machine errors; successful receipts are unchanged")
+    root.add_argument("--error-format", choices=_ERROR_FORMATS, default="legacy",
+                      help="Opt-in versioned machine errors (v3 adds corrective hints); successful receipts are unchanged")
     commands = root.add_subparsers(dest="command", required=True)
     baste = commands.add_parser("baste", help="Read the current Live session through the Baste device")
     baste.add_argument("--timeout-seconds", type=float, default=35)
@@ -299,7 +300,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (PocketError, OSError, ValueError, TypeError) as exc:
         from .error_contracts import error_envelope
-        error = error_envelope(exc) if args.error_format == "v2" else {"error": type(exc).__name__, "message": str(exc)}
+        error = ({"error": type(exc).__name__, "message": str(exc)} if args.error_format == "legacy"
+                 else error_envelope(exc, version=args.error_format))
         sys.stderr.write(json.dumps(error) + "\n")
         return 2
 
