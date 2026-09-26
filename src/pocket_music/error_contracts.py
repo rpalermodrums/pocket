@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import inspect
 
-from .errors import PocketError
+from .errors import HINT_MAX_LENGTH, PocketError, valid_hint
 
 SCHEMA = "pocket.error/v2"
 SCHEMA_V3 = "pocket.error/v3"
 FORMATS = ("legacy", "v2", "v3")
 CODES = ("invalid_request", "invalid_arguments", "io_error", "idempotency_conflict", "request_not_complete",
          "stale_revision", "source_mismatch", "ambiguous_mapping", "unsupported_profile", "locked_field", "evidence_mismatch")
-HINT_MAX_LENGTH = 400
 JSON_SCHEMA = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
     "additionalProperties": False, "required": ["schema", "code", "error", "message"],
     "properties": {"schema": {"const": SCHEMA}, "code": {"enum": list(CODES)},
@@ -78,6 +77,9 @@ def error_envelope(error: Exception, *, code: str | None = None, version: str = 
             hint = error.hint
         hint = CODE_HINTS.get(code) if hint is None else hint
         if hint is not None:
+            # Refuse rather than emit an envelope the exported v3 schema rejects.
+            if not valid_hint(hint):
+                raise ValueError(f"Machine error hint must be a 1-{HINT_MAX_LENGTH} character string")
             envelope["hint"] = hint
     return envelope
 
@@ -88,13 +90,16 @@ def argument_hint(function, arguments: dict, argument: str | None = None) -> str
     ``argument`` is the declared parameter whose value failed strict validation, if any.
     """
     if argument is not None:
-        return (f"Make {argument} match the tool's input schema exactly. Values are validated strictly and "
-                "never coerced; for example, the string \"5\" is not an integer.")
+        named = (f"Make {argument} match the tool's input schema exactly. Values are validated strictly and "
+                 "never coerced; for example, the string \"5\" is not an integer.")
+        return named if valid_hint(named) else None
     parameters = {name: p for name, p in inspect.signature(function).parameters.items()
                   if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)}
     if set(arguments) - set(parameters):
         return "Remove arguments the tool doesn't declare. Its input schema in tools/list lists every accepted name."
     missing = [name for name, p in parameters.items() if p.default is p.empty and name not in arguments]
     if missing:
-        return f"Supply the required argument{'s' if len(missing) > 1 else ''} {', '.join(missing)}."
+        named = f"Supply the required argument{'s' if len(missing) > 1 else ''} {', '.join(missing)}."
+        return named if valid_hint(named) else ("Supply every required argument. The tool's input schema in "
+                                                "tools/list names each one.")
     return None

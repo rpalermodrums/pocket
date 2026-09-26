@@ -2,6 +2,7 @@
 """Opt-in transport errors retain legacy behavior and stable machine dispositions."""
 import asyncio
 import importlib.util
+import inspect
 import json
 import subprocess
 import sys
@@ -20,9 +21,10 @@ from pocket_music.error_contracts import (
     FAILED_REQUEST_HINT,
     JSON_SCHEMA,
     JSON_SCHEMA_V3,
+    argument_hint,
     error_envelope,
 )
-from pocket_music.errors import PocketError
+from pocket_music.errors import HINT_MAX_LENGTH, PocketError, valid_hint
 from pocket_music.musical_context import context_create, context_query, context_resolve
 
 # The v2 contract is closed; v3 is how hints are added. Pin v2 so it cannot drift.
@@ -218,6 +220,36 @@ def test_v3_schema_accepts_every_code_hint_and_v2_stays_closed(tmp_path):
         assert envelope['hint'].endswith(FAILED_REQUEST_HINT) and envelope['hint'].count(FAILED_REQUEST_HINT) == 1
     with pytest.raises(ValidationError):
         Draft202012Validator(JSON_SCHEMA).validate({**error_envelope(PocketError('Example')), 'hint': 'Extra'})
+
+
+def test_v3_hints_stay_within_the_schema_bound_wherever_they_are_made(tmp_path):
+    from jsonschema import Draft202012Validator
+    validator = Draft202012Validator(JSON_SCHEMA_V3)
+    assert JSON_SCHEMA_V3['properties']['hint']['maxLength'] == HINT_MAX_LENGTH
+    # An empty, oversized or non-string hint is refused where it's made, never emitted.
+    for bad in ('', 'x' * (HINT_MAX_LENGTH + 1), 5):
+        with pytest.raises(ValueError, match='hint'):
+            PocketError('Example', hint=bad)
+        with pytest.raises(ValueError, match='hint'):
+            error_envelope(PocketError('Example'), version='v3', hint=bad)
+    assert 'hint' not in error_envelope(PocketError('Example'), version='v2', hint='x' * (HINT_MAX_LENGTH + 1))
+    # A tool with many missing arguments gets a bounded general hint instead of a long list.
+    def tool(**_):
+        return None
+    names = [f'required_argument_with_a_long_descriptive_name_{i}' for i in range(20)]
+    tool.__signature__ = inspect.Signature([inspect.Parameter(n, inspect.Parameter.KEYWORD_ONLY) for n in names])
+    hint = argument_hint(tool, {})
+    assert valid_hint(hint) and 'tools/list' in hint
+    assert argument_hint(tool, {n: 1 for n in names[1:]}) == f'Supply the required argument {names[0]}.'
+    # When the failed-request note won't fit after a site's hint, the site's hint stays whole.
+    site = 'x' * (HINT_MAX_LENGTH - len(FAILED_REQUEST_HINT))
+    def fail():
+        raise PocketError('Example', code='stale_revision', hint=site)
+    with pytest.raises(PocketError) as failed:
+        run_request(str(tmp_path), 'long-hint', 'test', {}, fail)
+    envelope = error_envelope(failed.value, version='v3')
+    validator.validate(envelope)
+    assert envelope['hint'] == site
 
 
 def _cli(tmp_path, name, spec, *options):

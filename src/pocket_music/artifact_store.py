@@ -24,7 +24,7 @@ from typing import Literal
 from typing_extensions import TypedDict
 
 from .error_contracts import CODE_HINTS, FAILED_REQUEST_HINT
-from .errors import PocketError
+from .errors import PocketError, valid_hint
 
 
 class ArtifactHandle(TypedDict):
@@ -356,7 +356,11 @@ def _note_failed_request(error):
     if isinstance(error, PocketError):
         hint = error.hint if error.hint is not None else CODE_HINTS.get(error.code)
         if hint is None or not hint.endswith(FAILED_REQUEST_HINT):
-            error.hint = FAILED_REQUEST_HINT if hint is None else f"{hint} {FAILED_REQUEST_HINT}"
+            combined = FAILED_REQUEST_HINT if hint is None else f"{hint} {FAILED_REQUEST_HINT}"
+            # Keep the site's own hint whole if both don't fit; a reused request_id then gets
+            # idempotency_conflict, whose hint asks for a new one.
+            if valid_hint(combined):
+                error.hint = combined
 
 
 def run_request(store_root: str | Path, request_id: str, operation: str, inputs: dict,
