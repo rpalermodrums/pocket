@@ -11,7 +11,8 @@ const {readSession} = require(readerPath);
 // `host.releaseWrites` lets the device's release reset the follow mode and then
 // clear the path, and nothing else. `host.keepsTarget` models a host where
 // clearing the path leaves the object pointing at its target; `host.idAfterRelease`
-// sets exactly what `id` reads once an object is released.
+// sets exactly what `id` reads once an object is released; `host.modeThrows`
+// makes assigning `mode` fail.
 function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3, host = {}) {
     const data = new Map();
     function add(p, props = {}, counts = {}) { data.set(p, {id: data.size + 1, props, counts}); }
@@ -53,9 +54,10 @@ function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3, host = {})
         // reader tests, even if someone adds it under a conditional branch.
         const api = new Proxy({}, {
             set(_, key, value) {
-                const step = entry.writes.length;
-                if (!host.releaseWrites || entry.returned || !(step === 0 && key === "mode" && value === 0 ||
-                        step === 1 && key === "path" && value === "")) {
+                if (host.releaseWrites && host.modeThrows && key === "mode") throw new Error("mode is read-only");
+                const step = entry.writes.length, pathStep = host.modeThrows ? 0 : 1;
+                if (!host.releaseWrites || entry.returned || !(!host.modeThrows && step === 0 && key === "mode" &&
+                        value === 0 || step === pathStep && key === "path" && value === "")) {
                     throw new Error("Forbidden Live property write " + String(key));
                 }
                 entry.writes.push(key);
@@ -312,6 +314,21 @@ test("Max entry point reports an object that still has a target after release", 
     assert.equal(posts.length, 1);
     assert.match(posts[0], new RegExp("^Baste: " + f.built.length + " of " + f.built.length +
         " Live objects were not released: id \"\\d+\" is still reported after clearing its path\\. Reload the device"));
+});
+test("Max entry point still clears every path when resetting the follow mode fails", () => {
+    const f = fixture(1, 1, 1, {releaseWrites: true, modeThrows: true});
+    const {context, posts, result} = loadDevice(f);
+    context.bang(); context.observe("g");
+    assert.equal(result("g").disposition, "ok");
+    assert.ok(f.built.length > 0);
+    assert.deepEqual(f.built.filter(entry => entry.writes.join() !== "path").map(entry => entry.path), []);
+    assert.deepEqual(posts, []);
+    // When the target also survives, the warning names both failures.
+    const kept = fixture(1, 1, 1, {releaseWrites: true, modeThrows: true, keepsTarget: true});
+    const device = loadDevice(kept);
+    device.context.bang(); device.context.observe("h");
+    assert.equal(device.posts.length, 1);
+    assert.match(device.posts[0], /still reported after clearing its path \(resetting mode also failed: mode is read-only\)/);
 });
 test("Max entry point accepts only the documented no-object id forms after release", () => {
     // Max documents `id` as a number and, in Max 8, as a string; "id 0" names no object.

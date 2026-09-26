@@ -12,12 +12,18 @@ function probe() { if (deviceReady) { outlet(0, "ready"); } }
 // and every armed listener slows structural edits in the open set. The reader
 // hands back each object it built once its read has finished.
 function releaseLiveObject(api) {
-    api.mode = 0;
+    // A failed mode reset must not stop the path from being cleared. 0 is the
+    // documented default and Baste never changes it, so the id check decides.
+    var modeError = null;
+    try { api.mode = 0; } catch (err) { modeError = err; }
     api.path = "";
     // Accept only the documented no-object forms. Number("id 5") is NaN, so a
     // numeric test would pass an object that still reports a target.
     var id = String(api.id);
-    if (id !== "0" && id !== "id 0") { throw new Error("id \"" + id + "\" is still reported after clearing its path"); }
+    if (id !== "0" && id !== "id 0") {
+        throw new Error("id \"" + id + "\" is still reported after clearing its path" +
+            (modeError ? " (resetting mode also failed: " + String(modeError.message || modeError) + ")" : ""));
+    }
 }
 function observe(requestId) {
     var began = new Date().toISOString();
