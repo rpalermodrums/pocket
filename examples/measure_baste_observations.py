@@ -14,7 +14,9 @@ observation and at the end, and the size of Live's log when you name it.
 before the first) so you can add and delete one track in Live and type how long
 that took; the log growth across each edit is recorded beside the time.
 --control keeps the same pauses but runs no observations, to show how much Live
-changes from the edits and the passing time alone.
+changes from the edits and the passing time alone. Give it --pace-seconds, the
+median round trip of an observed series in seconds, so each skipped observation
+takes as long as a real one and the pauses come at matching times.
 
 Only numbers are written: dispositions, timings, LiveAPI object counts and the
 set's size. Track, clip, device and parameter names and values are not, and
@@ -30,6 +32,7 @@ import platform
 import statistics
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pocket_music
@@ -98,12 +101,14 @@ def edit_checkpoint(after: int, log: Path | None, rss, ask) -> dict:
 
 
 def measure(observations: int, timeout_seconds: float, *, observe=observe_live, rss=live_rss_kib,
-            log: Path | None = None, ask=None, edit_after=(), control: bool = False) -> dict:
+            log: Path | None = None, ask=None, edit_after=(), control: bool = False,
+            pace_seconds: float = 0, sleep=time.sleep) -> dict:
     edit_after = sorted(set(edit_after)) if ask else []
     record = {"schema": "pocket.example.baste-live-cost/v1",
               "environment": {"pocket": pocket_music.__version__, "platform": platform.platform(),
                               "python": platform.python_version()},
-              "control": control, "observations_requested": observations, "edit_after": edit_after,
+              "control": control, "pace_seconds": pace_seconds if control else None,
+              "observations_requested": observations, "edit_after": edit_after,
               "set_size": None, "edits": [], "observations": []}
 
     def checkpoint(count):
@@ -113,7 +118,11 @@ def measure(observations: int, timeout_seconds: float, *, observe=observe_live, 
     checkpoint(0)
     record.update(live_rss_kib_before_series=rss(), live_log_bytes_before_series=log_bytes(log))
     for number in range(1, observations + 1):
-        if not control:
+        if control:
+            # Stand in for the observation's duration, so time-driven growth in
+            # Live lines up with an observed series.
+            sleep(pace_seconds)
+        else:
             result = observe(timeout_seconds=timeout_seconds)
             observation = result.get("observation")
             if observation and record["set_size"] is None:
@@ -137,6 +146,7 @@ def measure(observations: int, timeout_seconds: float, *, observe=observe_live, 
 def summary(record: dict) -> dict:
     rows = record["observations"]
     reads = [row["read_elapsed_ms"] for row in rows if row["disposition"] == "ok"]
+    trips = [row["round_trip_ms"] for row in rows if row["round_trip_ms"] is not None]
     counted = bool(rows) and all(row["live_objects_created"] is not None for row in rows)
     # Edits made during the series write to the log too; count them separately.
     series_edits = [edit["live_log_growth_bytes"] for edit in record["edits"] if edit["after_observations"] > 0]
@@ -144,6 +154,7 @@ def summary(record: dict) -> dict:
     return {"ok": len(reads), "failed": len(rows) - len(reads),
             "first_read_ms": reads[0] if reads else None, "last_read_ms": reads[-1] if reads else None,
             "median_read_ms": statistics.median(reads) if reads else None,
+            "median_round_trip_ms": statistics.median(trips) if trips else None,
             "live_objects_created": sum(row["live_objects_created"] for row in rows) if counted else None,
             "live_objects_unreleased": sum(row["live_objects_created"] - row["live_objects_released"]
                                            for row in rows) if counted else None,
@@ -161,6 +172,8 @@ def main():
     parser.add_argument("--edit-after", default="",
                         help="Comma-separated observation counts after which to time a track add and delete")
     parser.add_argument("--control", action="store_true", help="Keep the pauses but run no observations")
+    parser.add_argument("--pace-seconds", type=float, default=0,
+                        help="With --control, wait this long in place of each observation")
     parser.add_argument("--device-label", default="", help="Which device build is loaded, such as main or release")
     parser.add_argument("--live-version", default="", help="Live's version, from About Live")
     parser.add_argument("--live-log", type=Path, help="Live's Log.txt; only its size is recorded")
@@ -176,8 +189,11 @@ def main():
         raise SystemExit("--edit-after takes comma-separated whole numbers, such as 0,1,5,20") from None
     if any(not 0 <= value <= args.observations for value in edit_after):
         raise SystemExit("--edit-after values must be between 0 and --observations")
+    if not 0 <= args.pace_seconds <= 60 or (args.pace_seconds and not args.control):
+        raise SystemExit("--pace-seconds takes 0 to 60 seconds and only applies with --control")
     record = measure(args.observations, args.timeout_seconds, log=args.live_log,
-                     ask=input if edit_after else None, edit_after=edit_after, control=args.control)
+                     ask=input if edit_after else None, edit_after=edit_after, control=args.control,
+                     pace_seconds=args.pace_seconds)
     record.update(device_label=args.device_label, live_version=args.live_version)
     destination.mkdir(parents=True)
     (destination / "results.json").write_text(json.dumps(record, indent=2) + "\n")

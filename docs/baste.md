@@ -189,19 +189,21 @@ native measurement has been recorded yet. To take one:
    observation's `objects_read` shows how many), and save it.
 2. Build two devices into new directories with `pocket baste-device --output`:
    one from `main` before this release was added, and one with it.
-3. Restart Live, open the set and load either device. Run a control series,
-   which pauses for the same edits but reads nothing, with the
-   [measurement example](../examples/measure_baste_observations.py):
+3. For each device, restart Live, open the set, load the device and run a
+   series with the [measurement example](../examples/measure_baste_observations.py),
+   using `--device-label main` or `--device-label release`:
 
    ```sh
    python examples/measure_baste_observations.py /path/to/new/private-directory \
-       --control --observations 20 --edit-after 0,1,5,20 \
+       --observations 20 --edit-after 0,1,5,20 --device-label release \
        --live-version 12.x.y --live-log /path/to/Live/Log.txt
    ```
 
-4. For each device, restart Live, open the set, load the device and run the
-   same command without `--control`, adding `--device-label main` or
-   `--device-label release`.
+4. Restart Live once more, open the set and load either device. Run a control
+   series, which pauses for the same edits but reads nothing: the same command
+   with `--control --pace-seconds S` instead of `--device-label`, where `S` is
+   the `median_round_trip_ms` from the release series divided by 1,000. The
+   pacing makes each skipped observation take as long as a real one.
 
 At each pause, add one track in Live and delete it. Time that a few times with a
 stopwatch, type the median and press Enter. The example records Live's memory

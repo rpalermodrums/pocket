@@ -292,7 +292,7 @@ function loadDevice(f) {
             this.freepeer = () => dictionaries.delete(name);
         }};
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync(devicePath, "utf8"), context);
+    vm.runInContext(fs.readFileSync(readerPath.replace("baste_reader", "baste_device"), "utf8"), context);
     const result = id => JSON.parse(dictionaries.get("pocket_baste_" + id).json_chunks.join(""));
     return {context, messages, dictionaries, posts, result};
 }

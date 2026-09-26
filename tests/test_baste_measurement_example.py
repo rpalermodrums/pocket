@@ -60,7 +60,8 @@ def test_series_records_counts_and_timings_but_no_names(tmp_path):
     assert [row["release_failed"] for row in record["observations"]] == [False, True, False]
     # Log growth during the series leaves out the edits made inside it.
     assert record["summary"] == {"ok": 2, "failed": 1, "first_read_ms": 50, "last_read_ms": 70,
-                                 "median_read_ms": 60.0, "live_objects_created": 94,
+                                 "median_read_ms": 60.0, "median_round_trip_ms": 60,
+                                 "live_objects_created": 94,
                                  "live_objects_unreleased": 1,
                                  "add_delete_ms": {"0": 120.0, "1": None, "3": 90.0},
                                  "live_rss_growth_kib": 60, "live_log_growth_outside_edits_bytes": 9}
@@ -70,10 +71,12 @@ def test_control_series_keeps_the_pauses_and_observes_nothing():
     def observe(**_):
         raise AssertionError("a control series must not observe")
 
-    typed = iter(["100", "150"])
+    typed, slept = iter(["100", "150"]), []
     record = example.measure(5, 10, observe=observe, rss=lambda: 1000, ask=lambda _: next(typed),
-                             edit_after=[0, 5], control=True)
+                             edit_after=[0, 5], control=True, pace_seconds=0.25, sleep=slept.append)
     assert record["control"] is True and record["observations"] == []
+    # Each skipped observation takes an observed one's time, so the pauses line up.
+    assert slept == [0.25] * 5 and record["pace_seconds"] == 0.25
     assert record["summary"]["add_delete_ms"] == {"0": 100.0, "5": 150.0}
     assert record["summary"]["ok"] == 0 and record["summary"]["live_objects_created"] is None
     assert record["summary"]["live_rss_growth_kib"] == 0

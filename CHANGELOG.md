@@ -17,7 +17,7 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 - SPDX license identifiers at the top of source files. A test keeps new files labeled and keeps byte-pinned files (the decoder derivative, the model runners and the Max for Live devices) unchanged, so recorded identities, qualifications and native acceptance stay valid.
 - A draft [contributor license agreement](CLA.md), pending legal review and not yet in effect, and a CLA workflow that stays off until the maintainer enables it.
 - The website publishes the plain-language licensing page, the notices, the additional permissions and the draft agreement, and shows plain-text license files verbatim.
-- `examples/measure_baste_observations.py` records what a series of Baste observations costs the running Live process: read times, release counts, Live's memory and log growth, and timed track adds and deletes at chosen points, with an optional control series that reads nothing. It writes numbers only.
+- `examples/measure_baste_observations.py` records what a series of Baste observations costs the running Live process: read times, release counts, Live's memory and log growth, and timed track adds and deletes at chosen points, with an optional control series that keeps the same pacing but reads nothing. It writes numbers only.
 
 ## 0.4.0: last MIT-licensed version
 
