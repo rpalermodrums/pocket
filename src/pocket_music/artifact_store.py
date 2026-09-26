@@ -23,6 +23,7 @@ from typing import Literal
 
 from typing_extensions import TypedDict
 
+from .error_contracts import CODE_HINTS, FAILED_REQUEST_HINT
 from .errors import PocketError
 
 
@@ -350,6 +351,14 @@ def _atomic_json(path: Path, value):
         temporary.unlink(missing_ok=True)
 
 
+def _note_failed_request(error):
+    # The journal now records this request ID as failed; say so once, after the site's own hint.
+    if isinstance(error, PocketError):
+        hint = error.hint if error.hint is not None else CODE_HINTS.get(error.code)
+        if hint is None or not hint.endswith(FAILED_REQUEST_HINT):
+            error.hint = FAILED_REQUEST_HINT if hint is None else f"{hint} {FAILED_REQUEST_HINT}"
+
+
 def run_request(store_root: str | Path, request_id: str, operation: str, inputs: dict,
                 work: Callable[[], dict]) -> dict:
     """Execute one file operation; interrupted/failed requests require inspection.
@@ -367,7 +376,9 @@ def run_request(store_root: str | Path, request_id: str, operation: str, inputs:
     try:
         lock.mkdir()
     except FileExistsError as error:
-        raise PocketError("Request is active or interrupted; inspect its journal before retry", code="request_not_complete") from error
+        raise PocketError("Request is active or interrupted; inspect its journal before retry", code="request_not_complete",
+                          hint="Call request_status with this store_root and request_id to inspect the earlier "
+                               "request. Don't remove its lock or replay partial work.") from error
     journal_path = folder / "journal.json"
     try:
         if journal_path.exists():
@@ -378,7 +389,9 @@ def run_request(store_root: str | Path, request_id: str, operation: str, inputs:
             if journal.get("input_sha256") != identity:
                 raise PocketError("idempotency_conflict: request ID has different inputs", code="idempotency_conflict")
             if journal.get("state") != "complete":
-                raise PocketError("Request did not complete; inspect retained artifacts and use a new request ID", code="request_not_complete")
+                raise PocketError("Request did not complete; inspect retained artifacts and use a new request ID", code="request_not_complete",
+                                  hint="Call request_status to inspect the earlier attempt and its retained files. "
+                                       "This request_id won't run again; a new attempt needs a new request_id.")
             result = journal["receipt"]
             if digest(result) != journal.get("receipt_sha256"):
                 raise PocketError("Request receipt integrity mismatch", code="evidence_mismatch")
@@ -398,6 +411,7 @@ def run_request(store_root: str | Path, request_id: str, operation: str, inputs:
             return result
         except BaseException as error:
             _atomic_json(journal_path, {**journal, "state": "failed", "error": str(error)[:2000]})
+            _note_failed_request(error)
             raise
     finally:
         shutil.rmtree(lock)

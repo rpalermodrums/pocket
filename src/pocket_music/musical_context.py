@@ -262,7 +262,8 @@ def context_resolve(store_root: str, context: ArtifactHandle, target_clock_id: s
         text(anchor_id, "anchor_id", 120)
         anchors = [a for a in record["definition"]["anchors"] if a["anchor_id"] == anchor_id]
         if not anchors:
-            raise PocketError("Unknown anchor in this context revision")
+            raise PocketError("Unknown anchor in this context revision",
+                              hint='context_query with section "anchors" lists this revision\'s anchor_id values.')
         position = anchors[0]["position"]
     value = clocks.position(position)
     source_id = position["clock_id"]
@@ -271,7 +272,9 @@ def context_resolve(store_root: str, context: ArtifactHandle, target_clock_id: s
         forward = source_id in clocks.sources and target_clock_id in clocks.timelines
         reverse = source_id in clocks.timelines and target_clock_id in clocks.sources
         if not (forward or reverse):
-            raise PocketError("No explicit source-to-timeline mapping for these clock identities")
+            raise PocketError("No explicit source-to-timeline mapping for these clock identities",
+                              hint='Convert between a source clock and a timeline clock. context_query with section '
+                                   '"sources" or "timelines" lists this context\'s clock_id values.')
         candidates = []
         for occurrence in record["definition"]["occurrences"]:
             if (occurrence["source_clock_id"] != (source_id if forward else target_clock_id)
@@ -283,14 +286,19 @@ def context_resolve(store_root: str, context: ArtifactHandle, target_clock_id: s
             if start <= value <= end and (occurrence_id is None or occurrence["occurrence_id"] == occurrence_id):
                 candidates.append((occurrence, source_span, timeline_span))
         if not candidates:
-            raise PocketError("No occurrence maps this position; extrapolation is unsupported")
+            raise PocketError("No occurrence maps this position; extrapolation is unsupported",
+                              hint='context_query with section "occurrences" lists each occurrence_id with its '
+                                   'source and timeline spans. Positions outside them have no mapping.')
         if len(candidates) != 1:
-            raise PocketError("Ambiguous repeated passage; supply occurrence_id", code="ambiguous_mapping")
+            raise PocketError("Ambiguous repeated passage; supply occurrence_id", code="ambiguous_mapping",
+                              hint='Name the occurrence with occurrence_id; context_query with section '
+                                   '"occurrences" lists them.')
         selected, source_span, timeline_span = candidates[0]
         left, right = (source_span, timeline_span) if forward else (timeline_span, source_span)
         value = right[0] + (value - left[0]) * (right[1] - right[0]) / (left[1] - left[0])
     elif occurrence_id is not None:
-        raise PocketError("Same-clock conversion does not consume an occurrence_id")
+        raise PocketError("Same-clock conversion does not consume an occurrence_id",
+                          hint="Omit occurrence_id. The position is already on target_clock_id.")
     if target_clock_id in clocks.sources:
         if target_space != "source_frame" or value.denominator != 1:
             raise PocketError("Source output requires an exact integer source_frame; no implicit rounding")

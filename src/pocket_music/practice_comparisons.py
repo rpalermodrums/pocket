@@ -85,7 +85,9 @@ def _validate(inputs, store_root):
             if current == root:
                 break
             if current not in edits:
-                raise PocketError("Variant lacks verified edit lineage to the exact baseline context", code="evidence_mismatch")
+                raise PocketError("Variant lacks verified edit lineage to the exact baseline context", code="evidence_mismatch",
+                                  hint="List in edit_receipts the edit handle (artifacts.edit from context_edit) for "
+                                       "every revision between the baseline's context and each variant's context.")
             used.add(current)
             current = canonical_bytes(edits[current]["parent"])
         if current != root:

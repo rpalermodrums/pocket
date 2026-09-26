@@ -114,8 +114,9 @@ def build_server(error_format=None):
     import os
     if error_format is None:
         error_format = os.environ.get("POCKET_ERROR_FORMAT", "legacy")
-    if error_format not in ("legacy", "v2"):
-        raise ValueError("POCKET_ERROR_FORMAT must be legacy or v2")
+    from .error_contracts import FORMATS
+    if error_format not in FORMATS:
+        raise ValueError("POCKET_ERROR_FORMAT must be legacy, v2 or v3")
     try:
         from mcp.server.fastmcp import FastMCP
         from mcp.types import ToolAnnotations
@@ -131,7 +132,7 @@ def build_server(error_format=None):
     from .acquisition import acquire_source, discover_sources, inspect_source_formats, plan_acquisition
     from .assets import identify_audio
     from .baste import build_baste_device, observe_live
-    from .error_contracts import error_envelope
+    from .error_contracts import argument_hint, error_envelope
     from .errors import PocketError
     from .feedback import query_feedback
     from .music_embeddings import build_embedding_index, model_preflight, rank_embedding_query
@@ -162,26 +163,31 @@ def build_server(error_format=None):
         async def call_tool(self, name, arguments):
             function = self.strict_providers.get(name)
             if function is not None:
+                failed = None
                 try:
                     signature = inspect.signature(function)
                     bound = signature.bind(**arguments)
                     hints = get_type_hints(function, include_extras=True)
-                    for key, value in bound.arguments.items():
-                        TypeAdapter(hints[key]).validate_python(value, strict=True)
+                    for failed, value in bound.arguments.items():
+                        TypeAdapter(hints[failed]).validate_python(value, strict=True)
                 except (TypeError, ValueError) as error:
-                    message = json.dumps(error_envelope(error, code='invalid_arguments')) if error_format == 'v2' else f'Invalid {name} arguments: {error}'
-                    raise ToolError(message) from error
+                    if error_format == 'legacy':
+                        raise ToolError(f'Invalid {name} arguments: {error}') from error
+                    hint = argument_hint(function, arguments, failed) if error_format == 'v3' else None
+                    raise ToolError(json.dumps(error_envelope(error, code='invalid_arguments', version=error_format,
+                                                              hint=hint))) from error
                 # Validation must not rewrite the original JSON before hashing:
                 # the SDK's convenience parser coerces integers to floats even
                 # after strict validation, changing content-addressed identities.
                 try:
                     return [TextContent(type='text', text=_compact_response(function)(**arguments))]
                 except PocketError as error:
-                    message = json.dumps(error_envelope(error)) if error_format == "v2" else str(error)
+                    message = str(error) if error_format == "legacy" else json.dumps(
+                        error_envelope(error, version=error_format))
                     raise ToolError(message) from error
                 except (OSError, TypeError, ValueError) as error:
-                    if error_format == "v2":
-                        raise ToolError(json.dumps(error_envelope(error))) from error
+                    if error_format != "legacy":
+                        raise ToolError(json.dumps(error_envelope(error, version=error_format))) from error
                     raise
             return await super().call_tool(name, arguments)
 

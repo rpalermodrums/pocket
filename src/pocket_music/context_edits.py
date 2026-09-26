@@ -54,7 +54,9 @@ def _locks(locks, before, after):
             if field not in original:
                 raise PocketError("Unknown locked context field")
             if canonical_bytes(original[field]) != canonical_bytes(result[field]):
-                raise PocketError("Context edit changes a locked field", code="locked_field")
+                raise PocketError("Context edit changes a locked field", code="locked_field",
+                                  hint="Revise operations so every field named in locks keeps its value. Removing "
+                                       "a lock is an authoring decision, not a fix.")
 
 
 def _changes(before, after):

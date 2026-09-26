@@ -33,16 +33,18 @@ executable inside your virtual environment:
   "mcpServers": {
     "pocket": {
       "command": "/absolute/path/to/pocket/.venv/bin/pocket-mcp",
-      "env": { "POCKET_ERROR_FORMAT": "v2" }
+      "env": { "POCKET_ERROR_FORMAT": "v3" }
     }
   }
 }
 ```
 
 The `env` line is optional. It switches on machine-readable errors, which are
-easier for an agent to act on (see [contracts and errors](contracts.md)). Restart
-your client after you change its configuration, and again after you update
-Pocket, because a running server doesn't pick up new tools.
+easier for an agent to act on. With `v3`, each error can also carry a `hint` that
+names the argument to supply or the call to make first. `v2` still works and stays
+unchanged (see [contracts and errors](contracts.md)). Restart your client after
+you change its configuration, and again after you update Pocket, because a running
+server doesn't pick up new tools.
 
 To check that the server starts, run `.venv/bin/pocket-mcp` in a terminal. It
 waits silently for a client to talk to it. Press Ctrl-C to stop it.
@@ -92,13 +94,23 @@ musical question at a time.
 
 ## When something refuses
 
+Each refusal names a code. With `v3` errors, a `hint` gives advice like the last
+column below, using the tool's own argument names.
+
 | You see | What it means | What to do |
 |---|---|---|
-| `idempotency_conflict` | That request ID was already used with different inputs | Use a new request ID |
-| `request_not_complete` | An earlier call with this ID was interrupted | Inspect it with `request_status` before trying again |
+| `invalid_arguments` | An argument is misspelled, missing or the wrong type | Check the tool's input schema. Pocket doesn't convert values, so `"5"` isn't a number |
+| `idempotency_conflict` | That request ID was already used with different inputs | Use a new request ID, or inspect the earlier request with `request_status` |
+| `request_not_complete` | An earlier call with this ID was interrupted or failed | Inspect it with `request_status`, and don't remove its lock. A new attempt needs a new request ID |
 | `unsupported_profile` | The input falls outside what this operation supports | Check `capabilities_list` and the guide's limits. Don't force the input to fit |
-| `ambiguous_mapping` | A cue sits inside a passage that plays more than once | Name the occurrence you mean |
-| `stale_revision` | Someone, perhaps you in another window, changed the thing first | Reload the latest version, then try again |
+| `ambiguous_mapping` | A cue sits inside a passage that plays more than once | Name the occurrence with `occurrence_id`. `context_query` lists them |
+| `stale_revision` | The evidence changed after you read it, or two revisions got mixed | Read the current revision and choose again from it |
+| `locked_field` | The edit would change something that was locked | Change the edit so the locked field stays as it is. Removing a lock is your decision, not a fix |
+| `source_mismatch` | Two inputs come from different recordings or renders | Pass inputs made from the same exact source |
+| `evidence_mismatch` | Saved evidence no longer matches its record | Point at the complete store. Don't edit or move artifacts one at a time |
 | A tool is missing | The client started before Pocket was installed or updated | Restart the MCP client |
+
+When a write fails after it has started, Pocket keeps a record of that request ID,
+so send the corrected call with a new one.
 
 More recovery guidance is in [contracts and errors](contracts.md#recovery).

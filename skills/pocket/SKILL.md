@@ -46,6 +46,9 @@ vocabulary used here.
   work first.
 - **Keep private material private.** Keep recordings, credentials, listener
   notes and machine paths out of Git, and use the ignored `private/` folder.
+- **Read refusals before retrying.** With `POCKET_ERROR_FORMAT=v3`, a refusal
+  carries a `hint` that names the argument to supply or the call to make first.
+  Follow it. Never make input fit by converting, resampling or rounding it.
 
 ## The tool family
 
