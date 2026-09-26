@@ -14,7 +14,10 @@ function probe() { if (deviceReady) { outlet(0, "ready"); } }
 function releaseLiveObject(api) {
     api.mode = 0;
     api.path = "";
-    if (Number(api.id)) { throw new Error("id " + api.id + " is still targeted after clearing its path"); }
+    // Accept only the documented no-object forms. Number("id 5") is NaN, so a
+    // numeric test would pass an object that still reports a target.
+    var id = String(api.id);
+    if (id !== "0" && id !== "id 0") { throw new Error("id \"" + id + "\" is still reported after clearing its path"); }
 }
 function observe(requestId) {
     var began = new Date().toISOString();

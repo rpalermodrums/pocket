@@ -10,7 +10,8 @@ const {readSession} = require(readerPath);
 
 // `host.releaseWrites` lets the device's release reset the follow mode and then
 // clear the path, and nothing else. `host.keepsTarget` models a host where
-// clearing the path leaves the object pointing at its target.
+// clearing the path leaves the object pointing at its target; `host.idAfterRelease`
+// sets exactly what `id` reads once an object is released.
 function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3, host = {}) {
     const data = new Map();
     function add(p, props = {}, counts = {}) { data.set(p, {id: data.size + 1, props, counts}); }
@@ -66,7 +67,10 @@ function fixture(trackCount = 2, deviceCount = 2, parameterCount = 3, host = {})
             get(_, key) {
             if (!["id", "children", "get", "getcount"].includes(key)) throw new Error("Forbidden Live capability " + key);
             if (entry.returned) {
-                if (key === "id") return host.keepsTarget && row ? row.id : 0;
+                if (key === "id") {
+                    if (Object.hasOwn(host, "idAfterRelease")) return host.idAfterRelease;
+                    return host.keepsTarget && row ? row.id : 0;
+                }
                 throw new Error("Released Live object used: " + entry.path + " / " + key);
             }
             if (key === "id") return row ? row.id : 0;
@@ -307,7 +311,26 @@ test("Max entry point reports an object that still has a target after release", 
     assertDeviceReleasedAll(f);
     assert.equal(posts.length, 1);
     assert.match(posts[0], new RegExp("^Baste: " + f.built.length + " of " + f.built.length +
-        " Live objects were not released: id \\d+ is still targeted after clearing its path\\. Reload the device"));
+        " Live objects were not released: id \"\\d+\" is still reported after clearing its path\\. Reload the device"));
+});
+test("Max entry point accepts only the documented no-object id forms after release", () => {
+    // Max documents `id` as a number and, in Max 8, as a string; "id 0" names no object.
+    for (const idAfterRelease of [0, "0", "id 0"]) {
+        const f = fixture(1, 1, 1, {releaseWrites: true, idAfterRelease});
+        const {context, posts, result} = loadDevice(f);
+        context.bang(); context.observe("e");
+        assert.equal(result("e").disposition, "ok"); assertDeviceReleasedAll(f);
+        assert.deepEqual(posts, [], JSON.stringify(idAfterRelease));
+    }
+    // Number("id 5") is NaN, so a numeric test would miss these.
+    for (const idAfterRelease of ["id 5", "5", 5, "", undefined]) {
+        const f = fixture(1, 1, 1, {releaseWrites: true, idAfterRelease});
+        const {context, posts, result} = loadDevice(f);
+        context.bang(); context.observe("f");
+        assert.equal(result("f").disposition, "ok");
+        assert.equal(posts.length, 1, JSON.stringify(idAfterRelease));
+        assert.match(posts[0], /still reported after clearing its path/);
+    }
 });
 test("representative generated read has an explicit latency budget", () => {
     const f = fixture(24, 6, 16), start = performance.now(), result = readSession(f.factory, Date.now, f.release);
