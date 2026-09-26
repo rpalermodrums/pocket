@@ -9,6 +9,7 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 - **Pocket is now licensed under the GNU Affero General Public License, version 3 only (AGPL-3.0-only)**, with [additional permissions](LICENSE-EXCEPTION.md) for output and for unmodified Pocket Max for Live devices shared inside musical projects. Using Pocket stays free, including commercially, and what you make with it is yours; a commercial license is available for closed products. [Licensing](LICENSING.md) explains the change in plain language. **0.4.0 is the last version released under the MIT License**, and copies of it and earlier versions keep that license. `examples/` and `skills/` stay MIT licensed.
 - The package version is now 0.5.0.dev0, so no AGPL-licensed build reports 0.4.0.
 - Package metadata now declares `License-Expression: AGPL-3.0-only AND Apache-2.0` (Pocket, plus the Apache-2.0 Basic Pitch decoder derivative) and ships `LICENSE`, `LICENSE-EXCEPTION.md`, `NOTICE` and the Basic Pitch license. Building requires setuptools 77 or later.
+- Baste releases every LiveAPI object it builds before the device replies, whether the read succeeded or failed. It resets each object's follow mode and then clears its path, because an object that keeps its path keeps listeners armed in Live and slows structural edits in the open set. If an object still has a target afterwards, the reply is unchanged and the device writes a warning to the Max window. The `pocket.live-observation/v1` record is unchanged. See [object lifetime](docs/baste.md#object-lifetime).
 
 ### Added
 

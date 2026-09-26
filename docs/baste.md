@@ -120,6 +120,31 @@ Implementation follows Cycling '74's [LiveAPI reference](https://docs.cycling74.
 [Track reference](https://docs.cycling74.com/apiref/lom/track/) and
 [Node for Max API](https://docs.cycling74.com/apiref/nodeformax).
 
+## Object lifetime
+
+A read builds one LiveAPI object for each track, clip slot, clip, device, chain
+and parameter it visits (`objects_read` counts these), then one more for each
+owner it checks again at the end. Before the device replies, Baste releases every
+one of them, whether the read succeeded or failed: it resets the object's follow
+mode and then clears its path. It never keeps an object for a later read.
+
+Releasing matters because Live keeps a listener on each list along a LiveAPI
+object's path, such as a set's tracks or a track's devices, until that path is
+cleared. Freeing the JavaScript object, or leaving it to garbage collection, doesn't
+remove the listener, and every listener left behind makes structural edits in the
+open set, such as adding or deleting a track, slower. The Producer Pal project
+measured this in Max's `v8` object and describes it in its
+[decision record on LiveAPI object lifetime](https://github.com/adamjmurray/producer-pal/blob/main/dev/decisions/0023-live-api-objects-are-pooled-per-request.md).
+Baste applies the same release in the older `js` object it runs in.
+
+If an object still has a target after release, the reply is unchanged, because the
+read itself finished, and the device writes a warning to the Max window. Reload the
+device if edits in Live slow down after that.
+
+Releasing doesn't make reads free. Producer Pal also reports that each object built
+uses a little of Live's memory, about 3 KB, which isn't returned until Live quits.
+Observing a large set many times in one Live session adds up.
+
 ## Verify changes
 
 ```sh
@@ -129,9 +154,11 @@ python -m pytest -q tests/test_baste.py tests/test_baste_pipette_interfaces.py
 
 Generated tests exercise the unchanged reader with a capability-trapping fake,
 both clip views, racks, value/display differences, missing objects, topology edits,
-resource bounds, dictionary lifetime and the actual HTTP transport. They do not
-prove native behavior. Native acceptance uses an isolated project, GUI comparison,
-a change since Save, repeated observations and saved-byte/mtime preservation.
+resource bounds, dictionary lifetime, the release of every LiveAPI object on every
+exit path, and the actual HTTP transport. They do not prove native behavior. Native
+acceptance uses an isolated project, GUI comparison, a change since Save, repeated
+observations and saved-byte/mtime preservation. It also times adding and deleting
+a track, and records Live's memory use, before and after repeated observations.
 
 See [Thread](thread.md) for reading the saved file and [Pipette](pipette.md)
 for the separate saved-candidate promotion workflow.

@@ -7,11 +7,26 @@ var deviceReady = false;
 var replies = {};
 function bang() { deviceReady = true; }
 function probe() { if (deviceReady) { outlet(0, "ready"); } }
+// Live keeps a listener armed on each collection along a LiveAPI object's path
+// until that path is cleared. freepeer and garbage collection leave it armed,
+// and every armed listener slows structural edits in the open set. The reader
+// hands back each object it built once its read has finished.
+function releaseLiveObject(api) {
+    api.mode = 0;
+    api.path = "";
+    if (Number(api.id)) { throw new Error("id " + api.id + " is still targeted after clearing its path"); }
+}
 function observe(requestId) {
     var began = new Date().toISOString();
     var result = deviceReady ? BasteReader.readSession(function (path, id) {
         return new LiveAPI(null, id ? "id " + id : path);
-    }, function () { return Date.now(); }) : {disposition: "device_not_loaded", observation: null};
+    }, function () { return Date.now(); }, releaseLiveObject) : {disposition: "device_not_loaded", observation: null};
+    if (result.release_error) {
+        // Release comes after the read, so the read's outcome stands. Tell the
+        // operator in the Max window; the reply keeps its contract.
+        post("Baste: " + result.release_error + ". Reload the device if Live edits slow down.\n");
+        delete result.release_error;
+    }
     result.schema = "pocket.live-observation/v1";
     result.request_id = String(requestId);
     result.read_started_at = began;
