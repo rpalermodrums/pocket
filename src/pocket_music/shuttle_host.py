@@ -393,6 +393,10 @@ class Runtime:
             if raw_pid := observation.get("serato_pid"):
                 if not log.resolve().name.endswith("." + str(raw_pid) + ".log"):
                     raise PocketError("Serato cache log does not belong to the observed app process")
+            # Loading restores per-record trim; a previous command no longer
+            # supplies a valid starting value for a gain ride on this deck.
+            self.gains[deck] = None
+            self.binding.pop(deck, None)
             self._pulse(51 if right else 50)
             time.sleep(0.4)
             after = self.observe(session_id)

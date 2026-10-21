@@ -167,6 +167,35 @@ def test_load_never_replaces_playing_deck(tmp_path):
         r._execute("s", {"kind": "load", "deck": "left", "track_id": "a"}, "lease")
 
 
+def test_load_forgets_previous_record_trim_before_dispatch(tmp_path, monkeypatch):
+    from pathlib import Path
+    from pocket_music import shuttle_host
+
+    r = runtime(tmp_path)
+    source = tmp_path / "source.wav"
+    sf.write(source, np.zeros(480), 48000)
+    target = {"track_id": "a", "native_path": str(source), "pcm": shuttle._pcm_identity(source), "index": 0}
+    r.sessions = {"s": {"assets": [target]}}
+    r.verified_pcm = {}
+    r.binding = {"left": "old"}
+    r.build = tmp_path
+    r.observe = lambda _: {"decks": {"left": {"playing": False, "track_id": "a"}}}
+    log = tmp_path / "DJ.INFO"
+    log.write_text("")
+    monkeypatch.setattr(shuttle_host.subprocess, "run", lambda *args, **kwargs: None)
+    original_expand = Path.expanduser
+    monkeypatch.setattr(Path, "expanduser", lambda p: log if str(p).endswith("/Logs/DJ.INFO") else original_expand(p))
+
+    def pulse(note):
+        assert note == 50 and r.gains["left"] is None and "left" not in r.binding
+        log.write_text("[View] The cache `" + str(source) + "` was requested\n")
+
+    r._pulse = pulse
+    assert r._execute("s", {"kind": "load", "deck": "left", "track_id": "a"}, "lease")["status"] == "verified"
+    with pytest.raises(PocketError, match="initial native gain is unknown"):
+        r._execute("s", {"kind": "gain", "deck": "left", "value": 0, "duration_seconds": 1}, "lease")
+
+
 def test_display_ambiguity_is_not_recording_identity():
     assets = [
         {"artist": "A", "duration_seconds": 30, "track_id": "a"},
