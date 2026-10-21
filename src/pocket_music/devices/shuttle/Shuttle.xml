@@ -1,0 +1,186 @@
+<midi app=" 5.0.0.1251">
+  <control channel="1" event_type="Note On" control="20">
+    <userio event="click">
+      <play deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="press" behaviour="toggle" />
+      </play>
+    </userio>
+    <userio event="output">
+      <play deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="any">
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </play>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="21">
+    <userio event="click">
+      <play deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="press" behaviour="toggle" />
+      </play>
+    </userio>
+    <userio event="output">
+      <play deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="any">
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </play>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="30">
+    <userio event="click">
+      <auto_loop_specific_length deck_set="Default" deck_id="0" slot_id="8">
+        <translation action_on="any" behaviour="explicit" />
+      </auto_loop_specific_length>
+    </userio>
+    <userio event="output">
+      <auto_loop_specific_length deck_set="Default" deck_id="0" slot_id="8">
+        <translation action_on="any">
+          <alias name="selected" value="0" />
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </auto_loop_specific_length>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="31">
+    <userio event="click">
+      <auto_loop_specific_length deck_set="Default" deck_id="0" slot_id="9">
+        <translation action_on="any" behaviour="explicit" />
+      </auto_loop_specific_length>
+    </userio>
+    <userio event="output">
+      <auto_loop_specific_length deck_set="Default" deck_id="0" slot_id="9">
+        <translation action_on="any">
+          <alias name="selected" value="0" />
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </auto_loop_specific_length>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="32">
+    <userio event="click">
+      <auto_loop_specific_length deck_set="Default" deck_id="1" slot_id="8">
+        <translation action_on="any" behaviour="explicit" />
+      </auto_loop_specific_length>
+    </userio>
+    <userio event="output">
+      <auto_loop_specific_length deck_set="Default" deck_id="1" slot_id="8">
+        <translation action_on="any">
+          <alias name="selected" value="0" />
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </auto_loop_specific_length>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="33">
+    <userio event="click">
+      <auto_loop_specific_length deck_set="Default" deck_id="1" slot_id="9">
+        <translation action_on="any" behaviour="explicit" />
+      </auto_loop_specific_length>
+    </userio>
+    <userio event="output">
+      <auto_loop_specific_length deck_set="Default" deck_id="1" slot_id="9">
+        <translation action_on="any">
+          <alias name="selected" value="0" />
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </auto_loop_specific_length>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="34">
+    <userio event="click">
+      <sync deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="any" behaviour="explicit" />
+      </sync>
+    </userio>
+    <userio event="output">
+      <sync deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="any">
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </sync>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="35">
+    <userio event="click">
+      <sync deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="any" behaviour="explicit" />
+      </sync>
+    </userio>
+    <userio event="output">
+      <sync deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="any">
+          <alias name="on" value="127" />
+          <alias name="off" value="0" />
+        </translation>
+      </sync>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="50">
+    <userio event="click">
+      <load_track deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="press" behaviour="explicit" />
+      </load_track>
+    </userio>
+    <userio event="output">
+      <load_track_feedback deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="any">
+          <alias name="off" value="0" />
+          <alias name="on" value="127" />
+        </translation>
+      </load_track_feedback>
+    </userio>
+  </control>
+  <control channel="1" event_type="Note On" control="51">
+    <userio event="click">
+      <load_track deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="press" behaviour="explicit" />
+      </load_track>
+    </userio>
+    <userio event="output">
+      <load_track_feedback deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="any">
+          <alias name="off" value="0" />
+          <alias name="on" value="127" />
+        </translation>
+      </load_track_feedback>
+    </userio>
+  </control>
+  <control channel="1" event_type="Control Change" control="23">
+    <userio event="click">
+      <track_gain deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="any" behaviour="toggle" />
+      </track_gain>
+    </userio>
+    <userio event="output">
+      <track_gain deck_set="Default" deck_id="0" slot_id="0">
+        <translation action_on="any">
+          <alias name="Default Value" value="0" />
+          <alias name="Auto" value="0" />
+        </translation>
+      </track_gain>
+    </userio>
+  </control>
+  <control channel="1" event_type="Control Change" control="24">
+    <userio event="click">
+      <track_gain deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="any" behaviour="toggle" />
+      </track_gain>
+    </userio>
+    <userio event="output">
+      <track_gain deck_set="Default" deck_id="1" slot_id="0">
+        <translation action_on="any">
+          <alias name="Default Value" value="0" />
+          <alias name="Auto" value="0" />
+        </translation>
+      </track_gain>
+    </userio>
+  </control>
+</midi>
