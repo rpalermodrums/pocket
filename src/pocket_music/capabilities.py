@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
+import sys
 
 from .artifact_store import digest, receipt
 from .errors import PocketError
@@ -277,7 +279,13 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         if module == 'shuttle':
             profile = 'serato-5-extended-1470x956/v1'
             prerequisites = ['Explicit local bridge setup, FLX4, Serato 5.0.0 Extended 1470x956; source/display/master checks; no beat-accurate scheduler or listening verdict']
-            if name != 'shuttle_build_bridge':
+            if name == 'shuttle_build_bridge':
+                prerequisites = ['macOS with Swift compiler (swiftc) and ffmpeg on PATH; new output directory; building starts no host or capture and requires no connected controller']
+                if sys.platform != 'darwin':
+                    status = 'unsupported'
+                elif not shutil.which('swiftc') or not shutil.which('ffmpeg'):
+                    status = 'requires_optional_setup'
+            else:
                 status = 'requires_native_setup'
             if name == 'shuttle_act':
                 side_effects += ['native_serato_controls', 'session_revision', 'track_gain_metadata']

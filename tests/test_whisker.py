@@ -97,11 +97,27 @@ def test_vocal_density_null_is_unknown_and_inputs_unchanged(current_density, can
     before = copy.deepcopy(records)
     result = deck.rank_next_tracks(records, "current", limit=1)[0]
     both_dense = current_density == .8 and candidate_density == .8
-    assert result["proposed_transition"]["treatment"] == (
-        "short foreground exchange; avoid prolonged vocal overlap" if both_dense else
-        "test an intro/body overlap with one bass owner at a time"
-    )
+    treatment = result["proposed_transition"]["treatment"]
+    assert ("avoid prolonged foreground vocal overlap" in treatment) == both_dense
+    assert treatment.startswith("test a foreground exchange" if both_dense else "test an intro/body overlap")
     assert records == before
+
+
+@pytest.mark.parametrize("densities", [(.8, .8), (.8, None), (None, None)])
+def test_transition_review_retains_clock_vocal_and_percussion_constraints(densities):
+    records = [track("current", .5, 120), track("candidate", .5, 145)]
+    for record, density in zip(records, densities):
+        record["profile"]["vocal_density"] = density
+    result = deck.rank_next_tracks(records, "current", limit=1)[0]
+    assert result["tempo_options"][0]["status"] == "natural_tempo_reset_proposal"
+    treatment = result["proposed_transition"]["treatment"]
+    assert "natural-tempo reset" in treatment
+    assert "spoken or sung phrase finish before removing it" in treatment
+    assert "one bass owner" in treatment
+    assert "high-percussion ownership" in treatment
+    assert ("avoid prolonged foreground vocal overlap" in treatment) == (densities == (.8, .8))
+    assert any("beat-one alignment" in warning for warning in result["unknowns"])
+    assert result["proposed_transition"]["status"] == "proposal_not_auditioned"
 
 
 def update(snapshot, action, **kwargs):

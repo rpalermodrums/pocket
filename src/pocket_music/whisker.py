@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .errors import PocketError
 
-ON_DECK_VERSION = "1.0.2"
+ON_DECK_VERSION = "1.0.3"
 _SESSION = "pocket.on-deck-session/v1"
 _INTENT_FIELDS = {"setting", "direction", "target_energy", "tags", "creativity", "max_stretch_percent",
                   "require_local_audio", "avoid_track_ids", "avoid_pairs"}
@@ -230,7 +230,7 @@ def rank_next_tracks(tracks, current_track_id=None, *, played_ids=(), intent=Non
             unknowns.append("No identified local recording; catalogue identity only.")
         if not profile:
             unknowns.append("No attributed musical profile; title/artist are not analyzed as sound.")
-        unknowns.append("Musical bar position, phrase fit and overlap require review.")
+        unknowns.append("Pulse/beat-one alignment, phrase completion and percussion overlap require review.")
         known_weight = sum(w for w, _ in components.values())
         # Missing fields are not treated as perfect matches or silently imputed.
         raw = sum(w * v for w, v in components.values())
@@ -242,9 +242,15 @@ def rank_next_tracks(tracks, current_track_id=None, *, played_ids=(), intent=Non
         dense = (candidate_vocals is not None and current_vocals is not None
                  and candidate_vocals > 0.6 and current_vocals > 0.6)
         reset = bool(tempo_options and tempo_options[0]["status"] == "natural_tempo_reset_proposal")
-        treatment = ("short foreground exchange; avoid prolonged vocal overlap" if dense else
-                     "natural-tempo reset or short texture bridge" if reset else
-                     "test an intro/body overlap with one bass owner at a time")
+        # Clock incompatibility and vocal overlap can coexist. Neither warning
+        # should disappear because the other selected the treatment branch.
+        treatment = ("test a natural-tempo reset or texture bridge" if reset else
+                     "test a foreground exchange" if dense else
+                     "test an intro/body overlap")
+        if dense:
+            treatment += "; avoid prolonged foreground vocal overlap"
+        treatment += ("; let any outgoing spoken or sung phrase finish before removing it"
+                      "; plan one bass owner and complementary high-percussion ownership")
         options.append({"track_id": track_id, "title": track.get("title", track_id),
                         "artists": copy.deepcopy(track.get("artists", [])), "score": round(min(score, 1), 6),
                         "lane": lane, "reasons": reasons[:4], "unknowns": unknowns[:6],

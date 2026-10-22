@@ -31,6 +31,15 @@ Every option has `track_id`, title/artists, a bounded heuristic `score`, a `lane
 
 Tempo options include bounded same-pulse or half/double-pulse clock hypotheses. A clock ratio does not verify musical pulse or bar one. A natural-tempo reset remains available when the declared stretch limit cannot accommodate the supplied clocks. Treatment suggestions are qualitative; no source beat or control envelope is automatically written.
 
+Transition proposals keep clock, vocal and percussion concerns together. Dense
+vocal annotations never hide the need for a natural-tempo reset, and a short
+exchange is not a reason to cut off a spoken or sung phrase. Suggestions ask
+you to let an outgoing phrase finish before withdrawing it and to plan both bass
+and high-percussion ownership; matching bass alone can still leave clashing hats.
+These are review prompts, including when annotations are incomplete. They do not
+locate a local vocal ending, choose a fade duration, certify beat one or approve
+the handoff. Review an exact rendered or cue-monitored passage before keeping it.
+
 ## Shared session state
 
 ```python
