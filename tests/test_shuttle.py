@@ -18,6 +18,7 @@ def runtime(tmp_path):
     r = Runtime.__new__(Runtime)
     r.lock = threading.RLock()
     r.action_lock = threading.Lock()
+    r.observation_lock = threading.Lock()
     r.owner = "s"
     r.lease = "lease"
     r.revision = 0
@@ -26,6 +27,7 @@ def runtime(tmp_path):
     r.requests = {}
     r.last_physical_ns = 0
     r.ready = True
+    r.initial_inventory_seen = True
     r.topology_changed = False
     r.midi = SimpleNamespace(poll=lambda: None)
     r.capture = SimpleNamespace(poll=lambda: None)
@@ -33,6 +35,11 @@ def runtime(tmp_path):
     r.events = []
     r.log = r.events.append
     r.gains = {"left": 64, "right": 64}
+    r.binding = {}
+    r.binding_pid = {}
+    r.feedback = {}
+    r.feedback_ns = {}
+    r.capture_status = {"state": "not_requested"}
     return r
 
 
@@ -82,7 +89,7 @@ def test_takeover_interrupts_gain_without_restoring_or_finishing(tmp_path):
     r.observe = lambda _: {"decks": {"left": {"track_id": "a", "playing": True}}}
     values = []
 
-    def send(messages):
+    def send(messages, **kwargs):
         values.append(messages[0][-1])
         r._yield("physical controller")
 
@@ -90,7 +97,7 @@ def test_takeover_interrupts_gain_without_restoring_or_finishing(tmp_path):
     with pytest.raises(PocketError, match="yielded"):
         r._execute("s", {"kind": "gain", "deck": "left", "value": 0, "duration_seconds": 0.1}, "lease")
     assert values == [32]
-    assert r.gains["left"] == 32
+    assert r.gains["left"] is None
     assert r.owner is None and r.cancel.exists()
 
 
@@ -162,7 +169,7 @@ def test_unqualified_actions_are_refused(action):
 def test_load_never_replaces_playing_deck(tmp_path):
     r = runtime(tmp_path)
     r.observe = lambda _: {"decks": {"left": {"playing": True}}}
-    r._send = lambda _: pytest.fail("no native dispatch")
+    r._send = lambda _, **kwargs: pytest.fail("no native dispatch")
     with pytest.raises(PocketError, match="playing"):
         r._execute("s", {"kind": "load", "deck": "left", "track_id": "a"}, "lease")
 
@@ -186,7 +193,7 @@ def test_load_forgets_previous_record_trim_before_dispatch(tmp_path, monkeypatch
     original_expand = Path.expanduser
     monkeypatch.setattr(Path, "expanduser", lambda p: log if str(p).endswith("/Logs/DJ.INFO") else original_expand(p))
 
-    def pulse(note):
+    def pulse(note, **kwargs):
         assert note == 50 and r.gains["left"] is None and "left" not in r.binding
         log.write_text("[View] The cache `" + str(source) + "` was requested\n")
 
@@ -254,7 +261,7 @@ def test_solo_play_requires_master_signal_unless_quiet_is_explicit(tmp_path, mon
         "audio": {"rms_dbfs": [-240, -240]},
     }
     r._guard_monitor = lambda: {"rms_dbfs": [-240, -240]}
-    r._pulse = lambda _: pytest.fail("already playing; never blindly toggle")
+    r._pulse = lambda _, **kwargs: pytest.fail("already playing; never blindly toggle")
     with pytest.raises(PocketError, match="master remains near-silent"):
         r._execute("s", {"kind": "play", "deck": "left"}, "lease")
     assert r._execute("s", {"kind": "play", "deck": "left", "allow_silence": True}, "lease")["playing"]
@@ -265,7 +272,7 @@ def test_unknown_loop_feedback_cannot_claim_exit(tmp_path):
     r.observe = lambda _: {
         "decks": {"left": {"track_id": "a", "loop_beats": None, "loop_state_known": False}}
     }
-    r._pulse = lambda _: pytest.fail("unknown state must not toggle")
+    r._pulse = lambda _, **kwargs: pytest.fail("unknown state must not toggle")
     with pytest.raises(PocketError, match="feedback is unknown"):
         r._execute("s", {"kind": "loop", "deck": "left", "beats": None}, "lease")
 
@@ -274,7 +281,7 @@ def test_replayed_transport_does_not_rewrite_choice_history(monkeypatch):
     monkeypatch.setattr(shuttle, "_session", lambda _: {"runtime_dir": "r", "session_id": "s"})
     receipt = {"status": "verified", "track_id": "a", "replayed": True}
     monkeypatch.setattr(shuttle, "_rpc", lambda *args: receipt)
-    monkeypatch.setattr(shuttle, "session_snapshot", lambda _: pytest.fail("replay is historical"))
+    monkeypatch.setattr(shuttle, "session_snapshot", lambda _, **kwargs: pytest.fail("replay is historical"))
     assert shuttle.shuttle_act("s", 0, "one", {"kind": "play", "deck": "left"}) == receipt
 
 
@@ -296,6 +303,7 @@ def test_shuttle_cli_and_stdio_publish_the_same_bounded_contract(tmp_path):
     cli = subprocess.run(
         [sys.executable, "-m", "pocket_music.cli", "shuttle", "observe", "--spec", str(spec)],
         text=True, capture_output=True, timeout=15,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
     )
     assert cli.returncode == 2
     assert json.loads(cli.stderr)["error"] == "PocketError"

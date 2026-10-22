@@ -13,6 +13,7 @@ import re
 import secrets
 import shutil
 import socketserver
+import struct
 import subprocess
 import tempfile
 import threading
@@ -24,6 +25,50 @@ import soundfile as sf
 
 from .errors import PocketError
 from .shuttle import PROFILE, _hash, _pcm_identity
+
+CAPTURE_MAX_FRAMES = 1200 * 48000
+
+
+def _read_exact(stream, size):
+    data = bytearray()
+    while len(data) < size:
+        block = stream.read(size - len(data))
+        if not block:
+            raise PocketError("Master stream ended inside its WAV header")
+        data.extend(block)
+    return bytes(data)
+
+
+def _master_stream_header(stream):
+    """Validate the negotiated format instead of interpreting arbitrary raw PCM."""
+    header = _read_exact(stream, 12)
+    if header[:4] != b"RIFF" or header[8:] != b"WAVE":
+        raise PocketError("Master stream must have a self-describing WAV header")
+    consumed, qualified = 12, False
+    while consumed < 65536:
+        name, size = struct.unpack("<4sI", _read_exact(stream, 8))
+        consumed += 8
+        if name == b"data":
+            if not qualified:
+                raise PocketError("Master stream has no qualified format before its data")
+            return
+        if consumed + size + size % 2 > 65536:
+            raise PocketError("Master WAV header exceeds its bounded size")
+        chunk = _read_exact(stream, size + size % 2)[:size]
+        consumed += size + size % 2
+        if name != b"fmt ":
+            continue
+        if size < 16:
+            raise PocketError("Master WAV format is incomplete")
+        encoding, channels, rate, byte_rate, align, bits = struct.unpack("<HHIIHH", chunk[:16])
+        if encoding == 65534 and size >= 40:
+            # WAVE_FORMAT_EXTENSIBLE IEEE_FLOAT, valid bits equal container bits.
+            if chunk[18:20] == b"\x20\x00" and chunk[24:40] == bytes.fromhex("0300000000001000800000aa00389b71"):
+                encoding = 3
+        if (encoding, channels, rate, byte_rate, align, bits) != (3, 2, 48000, 384000, 8, 32):
+            raise PocketError("Master stream must negotiate FLOAT32 stereo 48000 Hz; no implicit conversion")
+        qualified = True
+    raise PocketError("Master WAV header exceeds its bounded size")
 
 
 def _norm(text):
@@ -120,6 +165,7 @@ class Runtime:
         self.condition = threading.Condition(self.lock)
         self.action_lock = threading.Lock()
         self.send_lock = threading.Lock()
+        self.observation_lock = threading.Lock()
         self.log_lock = threading.Lock()
         self.cancel = self.directory / "cancel"
         self.sessions = {}
@@ -132,11 +178,15 @@ class Runtime:
         self.last_physical_ns = 0
         self.physical_events = 0
         self.feedback = {}
+        self.feedback_ns = {}
         self.audio = None
+        self.audio_error = None
         self.ready = False
+        self.initial_inventory_seen = False
         self.topology_changed = False
         self.gains = {"left": None, "right": None}
         self.binding = {}
+        self.binding_pid = {}
         self.verified_pcm = {}
         self.midi = subprocess.Popen(
             [str(self.build / "midi-bridge")],
@@ -161,7 +211,7 @@ class Runtime:
                 "-c:a",
                 "pcm_f32le",
                 "-f",
-                "f32le",
+                "wav",
                 "pipe:1",
             ],
             stdout=subprocess.PIPE,
@@ -169,6 +219,15 @@ class Runtime:
             bufsize=0,
         )
         self.capture_file = capture_file
+        self.capture_status = {
+            "state": "starting" if capture_file else "not_requested",
+            "frames_written": 0,
+            "maximum_frames": CAPTURE_MAX_FRAMES,
+            "sample_rate": 48000,
+            "channels": 2,
+            "format_verified": False,
+            "completion_scope": "local_file_finalization_not_continuity_or_listening_proof",
+        }
         self.midi_thread = threading.Thread(target=self._midi_reader, daemon=True)
         self.midi_thread.start()
         self.audio_thread = threading.Thread(target=self._audio_reader, daemon=True)
@@ -182,6 +241,9 @@ class Runtime:
         with self.lock:
             self.owner = None
             self.lease = None
+            self.gains = {"left": None, "right": None}
+            self.binding.clear()
+            self.binding_pid.clear()
             self.revision += 1
             self.cancel.touch(exist_ok=True)
         self.log({"event": "yield", "reason": reason, "revision": self.revision})
@@ -195,6 +257,12 @@ class Runtime:
             self.log(event)
             with self.condition:
                 if event.get("event") == "ready":
+                    if not self.initial_inventory_seen:
+                        # The helper creates its own endpoints before emitting
+                        # its complete initial inventory. Only this first
+                        # baseline may supersede those setup notifications.
+                        self.topology_changed = False
+                        self.initial_inventory_seen = True
                     self.ready = any("FLX4" in s["name"].upper() for s in event["sources"])
                 if event.get("event") == "sent":
                     self.acks.setdefault(event.get("request_id"), []).append(event["status"])
@@ -203,34 +271,51 @@ class Runtime:
                     b = event["bytes"]
                     for i in range(0, len(b) - 2, 3):
                         self.feedback[(b[i], b[i + 1])] = b[i + 2]
+                        self.feedback_ns[(b[i], b[i + 1])] = event.get("monotonic_ns", 0)
                 if event.get("origin") == "flx4" and any(128 <= v < 240 for v in event["bytes"]):
                     self.physical_events += 1
                     self.last_physical_ns = time.monotonic_ns()
                     self.gains = {"left": None, "right": None}
+                    self.binding.clear()
+                    self.binding_pid.clear()
                     if self.owner is not None:
                         self._yield("FLX4 intervention")
-                if event.get("event") == "topology" and self.owner is not None:
+                if event.get("event") == "topology":
                     self.topology_changed = True
-                    self._yield("MIDI topology changed; restart and requalify connection")
+                    self.binding.clear()
+                    self.binding_pid.clear()
+                    self.gains = {"left": None, "right": None}
+                    if self.owner is not None:
+                        self._yield("MIDI topology changed; restart and requalify connection")
 
     def _audio_reader(self):
         pending = b""
         frame = 0
         saved = None
+        destination = None
         try:
+            _master_stream_header(self.capture.stdout)
+            with self.lock:
+                self.capture_status["format_verified"] = True
             if self.capture_file:
-                if Path(self.capture_file).exists():
-                    raise PocketError("Capture destination already exists")
+                # Exclusive create also protects against a destination appearing
+                # between a preflight check and the writer opening it.
+                destination = Path(self.capture_file).open("xb")
                 saved = sf.SoundFile(
-                    self.capture_file, "w", samplerate=48000, channels=2, format="WAV", subtype="FLOAT"
+                    destination, "w", samplerate=48000, channels=2, format="WAV", subtype="FLOAT"
                 )
+                with self.lock:
+                    self.capture_status["state"] = "recording"
             while True:
                 more = self.capture.stdout.read(38400 - len(pending))
-                if not more:
-                    break
+                ended = not more
                 pending += more
-                if len(pending) < 38400:
+                if ended and not pending:
+                    break
+                if not ended and len(pending) < 38400:
                     continue
+                if len(pending) % 8:
+                    raise PocketError("Master stream ended with an incomplete stereo frame")
                 x = np.frombuffer(pending, dtype="<f4").reshape(-1, 2)
                 pending = b""
                 finite = bool(np.isfinite(x).all())
@@ -248,17 +333,56 @@ class Runtime:
                     "peak_dbfs": [float(20 * np.log10(max(v, 1e-12))) for v in peaks],
                 }
                 frame += len(x)
-                if saved and frame <= 1200 * 48000:
-                    saved.write(x)
+                if not finite:
+                    raise PocketError("Master stream contains nonfinite samples")
+                if saved:
+                    remaining = CAPTURE_MAX_FRAMES - self.capture_status["frames_written"]
+                    kept = x[:remaining]
+                    saved.write(kept)
                     saved.flush()
+                    with self.lock:
+                        self.capture_status["frames_written"] += len(kept)
+                    if len(kept) == remaining:
+                        saved.close()
+                        saved = None
+                        destination.close()
+                        destination = None
+                        with self.lock:
+                            self.capture_status["state"] = "exhausted"
+                        self.log({"event": "capture_exhausted", **self.capture_status})
                 with self.lock:
                     self.audio = event
                 self.log(event)
+                if ended:
+                    break
+        except Exception as exc:
+            with self.lock:
+                self.audio_error = str(exc)
+                self.audio = None
+                if self.capture_file:
+                    self.capture_status.update(state="failed", error=str(exc))
+            self.log({"event": "audio_failed", "error": str(exc), "capture": dict(self.capture_status)})
         finally:
-            if saved:
-                saved.close()
+            closing_error = None
+            for output in (saved, destination):
+                if output is None:
+                    continue
+                try:
+                    output.close()
+                except Exception as exc:
+                    closing_error = str(exc)
+            if closing_error is None:
+                with self.lock:
+                    if self.capture_status["state"] == "recording":
+                        self.capture_status["state"] = "finalized"
+                if self.capture_file:
+                    self.log({"event": "capture_closed", **self.capture_status})
+            else:
+                with self.lock:
+                    self.capture_status.update(state="failed", error=closing_error)
+                self.log({"event": "capture_failed", **self.capture_status})
 
-    def _guard_monitor(self):
+    def _guard_monitor(self, require_capture=True):
         with self.lock:
             audio = self.audio
             if (
@@ -268,33 +392,50 @@ class Runtime:
                 or self.capture.poll() is not None
                 or audio is None
                 or not audio["finite"]
-                or time.monotonic_ns() - audio["at_ns"] > 600_000_000
+                or type(audio.get("at_ns")) is not int
+                or not 0 <= time.monotonic_ns() - audio["at_ns"] <= 600_000_000
             ):
                 raise PocketError("Live monitoring is unavailable or stale; no control dispatched")
+            capture = getattr(self, "capture_status", {})
+            if require_capture and capture.get("state") in ("starting", "exhausted", "failed", "finalized"):
+                raise PocketError("Requested capture is not recording (" + capture["state"] + "); no control dispatched")
         return audio
 
-    def _send(self, messages):
-        self._guard_monitor()
+    def _send(self, messages, *, session_id, lease):
         with self.send_lock:
-            self.serial += 1
-            ident = str(self.serial)
             with self.condition:
+                # Authority and bounded submission are serialized with revoke.
+                # Note-on/off are submitted together, before releasing this lock.
+                self._owned(session_id, lease)
+                self.serial += 1
+                ident = str(self.serial)
                 self.acks[ident] = []
-            for message in messages:
-                self.midi.stdin.write(json.dumps({"send": message, "request_id": ident}) + "\n")
-            self.midi.stdin.flush()
-            with self.condition:
+                payload = "".join(json.dumps({"send": message, "request_id": ident}) + "\n"
+                                  for message in messages)
+                self.midi.stdin.write(payload)
+                self.midi.stdin.flush()
+                # Condition.wait_for releases the state lock, so physical input,
+                # explicit release and the acknowledgement reader remain live.
                 complete = self.condition.wait_for(lambda: len(self.acks[ident]) == len(messages), timeout=1)
                 acks = self.acks.pop(ident)
             if not complete or any(acks):
                 raise PocketError("Native dispatch outcome unknown; inspect request status before retrying")
 
-    def _pulse(self, note):
-        self._send([[144, note, 127], [128, note, 0]])
+    def _pulse(self, note, *, session_id, lease):
+        self._send([[144, note, 127], [128, note, 0]], session_id=session_id, lease=lease)
 
     def _raw_observe(self):
-        self._guard_monitor()
+        if not self.observation_lock.acquire(blocking=False):
+            raise PocketError("Fresh Serato observation is busy; no cached result returned")
+        try:
+            return self._capture_observation()
+        finally:
+            self.observation_lock.release()
+
+    def _capture_observation(self):
+        self._guard_monitor(require_capture=False)
         path = self.directory / ("view-" + secrets.token_hex(6) + ".png")
+        requested_ns = time.monotonic_ns()
         result = subprocess.run(
             [str(self.build / "observe"), str(path)], capture_output=True, text=True, timeout=8
         )
@@ -305,7 +446,16 @@ class Runtime:
             raise PocketError(
                 "Unsupported Serato view; use the qualified Extended 1470x956 view, MIDI learn off"
             )
-        self._guard_monitor()
+        now = time.monotonic_ns()
+        started, completed = raw.get("started_ns"), raw.get("completed_ns")
+        if (
+            type(started) is not int or type(completed) is not int
+            or not requested_ns <= started <= completed <= now
+            or now - started > 8_000_000_000
+            or raw.get("image_path") != str(path)
+        ):
+            raise PocketError("Native observation is stale, future-dated or belongs to another capture")
+        self._guard_monitor(require_capture=False)
         return raw
 
     def observe(self, session_id):
@@ -315,6 +465,11 @@ class Runtime:
         for deck in ("left", "right"):
             fields = _deck_fields(raw, deck)
             match = _match(fields, session["assets"])
+            if (not match or self.binding.get(deck) != match["track_id"]
+                    or type(raw.get("serato_pid")) is not int
+                    or self.binding_pid.get(deck) != raw.get("serato_pid")):
+                self.binding.pop(deck, None)
+                self.binding_pid.pop(deck, None)
             first = 30 if deck == "left" else 32
             active = [
                 beats
@@ -342,9 +497,11 @@ class Runtime:
                 "owned": self.owner == session_id,
                 "physical_events": self.physical_events,
                 "audio": dict(self.audio),
+                "capture": dict(self.capture_status),
                 "decks": decks,
                 "profile": PROFILE,
-                "native_observation_ns": raw["completed_ns"],
+                "native_observation_ns": raw["started_ns"],
+                "native_observation_completed_ns": raw["completed_ns"],
                 "image_path": raw["image_path"],
                 "serato_pid": raw.get("serato_pid"),
                 "coverage": {
@@ -360,6 +517,24 @@ class Runtime:
             if self.owner != session_id or self.lease != lease:
                 raise PocketError("Shuttle yielded; pending work cancelled without restoring controls")
         self._guard_monitor()
+
+    def _verified_source(self, target):
+        path = Path(target["native_path"])
+
+        def stamp():
+            value = path.stat()
+            return (str(path), value.st_dev, value.st_ino, value.st_ctime_ns,
+                    value.st_mtime_ns, value.st_size)
+
+        observed = stamp()
+        if observed not in self.verified_pcm:
+            decoded = _pcm_identity(path)
+            if stamp() != observed:
+                raise PocketError("Native source changed during verification")
+            self.verified_pcm[observed] = decoded
+        if self.verified_pcm[observed] != target["pcm"]:
+            raise PocketError("Native source audio differs from the prepared recording; prepare again if its identity is outdated")
+        return observed
 
     def _execute(self, session_id, action, lease):
         kind = action["kind"]
@@ -377,16 +552,14 @@ class Runtime:
                 raise PocketError("Record is not in the prepared crate")
             target = matches[0]
             path = Path(target["native_path"])
-            stamp = (str(path), path.stat().st_mtime_ns, path.stat().st_size)
-            if stamp not in self.verified_pcm:
-                if _pcm_identity(path) != target["pcm"]:
-                    raise PocketError("Native source audio differs from the prepared recording")
-                self.verified_pcm[stamp] = True
+            self._verified_source(target)
             subprocess.run(
                 [str(self.build / "library-keys"), str(len(assets)), str(target["index"]), str(self.cancel)],
                 check=True,
                 timeout=12,
             )
+            self._owned(session_id, lease)
+            self._verified_source(target)
             self._owned(session_id, lease)
             log = Path("~/Music/_Serato_/Logs/DJ.INFO").expanduser()
             before = log.stat()
@@ -395,9 +568,12 @@ class Runtime:
                     raise PocketError("Serato cache log does not belong to the observed app process")
             # Loading restores per-record trim; a previous command no longer
             # supplies a valid starting value for a gain ride on this deck.
-            self.gains[deck] = None
-            self.binding.pop(deck, None)
-            self._pulse(51 if right else 50)
+            with self.lock:
+                self._owned(session_id, lease)
+                self.gains[deck] = None
+                self.binding.pop(deck, None)
+                self.binding_pid.pop(deck, None)
+            self._pulse(51 if right else 50, session_id=session_id, lease=lease)
             time.sleep(0.4)
             after = self.observe(session_id)
             last = log.stat()
@@ -414,7 +590,13 @@ class Runtime:
                 or cache_paths != {str(path)}
             ):
                 raise PocketError("Loaded source not verified; no playback was started")
-            self.binding[deck] = target["track_id"]
+            if after.get("serato_pid") != observation.get("serato_pid"):
+                raise PocketError("Serato process changed during loading; source binding unavailable")
+            self._verified_source(target)
+            with self.lock:
+                self._owned(session_id, lease)
+                self.binding[deck] = target["track_id"]
+                self.binding_pid[deck] = after.get("serato_pid")
             return {
                 "status": "verified",
                 "track_id": target["track_id"],
@@ -427,7 +609,7 @@ class Runtime:
             if fields["playing"] is None:
                 raise PocketError("Transport state is unresolved")
             if fields["playing"] != desired:
-                self._pulse(21 if right else 20)
+                self._pulse(21 if right else 20, session_id=session_id, lease=lease)
             after = self.observe(session_id)
             if after["decks"][deck]["playing"] != desired:
                 raise PocketError("Transport command was not verified; do not toggle again blindly")
@@ -471,8 +653,10 @@ class Runtime:
                 else:
                     quiet_since = None
                 value = target if start is None else round(start + (target - start) * step / steps)
-                self._send([[176, 24 if right else 23, value]])
-                self.gains[deck] = value
+                self._send([[176, 24 if right else 23, value]], session_id=session_id, lease=lease)
+                with self.lock:
+                    self._owned(session_id, lease)
+                    self.gains[deck] = value
                 delay = began + duration * step / steps - time.monotonic()
                 if delay > 0:
                     time.sleep(delay)
@@ -487,6 +671,10 @@ class Runtime:
             first = 32 if right else 30
             if wanted is None and not fields.get("loop_state_known", False):
                 raise PocketError("Loop feedback is unknown; refusing to claim loop exit")
+            if wanted == current:
+                return {"status": "unchanged", "loop_beats": wanted,
+                        "verification": "cached MIDI feedback; no new dispatch or fresh readback"}
+            sent_ns = time.monotonic_ns()
             if wanted != current:
                 if wanted is None:
                     if current is None:
@@ -494,16 +682,29 @@ class Runtime:
                     note = first + (current == 16)
                 else:
                     note = first + (wanted == 16)
-                self._pulse(int(note))
-                time.sleep(0.12)
-            if wanted is not None and self.feedback.get((144, first + (wanted == 16))) != 127:
-                raise PocketError("Loop state not confirmed by fresh MIDI feedback")
-            if wanted is None and any(self.feedback.get((144, n)) == 127 for n in (first, first + 1)):
-                raise PocketError("Loop exit not confirmed")
+                self._pulse(int(note), session_id=session_id, lease=lease)
+            deadline = time.monotonic() + 0.5
+            while True:
+                self._owned(session_id, lease)
+                now_ns = time.monotonic_ns()
+                with self.lock:
+                    if wanted is not None:
+                        address = (144, first + (wanted == 16))
+                        confirmed = self.feedback.get(address) == 127
+                    else:
+                        address = (144, note)
+                        confirmed = all(self.feedback.get((144, n)) == 0 for n in (first, first + 1))
+                    seen = self.feedback_ns.get(address, 0)
+                    confirmed = confirmed and type(seen) is int and sent_ns <= seen <= now_ns
+                if confirmed:
+                    break
+                if time.monotonic() >= deadline:
+                    raise PocketError("Loop state not confirmed by post-dispatch MIDI feedback; do not toggle again blindly")
+                time.sleep(0.02)
             return {"status": "verified", "loop_beats": wanted}
         if kind == "sync":
             note = 35 if right else 34
-            self._pulse(note)
+            self._pulse(note, session_id=session_id, lease=lease)
             time.sleep(0.15)
             return {
                 "status": "dispatched",

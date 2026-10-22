@@ -22,6 +22,7 @@ import tempfile
 from urllib.parse import quote
 
 import soundfile as sf
+import numpy as np
 
 from .errors import PocketError
 from .shuttle_types import ShuttleAction
@@ -41,32 +42,45 @@ def _hash(path):
 
 
 def _pcm_identity(path):
-    """Decoded int32 frames; container identity remains separately retained."""
+    """Decoded samples; keep integer v1 identities and tag exact floats as v2."""
     path = Path(path)
     before = path.stat()
     h = hashlib.sha256()
+    representation = None
     with sf.SoundFile(path) as audio:
         header = [audio.samplerate, audio.channels, len(audio), audio.subtype]
         h.update(json.dumps(header).encode())
+        floating = audio.subtype in ("FLOAT", "DOUBLE")
+        dtype = "float32" if audio.subtype == "FLOAT" else "float64" if floating else "int32"
+        if floating:
+            representation = "decoded-" + dtype + "-little-endian/v2"
+            h.update(representation.encode())
         while True:
-            data = audio.read(65536, dtype="int32", always_2d=True)
+            data = audio.read(65536, dtype=dtype, always_2d=True)
             if not len(data):
                 break
-            h.update(data.astype("<i4", copy=False).tobytes())
+            if floating and not np.isfinite(data).all():
+                raise PocketError("Floating-point source contains nonfinite samples")
+            h.update(data.astype("<f4" if dtype == "float32" else "<f8" if floating else "<i4", copy=False).tobytes())
     after = path.stat()
-    if (before.st_size, before.st_mtime_ns, before.st_ino) != (
+    if (before.st_size, before.st_mtime_ns, before.st_ino, before.st_dev, before.st_ctime_ns) != (
         after.st_size,
         after.st_mtime_ns,
         after.st_ino,
+        after.st_dev,
+        after.st_ctime_ns,
     ):
         raise PocketError("Recording changed during identity verification")
-    return {
+    result = {
         "sha256": h.hexdigest(),
         "sample_rate": header[0],
         "channels": header[1],
         "frames": header[2],
         "subtype": header[3],
     }
+    if representation:
+        result["representation"] = representation
+    return result
 
 
 def _clone(source, destination):

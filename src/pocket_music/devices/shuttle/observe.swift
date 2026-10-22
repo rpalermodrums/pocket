@@ -25,6 +25,7 @@ guard capture.terminationStatus==0,let src=CGImageSourceCreateWithURL(URL(fileUR
 let factor=Double(image.width)/1470
 let crop=image.cropping(to:CGRect(x:0,y:0,width:image.width,height:Int(225*factor)))!
 let request=VNRecognizeTextRequest();request.recognitionLevel = .accurate;request.usesLanguageCorrection=false
+request.usesCPUOnly=true
 try VNImageRequestHandler(cgImage:crop,options:[:]).perform([request])
 let texts=(request.results ?? []).compactMap{ o -> [String:Any]? in
  guard let t=o.topCandidates(1).first else{return nil}
