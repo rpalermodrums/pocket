@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
+import sys
 
 from .artifact_store import digest, receipt
 from .errors import PocketError
 
 # Public name, provider module, domain, operation, read-only, summary.
 PUBLIC_CAPABILITIES = (
+    ('shuttle_build_bridge', 'shuttle', 'performance', 'build_bridge', False, 'Build the optional local Serato/FLX4 bridge without starting it.'),
+    ('shuttle_prepare', 'shuttle', 'performance', 'prepare', False, 'Snapshot one local crate and prepare an unordered Whisker session.'),
+    ('shuttle_observe', 'shuttle', 'performance', 'observe', True, 'Read fresh supported Serato state and actual master signal; no listening claim.'),
+    ('shuttle_options', 'shuttle', 'performance', 'options', True, 'Propose next records using the crate, history and observed current deck.'),
+    ('shuttle_act', 'shuttle', 'performance', 'act', False, 'One revision-checked bounded move with native observation, replay and FLX4 takeover.'),
+    ('shuttle_request_status', 'shuttle', 'performance', 'request_status', True, 'Inspect a retained native request without redispatch.'),
     ('request_status', 'artifact_store', 'artifact', 'status', True, 'Inspect request journals and retained artifact integrity without redispatching.'),
     ('material_import', 'material', 'material', 'import', False, 'Retain source bytes and project supported MIDI material.'),
     ('material_query', 'material', 'material', 'query', True, 'Bounded summaries, exact selections and semantic differences.'),
@@ -110,6 +118,12 @@ _UNAVAILABLE = (
 # These are semantic artifact families, distinct from the common handle envelope.
 # An empty return list means the operation returns ordinary versioned data only.
 _HANDLE_FAMILIES = {
+    'shuttle_build_bridge': ([], []),
+    'shuttle_prepare': ([], []),
+    'shuttle_observe': ([], []),
+    'shuttle_options': ([], []),
+    'shuttle_act': ([], []),
+    'shuttle_request_status': ([], []),
     'request_status': ([], []),
     'material_import': ([], ['pocket.material/v1']),
     'material_query': (['pocket.material/v1'], []),
@@ -262,6 +276,19 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         if module == 'interpretations':
             profile = 'source-bound-interpretations/v1'
             prerequisites = ['Exact context source clock and retained candidate revision, or explicitly authored/unresolved claim; no implicit tempo or meter edit']
+        if module == 'shuttle':
+            profile = 'serato-5-extended-1470x956/v1'
+            prerequisites = ['Explicit local bridge setup, FLX4, Serato 5.0.0 Extended 1470x956; source/display/master checks; no beat-accurate scheduler or listening verdict']
+            if name == 'shuttle_build_bridge':
+                prerequisites = ['macOS with Swift compiler (swiftc) and ffmpeg on PATH; new output directory; building starts no host or capture and requires no connected controller']
+                if sys.platform != 'darwin':
+                    status = 'unsupported'
+                elif not shutil.which('swiftc') or not shutil.which('ffmpeg'):
+                    status = 'requires_optional_setup'
+            else:
+                status = 'requires_native_setup'
+            if name == 'shuttle_act':
+                side_effects += ['native_serato_controls', 'session_revision', 'track_gain_metadata']
         if name == 'midi_timing_query':
             side_effects = ['temporary_local_proof_replay; caller_store_unchanged']
         if name in ('audio_region_hypotheses', 'audio_region_submit'):

@@ -19,6 +19,14 @@ from .errors import PocketError
 # With a destination, --output creates that artifact; otherwise it saves the
 # response JSON. The parsed record printed to stdout is the library result.
 _SPEC_OPERATIONS = {
+    "shuttle": {
+        "build-bridge": ("shuttle", "shuttle_build_bridge", "output_dir"),
+        "prepare": ("shuttle", "shuttle_prepare", "output_dir"),
+        "observe": ("shuttle", "shuttle_observe", None),
+        "options": ("shuttle", "shuttle_options", None),
+        "act": ("shuttle", "shuttle_act", None),
+        "request-status": ("shuttle", "shuttle_request_status", None),
+    },
     "pipette": {
         "promote": ("pipette", "promote_trial", "output_dir"),
         "validate": ("pipette", "validate_promotion", None),
@@ -165,6 +173,7 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--spec", required=True, help="JSON arguments for this operation")
     for group, operations in _SPEC_OPERATIONS.items():
         help_text = {
+            "shuttle": "Improvise from a local Serato crate through the qualified native bridge",
             "pipette": "Promote a kept Stitch candidate into a new collected saved project",
             "bag": "Create or navigate a sealed record catalog",
             "weave": "Explore routes through a set and refine them with feedback",

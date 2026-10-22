@@ -305,7 +305,8 @@ def build_server(error_format=None):
         server.add_tool(_compact_response(function), name=name, description=description,
                         structured_output=False,
                         annotations=ToolAnnotations(readOnlyHint=read_only, destructiveHint=False,
-                                                    idempotentHint=True, openWorldHint=False))
+                                                    idempotentHint=(read_only or name == 'shuttle_act') if module == 'shuttle' else True,
+                                                    openWorldHint=False))
     return server
 
 
