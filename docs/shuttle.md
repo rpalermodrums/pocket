@@ -159,7 +159,3 @@ automatic source separation, physical knob movement, or general controller
 support in this profile. Broader performance scheduling remains a separate
 unqualified capability. Your listening and feedback decide whether the moves
 make a worthwhile set.
-
-The [live performance design](specs/live-performance.md) assigns future shared
-control to [b2b](specs/b2b.md) and stream observations to
-[listen](specs/listen.md). These are proposed modules, not callable providers.
