@@ -186,8 +186,9 @@ class B2bHost:
     def _report_fault(self, fault) -> None:
         """A host fault the broker failed closed on. Agent control has already stopped for good."""
         self.faulted.set()
-        print("b2b host fault: agent control stopped for the rest of this host; your controls still work. "
-              "Stop this host and start a new one to play with the agent again.", file=sys.stderr, flush=True)
+        print("b2b host fault: agent control stopped for the rest of this host. Touching your controls, Hold "
+              "and Stop still work; start a new host to release holds or play with the agent again.",
+              file=sys.stderr, flush=True)
         traceback.print_exception(fault, file=sys.stderr)
 
     def tick(self) -> None:

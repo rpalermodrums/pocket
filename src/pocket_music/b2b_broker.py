@@ -1572,7 +1572,8 @@ class Broker:
         """
         first = self._fault is None
         if first:
-            self._fault = "an internal fault" if fault is None else f"{type(fault).__name__}: {fault}"[:300]
+            # Only the kind reaches agents and the page; the terminal prints the full fault.
+            self._fault = "an internal fault" if fault is None else type(fault).__name__
         failures = []
 
         def attempt(step):

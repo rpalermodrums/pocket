@@ -123,8 +123,8 @@ use **Take it back**.
 
 **Invite** never drops a hold. Linked controls, like an FX unit's depth and route,
 are handed back together, so release any hold in that pair first. The hand-back
-pad is different: a long press hands back its controls, held or not. A Hold or
-Stop pressed while the pad is down cancels that press.
+pad is different: a long press hands back its controls, held or not. While the pad
+is down, a Hold on one of its controls, or Stop, cancels that press.
 
 The agent then:
 
@@ -259,6 +259,11 @@ up the request ID. See [contracts and errors](contracts.md#opt-in-machine-errors
 - **The journal is full or failed.** Agent control stops and the page says so.
   Touching your controls, Hold and Stop keep working; releasing a hold or accepting a
   pickup waits for a new host. Restart the host with a new runtime folder.
+- **The host hit an internal fault.** Agent control stops for the rest of that host,
+  as when the journal fails: the page shows a banner and the terminal prints the
+  fault. Touching your controls, Hold, Stop, Deny and Take it back keep working;
+  releasing a hold, accepting a pickup or issuing waits for a new host. Agent calls
+  that would add authority fail with `io_error`; `b2b_observe` still answers.
 - **The host stopped.** Calls to the old session fail with `io_error`.
   `b2b_request_status` still answers from the old journal: `complete` with its
   receipt, `stopped_before_dispatch` when nothing was admitted, or `outcome_unknown`

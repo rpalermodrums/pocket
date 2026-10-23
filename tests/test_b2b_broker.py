@@ -1307,6 +1307,17 @@ def test_a_full_agent_table_refuses_reductions_rather_than_forget_a_request(tmp_
     assert h.broker.panic({})["outcome"]["kind"] == "panic"  # the person can always stop
 
 
+def test_a_hand_back_after_a_host_fault_creates_no_invitation(tmp_path, monkeypatch):
+    h = make(tmp_path)
+    monkeypatch.setattr(h.broker, "_evaluate_claim", lambda *_args: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        h.claim([GAIN], {"kind": "invitation", "invitation_id": "i-0000000000000000"})
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})
+    h.long_press()
+    assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+    assert events(h, "gesture_released")[-1]["outcome"] == "agent_control_stopped"
+
+
 def test_a_hand_back_after_shutdown_creates_no_invitation(tmp_path):
     h = make(tmp_path)
     h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})

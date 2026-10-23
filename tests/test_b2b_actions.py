@@ -969,7 +969,7 @@ def test_a_timer_that_keeps_failing_stops_agent_control_and_never_blocks_the_per
     fire = broker._fire
 
     def failing(kind, key, at, now):
-        if kind == "activity":  # a timer failing closed does not remove: it is due on every entry
+        if kind == "activity" and key == GAIN:  # failing closed doesn't remove it: due on every entry
             raise RuntimeError("a host bug")
         return fire(kind, key, at, now)
 
@@ -980,13 +980,16 @@ def test_a_timer_that_keeps_failing_stops_agent_control_and_never_blocks_the_per
     assert gain["kind"] == "human"  # never released, so it stays the person's
     observed = h.observe()
     assert observed["authority_state"]["permissions"] == [] and observed["grants"] == []
-    assert any("internal fault (RuntimeError: a host bug)" in w for w in observed["warnings"])
+    assert any("internal fault (RuntimeError)" in w for w in observed["warnings"])  # no raw text for agents
     assert len(reported) == 1 and str(reported[0]) == "a host bug"  # the terminal hears of it once
     assert broker.panic({})["outcome"]["kind"] == "panic"
     assert broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER]})["outcome"]["kind"] == "held"
-    h.move("controller/synthetic/channel-2/filter", 30)  # a touch still lands
-    touched = next(r for r in h.observe()["resources"] if r["resource_id"] == FILTER)
-    assert touched["owner"]["kind"] == "human" and touched["owner"]["hold"] == "explicit"
+    h.move("controller/synthetic/channel-1/trim", 30)  # a touch on a free control still lands
+    left = next(r["owner"] for r in h.observe()["resources"] if r["resource_id"] == "synthetic/left/gain")
+    assert (left["kind"], left["hold"]) == ("human", "activity")
+    h.tick(2100)  # its release still fires, though GAIN's fails first on every entry
+    left = next(r["owner"] for r in h.observe()["resources"] if r["resource_id"] == "synthetic/left/gain")
+    assert left["kind"] == "unowned"
     assert broker.trusted_state(h.channel, h.ui_epoch)["host_fault"] is True
 
 
@@ -1138,7 +1141,7 @@ def test_a_failed_epoch_renewal_after_a_suspend_is_retried(tmp_path, monkeypatch
     assert second["evidence"]["resources"][GAIN]["commanded_value"] is None
 
 
-def test_a_recording_path_that_keeps_failing_still_ends_authority_and_every_request(tmp_path, monkeypatch):
+def test_a_recording_path_that_keeps_failing_still_ends_authority_and_the_request(tmp_path, monkeypatch):
     h = _harness(tmp_path)
     gid, _ = _proactive(h)
     h.invite([TRANSPORT])

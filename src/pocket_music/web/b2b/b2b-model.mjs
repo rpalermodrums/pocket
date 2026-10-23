@@ -112,7 +112,8 @@ const WAITING = {
   notice_delivery_unknown: "The agent's claim was cancelled: this page didn't show it in time",
   notice_deadline_missed: "The agent's claim was cancelled: this page didn't confirm it in time",
   notice_denied: "You denied the agent's claim",
-  journal_unavailable: "Journal unavailable. Agent control stopped; your controls work as before.",
+  journal_unavailable: "Journal unavailable. Agent control stopped. Touching your controls, Hold and Stop "
+    + "still work.",
   resource_unavailable: "Unavailable",
   authority_issuer_required: "Proposal from the agent · Review",
   stale_page_state: "This page was out of date; it refreshed. Press again.",
