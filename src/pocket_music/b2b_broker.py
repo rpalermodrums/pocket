@@ -27,6 +27,7 @@ import json
 import re
 import secrets
 import threading
+import unicodedata
 from collections import OrderedDict, deque
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -704,12 +705,12 @@ def _valid_readback(readback, descriptor=None) -> bool:
     return descriptor["readback"] == "state" and readback.value in (descriptor.get("states") or ())
 
 
-def _valid_submission(submission) -> bool:
+def _valid_submission(submission, descriptor=None) -> bool:
     """What submit must return: a Submission whose fields the broker can read without raising."""
     return (isinstance(submission, Submission) and isinstance(submission.submission_id, str)
             and submission.ack in ("ok", "failed", "pending")
             and type(submission.submitted_monotonic_ns) is int
-            and (submission.readback is None or _valid_readback(submission.readback)))
+            and (submission.readback is None or _valid_readback(submission.readback, descriptor)))
 
 
 class TrustedChannel:
@@ -726,7 +727,7 @@ class TrustedChannel:
 class Broker:
     """The one local authority broker for a host. Every public method takes the broker lock."""
 
-    def __init__(self, adapter, clock, journal, *, host_epoch: str):
+    def __init__(self, adapter, clock, journal, *, host_epoch: str, on_fault=None):
         if not isinstance(host_epoch, str) or not 1 <= len(host_epoch) <= 32:
             raise ValueError("host_epoch is a short string")
         self._profile = validate_profile(adapter.profile)
@@ -772,6 +773,8 @@ class Broker:
         self._journal_degraded = False
         self._secrets = ()  # host secrets no input may carry: they would otherwise reach the journal
         self._stopped = False  # set by shutdown: nothing more is granted, invited, issued or dispatched
+        self._fault = None  # the first host fault, set when failing closed: agent control stays stopped
+        self._on_fault = on_fault  # told of that first fault (the host prints it to its terminal)
         self._sink_violations = 0  # the action half reads it: a step in flight then has an unknown outcome
         self._counters = {"feedback": 0, "ignored_events": 0, "gesture_bounces": 0, "gesture_duplicates": 0,
                           "ignored_releases": 0, "lost_journal_entries": 0}
@@ -833,24 +836,24 @@ class Broker:
     def _advance(self, now: int) -> None:
         """Run everything due by ``now`` in a fixed order, before the caller's own work.
 
-        A fault here (a timer, an epoch renewal) fails closed before it propagates, so the same due
-        item can't wedge every later entry, Stop included.
+        A fault here (an epoch renewal, a timer) fails closed and is reported, but the caller's own
+        work still runs: a touch, a Stop or a Hold lands even when a due item keeps failing.
         """
         try:
             self._advance_due(now)
-        except Exception as fault:
-            self._after_fault(fault, self._fail_closed)
-            raise
+        except Exception as fault:  # noqa: BLE001 - failed closed and reported through on_fault
+            self._after_fault(fault, lambda fault=fault: self._fail_closed(fault))
 
     def _advance_due(self, now: int) -> None:
         fired = False
         uptime = self._clock.uptime_ns()
         gap = suspend_gap_ns(self._last_pair, (now, uptime))
-        self._last_pair = (now, uptime)
         if gap > self._settings["suspend_threshold_ms"] * MS:
             # A suspend: deadline time moved on without uptime. Every lease lapsed; every token is stale.
+            # The pair moves on only once the new epoch is in place, so a failed renewal is retried.
             self._new_epoch(now, self._adapter.renew_epoch("clock_discontinuity"), "clock_discontinuity")
             fired = True
+        self._last_pair = (now, uptime)
         if self._journal.state != "ok" and not self._journal_degraded:
             self._degrade(now)
             fired = True
@@ -903,11 +906,11 @@ class Broker:
     def _emit(self, event_type: str, **fields) -> dict:
         if event_type not in EVENT_TYPES:
             raise ValueError(f"Unknown b2b event type {event_type}")
-        self._event_seq += 1
-        event = {"sequence": self._event_seq, "monotonic_ns": self._entry_now,
+        event = {"sequence": self._event_seq + 1, "monotonic_ns": self._entry_now,
                  "session_epoch": self.session_epoch, "control_revision": self._revision, "type": event_type,
                  **fields}
         size = len(json.dumps(event, ensure_ascii=True, allow_nan=False, separators=(",", ":")))  # wire bytes
+        self._event_seq += 1  # numbered only once it can be sent, so a bad field leaves no gap
         self._events.append([event, size])
         self._event_bytes += size
         while len(self._events) > MAX_EVENTS or self._event_bytes > MAX_EVENT_BYTES:
@@ -969,7 +972,10 @@ class Broker:
             if gone <= now:
                 due.append((gone, 9, 0, "page", page["ui_epoch"]))
         for at, _, _, kind, key in sorted(due, key=lambda item: item[:3]):
-            self._fire(kind, key, at, now)
+            try:
+                self._fire(kind, key, at, now)
+            except Exception as fault:  # noqa: BLE001 - one failing item never keeps the rest from firing
+                self._after_fault(fault, lambda fault=fault: self._fail_closed(fault))
         return bool(due)
 
     def _fire(self, kind: str, key, at: int, now: int) -> None:
@@ -1211,11 +1217,12 @@ class Broker:
             if owner.kind == "unavailable" and owner.reason == reason:
                 continue
             explicit = owner.explicit
+            waiting = owner.target_value if owner.kind in ("pickup_pending", "unavailable") else None
             self._set_owner(rid, "unavailable", reason, reason=reason, hold="explicit" if explicit else None,
-                            gesture_id=owner.gesture_id if explicit else None)
+                            gesture_id=owner.gesture_id if explicit else None, target_value=waiting)
 
     def _new_epoch(self, now: int, adapter_epoch: int, reason: str, dependencies: dict | None = None) -> None:
-        """A new adapter epoch: nothing carries over except a person's explicit holds. No resume."""
+        """A new adapter epoch: nothing carries over but a person's explicit holds and pickups. No resume."""
         cancel = "clock_discontinuity" if reason == "clock_discontinuity" else "epoch_changed"
         self._clear_authority(cancel, "invalidated")
         old = self.session_epoch
@@ -1232,6 +1239,14 @@ class Broker:
                 self._mark_unavailable([rid], "mapping_changed")
             elif down:
                 self._mark_unavailable([rid], self._dependency_reason(down[0]))
+            elif owner.kind == "pickup_pending" or (owner.kind == "unavailable"
+                                                    and owner.target_value is not None):
+                # The fader may still disagree with the software, so it keeps waiting, its position unknown.
+                if owner.kind == "unavailable":
+                    restored.append(rid)
+                self._set_owner(rid, "pickup_pending", reason, target_value=owner.target_value,
+                                physical_value=None, hold="explicit" if owner.explicit else None,
+                                gesture_id=owner.gesture_id if owner.explicit else None)
             elif owner.explicit:
                 if owner.kind == "unavailable":
                     restored.append(rid)
@@ -1391,14 +1406,17 @@ class Broker:
                                       "input_sha256": sha})
 
     def _complete_request(self, channel: str, request_id: str, result: dict) -> None:
+        """Complete in memory first, so a failing journal append can't leave the request running."""
         sha = digest(result)
-        ref = self._log("request_completed", {"request_id": request_id, "channel": channel,
-                                              "receipt_sha256": sha, "receipt": result})
         entry = self._requests[channel].get(request_id)
         if entry is not None:
-            self._requests[channel][request_id] = replace(entry, state="complete", receipt_sha256=sha,
-                                                          journal_offset=None if ref is None else ref.offset)
+            entry = replace(entry, state="complete", receipt_sha256=sha)
+            self._requests[channel][request_id] = entry
         self._retain_receipt(channel, request_id, result)
+        ref = self._log("request_completed", {"request_id": request_id, "channel": channel,
+                                              "receipt_sha256": sha, "receipt": result})
+        if entry is not None and ref is not None:
+            self._requests[channel][request_id] = replace(entry, journal_offset=ref.offset)
 
     def _retain_receipt(self, channel: str, request_id: str, result: dict) -> None:
         self._receipts[(channel, request_id)] = result
@@ -1454,43 +1472,61 @@ class Broker:
                                                      current)
                 self._begin_request(channel, request_id, operation, sha, reduction=not increase)
                 degraded = self._journal_degraded
-                result = self._evaluate(channel, operation, request_id, now, evaluate)
-                self._commit(operation)
-                if (increase and not degraded and self._journal_degraded
-                        and result["outcome"]["kind"] in ("granted", "invited", "issued", "amended")):
-                    # The journal failed while recording this; the degrade transaction already ended it.
-                    result = self._refused("journal_unavailable",
-                                           "The journal failed while recording this request")
-                made = self._receipt(operation, request_id, result, now, revision_check, current)
-                self._complete_request(channel, request_id, made)
+                try:
+                    result = evaluate(now)
+                    self._commit(operation)
+                    if (increase and not degraded and self._journal_degraded
+                            and result["outcome"]["kind"] in ("granted", "invited", "issued", "amended")):
+                        # The journal failed while recording this; the degrade transaction already ended it.
+                        result = self._refused("journal_unavailable",
+                                               "The journal failed while recording this request")
+                    made = self._receipt(operation, request_id, result, now, revision_check, current)
+                    self._complete_request(channel, request_id, made)
+                except Exception as fault:
+                    self._after_fault(fault, lambda fault=fault: self._record_fault(
+                        fault, channel, operation, request_id, now))
+                    raise
                 return made
             if isinstance(hit, dict):
                 return hit
         return self._reread(hit)
 
-    def _evaluate(self, channel: str, operation: str, request_id: str, now: int, evaluate) -> dict:
-        """Run one request's domain evaluation. Nothing raised here may leave the request running.
+    def _record_fault(self, fault: Exception, channel: str, operation: str, request_id: str,
+                      now: int) -> None:
+        """A recorded request raised: a host fault that may come after a step went out.
 
-        Input is validated before the request is recorded, so anything raised here is a host fault
-        that may come after a step went out: agent authority ends, the request is retained as
-        outcome_unknown, and the fault still propagates so the host reports it.
+        Input is validated before the request is recorded, so nothing raised after it is the
+        caller's mistake. Agent control stops, and the request is retained as outcome_unknown
+        unless its own receipt was already recorded. The caller re-raises so the host reports it.
         """
         try:
-            return evaluate(now)
-        except Exception as fault:
-            def record():
-                self._fail_closed()
-                entry = self._requests[channel].get(request_id)
-                if entry is not None and entry.state == "complete":
-                    return  # the request's own receipt was recorded before the fault
-                lost = "The b2b host failed while handling this request; agent authority ended."
-                result = {"outcome": {"kind": "outcome_unknown", "request_id": request_id,
-                                      "automatic_retry": False}, "warnings": [lost]}
-                made = self._receipt(operation, request_id, result, now, "not_required", None)
-                self._complete_request(channel, request_id, made)
+            self._fail_closed(fault)
+        finally:
+            entry = self._requests[channel].get(request_id)
+            if entry is None or entry.state != "complete":
+                lost = "The b2b host failed while handling this request; agent control stopped."
+                outcome = {"kind": "outcome_unknown", "request_id": request_id, "automatic_retry": False}
+                self._complete_anyway(channel, request_id,
+                                      self._fault_receipt(operation, request_id, outcome, lost, now))
 
-            self._after_fault(fault, record)
+    def _complete_anyway(self, channel: str, request_id: str, made: dict) -> None:
+        """Complete a request even when recording it fails; that failure still propagates."""
+        try:
+            self._complete_request(channel, request_id, made)
+        except Exception:
+            entry = self._requests[channel].get(request_id)
+            if entry is not None and entry.state != "complete":
+                self._requests[channel][request_id] = replace(entry, state="complete")
+            self._receipts[(channel, request_id)] = made
             raise
+
+    def _fault_receipt(self, operation: str, request_id: str, outcome: dict, warning: str, now: int) -> dict:
+        try:
+            return self._receipt(operation, request_id, {"outcome": outcome, "warnings": [warning]}, now,
+                                 "not_required", None)
+        except Exception:  # noqa: BLE001 - a plain record still says what is known
+            return {"request_id": request_id, "status": "outcome_unknown", "outcome": outcome,
+                    "warnings": [warning]}
 
     @staticmethod
     def _after_fault(fault: Exception, record) -> None:
@@ -1500,21 +1536,48 @@ class Broker:
         except Exception as also:  # noqa: BLE001 - the original fault propagates, carrying this one
             fault.add_note(f"Failing closed after this fault also raised {type(also).__name__}: {also}")
 
-    def _fail_closed(self) -> None:
-        """After a host fault, all agent authority ends, as when the journal degrades, and the state commits.
+    def _fail_closed(self, fault: Exception | None = None) -> None:
+        """After a host fault, agent control stops for the rest of this host, as when the journal fails.
 
-        Runs go first, so none reads as merely cancelled or partial. A run whose own record fails is
-        forced terminal, and the grants, invitations and permission end whatever happened before.
+        The flag goes first: from then on nothing is granted, invited, issued or dispatched, however
+        far the rest gets. Then every live run is recorded as outcome_unknown (forced terminal if its
+        own record fails), the permission, invitations and grants end, and the state commits. Each
+        step runs even if an earlier one fails; the first such failure is raised at the end.
         """
-        try:
-            for run in self._active_runs():
-                try:
-                    self._unknown(run, self._entry_now, "The b2b host failed while this act was running")
-                except Exception:  # noqa: BLE001 - the fault that brought us here is the one reported
-                    self._force_unknown(run)
-        finally:
-            self._clear_authority("outcome_unknown", "invalidated")
-            self._commit("host_fault")
+        first = self._fault is None
+        if first:
+            self._fault = "an internal fault" if fault is None else f"{type(fault).__name__}: {fault}"[:300]
+        failures = []
+
+        def attempt(step):
+            try:
+                step()
+            except Exception as error:  # noqa: BLE001 - raised below, after every step has run
+                failures.append(error)
+
+        for run in self._active_runs():  # first, so no run reads as merely cancelled or partial
+            try:
+                self._unknown(run, self._entry_now, "The b2b host failed while this act was running")
+            except Exception as error:  # noqa: BLE001 - raised below
+                failures.append(error)
+                attempt(lambda run=run: self._force_unknown(run))
+        attempt(self._end_permission_and_invitations)
+        attempt(lambda: self._end_all_grants("outcome_unknown"))
+        attempt(lambda: self._commit("host_fault"))
+        if first and self._on_fault is not None:
+            attempt(lambda: self._on_fault(fault))
+        if failures:
+            raise failures[0]
+
+    def _end_permission_and_invitations(self) -> None:
+        for invitation in self._outstanding_invitations():
+            self._end_invitation(invitation, "cancelled", "outcome_unknown")
+        self._gestures = {gid: self._idle_gesture() for gid in self._gestures}
+        self._cooldowns.clear()
+        permission = self._active_permission()
+        if permission is not None:
+            self._end_permission(permission, "invalidated", "outcome_unknown")
+        self._revocations += 1
 
     def _force_unknown(self, run: _Run) -> None:
         """Recording this run failed while failing closed: terminal, with the smallest honest receipt."""
@@ -1523,20 +1586,19 @@ class Broker:
         if entry is not None and entry.state == "complete":
             return  # its receipt was recorded before the fault
         outcome = {"kind": "outcome_unknown", "request_id": run.request_id, "automatic_retry": False}
-        lost = ["The b2b host failed while this act was running; its full record could not be kept."]
-        try:
-            made = self._receipt("act", run.request_id, {"outcome": outcome, "warnings": lost},
-                                 self._entry_now, "exact", None)
-        except Exception:  # noqa: BLE001 - a plain record still says what is known
-            made = {"request_id": run.request_id, "status": "outcome_unknown", "outcome": outcome,
-                    "warnings": lost}
+        lost = "The b2b host failed while this act was running; its full record could not be kept."
+        made = self._fault_receipt("act", run.request_id, outcome, lost, self._entry_now)
         self._runs[run.request_id] = replace(run, state="terminal", receipt=made)
-        self._complete_request("agent", run.request_id, made)
+        self._complete_anyway("agent", run.request_id, made)
 
     def _check_running(self) -> None:
         if self._stopped:
             raise PocketError("This b2b host is stopping", code="io_error",
                               hint="Start a new host and prepare a new session; nothing carries over.")
+        if self._fault is not None:
+            raise PocketError("This b2b host hit an internal fault, so agent control has stopped",
+                              code="io_error", hint="Ask the person to stop this host and start a new one; "
+                                                    "nothing carries over.")
 
     def _unjournaled_refusal(self, channel, operation, request_id, sha, now, revision_check, current) -> dict:
         """Step 9: an increase while the journal is unavailable, retained in memory only."""
@@ -1738,6 +1800,8 @@ class Broker:
         triple = _triple(request)
         basis = self._basis(request["basis"])
         reason = _text(request["reason"], "reason", 1, 200)
+        if any(unicodedata.category(c) in ("Cc", "Cf") for c in reason):  # no controls or bidi overrides
+            raise _bad("reason must be plain text", "Pass reason without control or formatting characters.")
         lease_ms = _int(request["lease_ms"], "lease_ms", 250, self._settings["max_lease_ms"])
         not_after = _int(request["not_after_monotonic_ns"], "not_after_monotonic_ns", 0, 2**63 - 1)
         resources = self._resolve(request["resources"])
@@ -1878,7 +1942,9 @@ class Broker:
             generations.append((rid, owner.generation))
         labels = tuple(self._profile.label(rid) for rid in resources)
         notice = Notice(f"n-{secrets.token_hex(8)}", grant_id, self.session_epoch, labels, reason,
-                        f"Agent taking {', '.join(labels)}: {reason} (lease {_seconds(lease_ms)})", now,
+                        # The host's words come first; the agent's reason is labelled as its own.
+                        f"Agent taking {', '.join(labels)} for {_seconds(lease_ms)}. Its reason: {reason}",
+                        now,
                         min(now + self._settings["notice_ack_timeout_ms"] * MS, not_after), not_after)
         grant = Grant(grant_id, request_id, self.session_epoch, self._adapter_epoch, tuple(resources),
                       tuple(resources), tuple(generations), basis, reason, self._revision, now, lease_expires,
@@ -2070,7 +2136,10 @@ class Broker:
             + ([] if health is not None else ["The adapter's health could not be read; acts are refused."])
             + ([] if not self._sink_violations else
                [(f"The adapter called the broker from inside a broker section {self._sink_violations} "
-                 "time(s); its readings may be missing.")])}
+                 "time(s); its readings may be missing.")])
+            + ([] if self._fault is None else
+               [(f"This b2b host hit an internal fault ({self._fault}); agent control has stopped. Ask the "
+                 "person to start a new host.")])}
         return _plain(observation)
 
     def events(self, session_id: str, request: dict | None = None) -> dict:
@@ -2199,7 +2268,7 @@ class Broker:
                 # Chosen by the agent at b2b_prepare; the page shows the person any that differ.
                 settings=dict(self._settings),
                 settings_defaults={name: default for name, (default, _, _) in SETTINGS.items()},
-                journal_degraded=self._journal_degraded)
+                journal_degraded=self._journal_degraded, host_fault=self._fault is not None)
             return page_json(observation)
 
     def trusted_public(self) -> dict:
@@ -2228,7 +2297,7 @@ class Broker:
                     "state": permission.state,
                     "remaining_ms": max(0, (permission.expires_monotonic_ns - now) // MS)},
                 "holds": sorted(rid for rid, o in self._owners.items() if o.explicit),
-                "journal_degraded": self._journal_degraded}))
+                "journal_degraded": self._journal_degraded, "host_fault": self._fault is not None}))
 
     def trusted_ack(self, channel, payload) -> dict:
         """The notice gate. Only a fetched, pending notice, before its deadline, from the current page."""
@@ -2588,6 +2657,10 @@ class Broker:
                          if set(i.scope) & set(resources)]
             for invitation_id in withdrawn:
                 self._end_invitation(self._invitations[invitation_id], "cancelled", "held_by_human")
+            # A hand-back pad pressed before this hold hands nothing back when it is lifted.
+            for gid, gesture in self._gestures.items():
+                if gesture["state"] == "pressed" and set(self._profile.gesture_scope[gid]) & set(resources):
+                    self._gestures[gid] = self._idle_gesture()
             return {"outcome": {"kind": "held", "resources": list(resources),
                                 "waiting_for_pickup": [r for r in resources
                                                        if self._owners[r].kind == "pickup_pending"],
@@ -2639,7 +2712,7 @@ class Broker:
                             increase=False)
 
     def reduce_withdraw_invitation(self, payload) -> dict:
-        """Take back an outstanding invitation before the agent uses it."""
+        """Take back an invitation. One the agent claimed as this was pressed ends that claim too."""
         self._page_inputs(payload, ("invitation_id",))
         triple = _triple(payload, required=False)
         invitation_id = _ident(payload["invitation_id"], "invitation_id", "i-")
@@ -2647,14 +2720,13 @@ class Broker:
 
         def evaluate(now):
             invitation = self._invitations.get(invitation_id)
-            if invitation is not None and invitation.state == "consumed":
-                # The agent claimed it first: withdrawing still means no, so that grant ends too.
-                claimed = [g for g in self._active_grants() if g.basis.invitation_id == invitation_id]
-                for grant in claimed:
-                    self._end_grant(grant, "revoked_by_human")
-                if claimed:
-                    return {"outcome": {"kind": "revoked", "invitation_id": invitation_id,
-                                        "grant_id": claimed[0].grant_id}}
+            # The agent claimed it first: withdrawing still means no, so that grant ends too.
+            claimed = [g for g in self._active_grants() if g.basis.invitation_id == invitation_id]
+            for grant in claimed:
+                self._end_grant(grant, "revoked_by_human")
+            if claimed:
+                return {"outcome": {"kind": "revoked", "invitation_id": invitation_id,
+                                    "grant_id": claimed[0].grant_id}}
             if invitation is None or invitation.state != "outstanding":
                 return self._refused("invitation_not_found", "That invitation already ended")
             self._end_invitation(invitation, "cancelled", "withdrawn_by_human")
@@ -2719,7 +2791,7 @@ class Broker:
             try:
                 self._on_event(event, now)
             except Exception as fault:  # a host fault mid-event may leave authority half-changed
-                self._after_fault(fault, self._fail_closed)
+                self._after_fault(fault, lambda fault=fault: self._fail_closed(fault))
                 raise
             self._commit(f"adapter:{event.get('type') if isinstance(event, dict) else 'invalid'}")
 
@@ -2842,7 +2914,7 @@ class Broker:
                               "invitation_id": None if invitation is None else invitation.invitation_id})
 
     def _invite_by_gesture(self, gid: str, now: int):
-        if self._stopped or self._journal_degraded:
+        if self._stopped or self._journal_degraded or self._fault is not None:
             return "agent_control_stopped", None  # nothing is handed back, and holds stay
         for invitation in self._outstanding_invitations():
             if invitation.gesture_id == gid and invitation.adapter_epoch == self._adapter_epoch:
@@ -2993,8 +3065,13 @@ class Broker:
                         self._complete_request("agent", request_id,
                                                self._receipt("act", request_id, planned, now, "exact", None))
 
-                self._evaluate("agent", "act", request_id, now, plan_and_start)
-                self._commit("act")
+                try:
+                    plan_and_start(now)
+                    self._commit("act")
+                except Exception as fault:
+                    self._after_fault(fault, lambda fault=fault: self._record_fault(
+                        fault, "agent", "act", request_id, now))
+                    raise
                 return ActionRun(request_id)
             if isinstance(hit, dict):
                 return ActionRun(request_id, hit)
@@ -3174,7 +3251,7 @@ class Broker:
         grant = self._grants.get(run.grant_id)
         owner = self._owners[rid]
         reason = detail = None
-        if self._stopped:
+        if self._stopped or self._fault is not None:
             reason = "host_stopping"
         elif (grant is None or run.session_epoch != self.session_epoch
                 or grant.adapter_epoch != self._adapter_epoch):
@@ -3242,7 +3319,7 @@ class Broker:
         violations = self._sink_violations
         try:
             submission = self._adapter.submit(step, admission)
-            if not _valid_submission(submission):
+            if not _valid_submission(submission, self._profile.resources[rid]):
                 # The step may already have gone out; never treat this as "not sent" or send it again.
                 raise AdapterContractError(f"submit returned {type(submission).__name__}, not a Submission")
         except AdapterBlocked as error:
@@ -3433,7 +3510,7 @@ class Broker:
         try:
             self._advance_run(request_id, now)
         except Exception as fault:
-            self._after_fault(fault, self._fail_closed)
+            self._after_fault(fault, lambda fault=fault: self._fail_closed(fault))
             raise
 
     def _on_adapter_ack(self, event: dict, now: int) -> None:

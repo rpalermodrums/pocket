@@ -25,11 +25,12 @@ Every control has exactly one owner at a time. The host page shows it in words:
 | Free, handed to the agent | You invited the agent to it, and it hasn't claimed it yet. Withdraw takes the invitation back. |
 | You (holding) | You held it on the page, or reserved it at the start. It stays yours until you release it. |
 | You (moving) | You touched it. It becomes free again two seconds after your last movement. |
-| Agent: *reason*, *time* left | The agent holds a short lease on it, for the reason it gave. |
+| Agent, *time* left. Its reason: *reason* | The agent holds a short lease on it. The reason is the agent's own words. |
 | Fader 98, software 40 | After the agent let go, the fader and the software disagree. See [pickup](#when-a-fader-doesnt-match-pickup). |
 | Unavailable | The controller or the master route is gone. Nothing can claim it. |
 
-A pickup or unavailable row ends in "(you hold it)" when you held that control, so it stays yours once it settles.
+A pickup or unavailable row ends in "(you hold it)" when you held that control, so
+it stays yours once it settles.
 
 Four ways to play fall out of these owners rather than being separate modes:
 invite only (everything free, nothing claimable until you hand it back),
@@ -117,11 +118,13 @@ seconds), or press **Invite** on a row of the page. That creates one invitation 
 those controls, which the agent can use once. A short press, a bounce or a press
 you never release creates nothing. Changed your mind? **Withdraw** on the page, or
 **Hold** on one of those controls, ends the invitation before the agent uses it.
-Withdraw after the agent claimed it ends that claim too.
+If the agent claims it just as you press Withdraw, that claim ends too; after that,
+use **Take it back**.
 
 **Invite** never drops a hold. Linked controls, like an FX unit's depth and route,
-are handed back together, so release your hold on either one first. The hand-back
-pad is different: a long press hands back its controls, held or not.
+are handed back together, so release any hold in that pair first. The hand-back
+pad is different: a long press hands back its controls, held or not. A Hold or
+Stop pressed while the pad is down cancels that press.
 
 The agent then:
 
@@ -132,7 +135,7 @@ The agent then:
 3. calls `b2b_act` with the same three values from the claim's receipt.
 
 The claim is all or none. A notice appears on your page straight away, such as
-"Agent taking Right deck gain: shape the level (lease 3.0 s)", and the visible page
+"Agent taking Right deck gain for 3.0 s. Its reason: shape the level", and the visible page
 acknowledges it. Until then, no step goes out. If the page can't show it within
 one and a half seconds, the grant ends and nothing is sent. **Deny** on the notice
 ends it too.

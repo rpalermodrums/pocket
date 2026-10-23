@@ -58,7 +58,7 @@ export function ownerLabel(owner, context = {}) {
   if (owner.kind === "human") return owner.hold === "explicit" ? "You (holding)" : "You (moving)";
   if (owner.kind === "agent") {
     const left = remainingMs(context.hostNow, owner.expires_monotonic_ns);
-    return `Agent: ${context.reason || "working"}, ${seconds(left)} left`;
+    return `Agent, ${seconds(left)} left. Its reason: ${context.reason || "none given"}`;
   }
   if (owner.kind === "pickup_pending") {
     const fader = owner.physical_value === null || owner.physical_value === undefined

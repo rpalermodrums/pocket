@@ -613,24 +613,6 @@ def test_stop_ends_agent_authority_before_the_scheduler_stops(host, monkeypatch)
     assert seen == [False] and host._stop.is_set()
 
 
-def test_a_full_events_page_fits_the_response_line_even_in_escaped_text(host, tmp_path):
-    attach(host)
-    session = prepare(host, tmp_path)
-    reason = "\U0001f3b5" * 200  # each one is 4 bytes of UTF-8 but 12 escaped on the wire
-    for n in range(120):
-        observed = b2b.b2b_observe(session)
-        invited = issuer(host, "POST", "/api/invitations", {"request_id": f"page-i{n}", **triple(observed),
-                                                            "resources": [GAIN]})
-        observed = b2b.b2b_observe(session)
-        claim = b2b.b2b_claim(session, f"claim-{n}", **triple(observed), resources=[GAIN], reason=reason,
-                              basis={"kind": "invitation",
-                                     "invitation_id": invited["outcome"]["invitation"]["invitation_id"]},
-                              lease_ms=3000, not_after_monotonic_ns=observed["monotonic_ns"] + 5000 * MS)
-        observed = b2b.b2b_observe(session)
-        b2b.b2b_release(session, f"release-{n}", **triple(observed), grant_id=claim["grant"]["grant_id"])
-    page = b2b.b2b_events(session, max_events=256, max_bytes=196_608)
-    assert page["truncated_by_bytes"] is True and len(page["events"]) > 1  # delivered, never a lost line
-
 
 def test_a_stopping_host_still_answers_reads_but_refuses_changes(host, tmp_path):
     attach(host)

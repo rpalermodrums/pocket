@@ -1292,7 +1292,8 @@ def test_a_fault_inside_a_request_ends_agent_authority_and_keeps_the_sha_honest(
     assert h.broker.request_status(h.session_id, "claim-fault")["state"] == "complete"
     monkeypatch.undo()
     h.tick(4000)
-    refused(h.claim([GAIN], h.permission_basis(permission)), "permission_not_active")
+    raises("io_error", h.claim, [GAIN], h.permission_basis(permission))  # agent control stays stopped
+    assert h.broker.panic({})["outcome"]["kind"] == "panic"  # the person's reductions still work
 
 
 def test_a_full_agent_table_refuses_reductions_rather_than_forget_a_request(tmp_path, monkeypatch):
@@ -1393,3 +1394,59 @@ def test_events_are_sized_as_the_host_sends_them(tmp_path):
     wire = sum(len(json.dumps(e, ensure_ascii=True, separators=(",", ":"))) for e in page["events"])
     assert page["truncated_by_bytes"] is True and wire <= 65_536
     raises("invalid_arguments", h.broker.events, h.session_id, {"max_bytes": 262_144})
+
+
+def test_a_hold_pressed_while_the_hand_back_pad_is_down_cancels_that_press(tmp_path):
+    for target in ([GAIN], "all"):
+        (tmp_path / str(len(target))).mkdir()
+        h = make(tmp_path / str(len(target)))
+        h.press()
+        h.broker.reduce_hold({"request_id": "page-hold", "resources": target})
+        h.tick(600)
+        h.release()
+        assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+
+
+def test_a_pickup_still_waits_after_a_new_epoch_or_a_route_that_returns(tmp_path):
+    h = make(tmp_path)
+    _pickup(h, FILTER, FILTER_2, 40, fader=100)
+    h.adapter.restart_writer()
+    h.tick(10)
+    waiting = owner(h, FILTER)
+    assert (waiting["kind"], waiting["target_value"]) == ("pickup_pending", 40)
+    assert waiting["physical_value"] is None  # the fader's position is unknown in the new epoch
+    h.adapter.lose_route()
+    h.tick(10)
+    assert owner(h, FILTER)["kind"] == "unavailable"
+    h.adapter.restore_route()
+    h.tick(10)
+    assert owner(h, FILTER)["kind"] == "pickup_pending"
+    refused(h.claim([FILTER], h.invitation_basis(h.invite([FILTER]))), "pickup_unsettled")
+
+
+def test_the_agents_reason_is_labelled_and_plain_text(tmp_path):
+    h = make(tmp_path)
+    notice = invited_grant(h, [GAIN], reason="nothing moves (lease 0.3 s)")["notice"]
+    assert notice["text"] == ("Agent taking Right deck gain for 3.0 s. Its reason: nothing moves "
+                              "(lease 0.3 s)")
+    raises("invalid_arguments", h.claim, [FILTER], h.invitation_basis(h.invite([FILTER])),
+           reason="shape it\u202e evol")  # a bidi override could reorder what the page shows
+
+
+def test_withdraw_still_ends_the_claim_after_the_invitation_record_is_trimmed(tmp_path):
+    h = make(tmp_path)
+    invitation = h.invite([GAIN])["outcome"]["invitation"]
+    h.claim([GAIN], {"kind": "invitation", "invitation_id": invitation["invitation_id"]})
+    del h.broker._invitations[invitation["invitation_id"]]  # ended records are trimmed past 64
+    withdrawn = h.broker.reduce_withdraw_invitation({"request_id": "page-w",
+                                                     "invitation_id": invitation["invitation_id"]})
+    assert withdrawn["outcome"]["kind"] == "revoked" and grants(h) == []
+
+
+def test_an_event_that_cannot_be_sent_leaves_no_gap_in_the_sequence(tmp_path):
+    h = make(tmp_path)
+    before = h.observe()["events_cursor"]["sequence"]
+    with h.broker._lock, pytest.raises(ValueError):
+        h.broker._emit("human_input", value=float("nan"))
+    h.invite([GAIN])
+    assert events(h, "invitation_created")[-1]["sequence"] == before + 1

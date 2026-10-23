@@ -952,26 +952,42 @@ def test_failing_closed_ends_every_agent_authority_even_when_a_run_cannot_be_rec
     sent = h.adapter.sent_count
     h.tick(500)
     assert h.adapter.sent_count == sent  # nothing more went out
-    assert h.claim([GAIN], h.permission_basis(permission))["outcome"]["code"] == "permission_not_active"
+    with pytest.raises(PocketError) as caught:  # agent control stays stopped for the rest of this host
+        h.claim([GAIN], h.permission_basis(permission))
+    assert caught.value.code == "io_error" and "internal fault" in str(caught.value)
 
 
-def test_a_fault_in_a_timer_fails_closed_once_and_stop_still_works(tmp_path, monkeypatch):
-    h = _harness(tmp_path)
+def test_a_timer_that_keeps_failing_stops_agent_control_and_never_blocks_the_person(tmp_path, monkeypatch):
+    reported = []
+    h = Harness(tmp_path, broker=False)
+    adapter = SyntheticAdapter()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000cc", on_fault=reported.append)
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
     h.issue()
-    h.invite([TRANSPORT])
-    fire = h.broker._fire
+    fire = broker._fire
 
     def failing(kind, key, at, now):
-        if kind == "invitation":
+        if kind == "activity":  # a timer failing closed does not remove: it is due on every entry
             raise RuntimeError("a host bug")
         return fire(kind, key, at, now)
 
-    monkeypatch.setattr(h.broker, "_fire", failing)
-    with pytest.raises(RuntimeError):
-        h.tick(h.broker._settings["invitation_ttl_ms"] + 10)
-    assert h.broker.panic({})["outcome"]["kind"] == "panic"  # the due item no longer wedges every entry
+    monkeypatch.setattr(broker, "_fire", failing)
+    h.move(TRIM_2, 90)
+    h.tick(2100)  # the activity release is now due on every entry, and fails every time
+    gain = next(r["owner"] for r in h.observe()["resources"] if r["resource_id"] == GAIN)
+    assert gain["kind"] == "human"  # never released, so it stays the person's
     observed = h.observe()
-    assert observed["invitations"] == [] and observed["authority_state"]["permissions"] == []
+    assert observed["authority_state"]["permissions"] == [] and observed["grants"] == []
+    assert any("internal fault (RuntimeError: a host bug)" in w for w in observed["warnings"])
+    assert len(reported) == 1 and str(reported[0]) == "a host bug"  # the terminal hears of it once
+    assert broker.panic({})["outcome"]["kind"] == "panic"
+    assert broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER]})["outcome"]["kind"] == "held"
+    h.move("controller/synthetic/channel-2/filter", 30)  # a touch still lands
+    touched = next(r for r in h.observe()["resources"] if r["resource_id"] == FILTER)
+    assert touched["owner"]["kind"] == "human" and touched["owner"]["hold"] == "explicit"
+    assert broker.trusted_state(h.channel, h.ui_epoch)["host_fault"] is True
 
 
 def test_a_fault_after_an_act_finished_keeps_its_own_receipt(tmp_path, monkeypatch):
@@ -1080,3 +1096,88 @@ def test_an_unreadable_readback_at_release_falls_back_to_the_commanded_value(tmp
     pending = next(r["owner"] for r in h.observe()["resources"] if r["resource_id"] == GAIN)
     assert (pending["kind"], pending["target_value"], pending["physical_value"]) == ("pickup_pending", 50,
                                                                                      100)
+
+
+def test_a_fault_while_handling_an_adapter_event_fails_closed(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    h.issue()
+    gid = _granted(h)
+    h.invite([TRANSPORT])
+    run = h.act_begin(gid, RAMP)
+    _after_steps(h, run, 2)
+    monkeypatch.setattr(h.broker, "_physical_input", _fault)
+    with pytest.raises(RuntimeError):
+        h.move(TRIM_2, 30)
+    monkeypatch.undo()
+    observed = h.observe()
+    assert observed["grants"] == [] and observed["invitations"] == []
+    assert observed["authority_state"]["permissions"] == []
+    assert h.broker.act_result(run)["outcome"]["kind"] == "outcome_unknown"
+
+
+def test_a_failed_epoch_renewal_after_a_suspend_is_retried(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    gid = _granted(h)
+    assert h.act(gid, {"kind": "set", "resource": GAIN, "value": 70})["outcome"]["kind"] == "verified"
+    epoch = h.observe()["session_epoch"]
+    renew = h.adapter.renew_epoch
+    calls = []
+
+    def flaky(reason):
+        calls.append(reason)
+        if len(calls) == 1:
+            raise RuntimeError("the writer did not answer")
+        return renew(reason)
+
+    monkeypatch.setattr(h.adapter, "renew_epoch", flaky)
+    h.clock.suspend(60_000 * MS)
+    first = h.observe()  # the renewal fails: agent control stops, and the suspend is not forgotten
+    assert first["grants"] == [] and any("internal fault" in w for w in first["warnings"])
+    second = h.observe()
+    assert len(calls) == 2 and second["session_epoch"] != epoch
+    assert second["evidence"]["resources"][GAIN]["commanded_value"] is None
+
+
+def test_a_recording_path_that_keeps_failing_still_ends_authority_and_every_request(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    gid, _ = _proactive(h)
+    h.invite([TRANSPORT])
+    runs = [h.act_begin(gid, RAMP)]
+    _after_steps(h, runs[0], 2)
+    monkeypatch.setattr(h.broker, "_advance_run", _fault)
+    complete = h.broker._complete_request
+
+    def broken(channel, request_id, result):
+        if channel == "agent":
+            raise TypeError("the recorder is broken")
+        return complete(channel, request_id, result)
+
+    monkeypatch.setattr(h.broker, "_complete_request", broken)
+    with pytest.raises(RuntimeError):
+        h.tick(50)
+    monkeypatch.undo()
+    observed = h.observe()
+    assert observed["grants"] == [] and observed["invitations"] == []
+    assert observed["authority_state"]["permissions"] == []
+    status = h.broker.request_status(h.session_id, runs[0].request_id)
+    assert status["state"] == "complete" and status["receipt"]["outcome"]["kind"] == "outcome_unknown"
+
+
+class _WrongKindSubmission(SyntheticAdapter):
+    """Reports a word back from submit for a numeric control."""
+
+    def submit(self, step, admission):
+        submission = super().submit(step, admission)
+        return replace(submission, readback=Readback("loud", "control_readback",
+                                                     submission.submitted_monotonic_ns))
+
+
+def test_a_wrong_kind_readback_from_submit_is_outcome_unknown(tmp_path):
+    h = Harness(tmp_path, broker=False)
+    adapter = _WrongKindSubmission()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000cd")
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    result = h.act(_granted(h), {"kind": "set", "resource": GAIN, "value": 70})
+    assert result["outcome"]["kind"] == "outcome_unknown" and adapter.sent_count == 1

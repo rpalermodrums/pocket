@@ -20,7 +20,7 @@ test("owners read as words", () => {
   assert.equal(ownerLabel({kind: "human", hold: "activity"}), "You (moving)");
   assert.equal(ownerLabel({kind: "agent", expires_monotonic_ns: "1002400000000"},
                           {reason: "shape the level", hostNow: "1000000000000"}),
-               "Agent: shape the level, 2.4 s left");
+               "Agent, 2.4 s left. Its reason: shape the level");
   assert.equal(ownerLabel({kind: "pickup_pending", physical_value: 98, target_value: 40}),
                "Fader 98, software 40");
   assert.equal(ownerLabel({kind: "pickup_pending", physical_value: null, target_value: 40}),
@@ -66,7 +66,7 @@ test("hostile server text stays plain text", () => {
   assert.equal(noticeBanner({state: "delivery_unknown", text}),
                "The agent's claim was cancelled: this page didn't show it in time. Nothing was sent.");
   assert.equal(ownerLabel({kind: "agent", expires_monotonic_ns: "1"}, {reason: text, hostNow: "1"}),
-               `Agent: ${text}, 0.0 s left`);
+               `Agent, 0.0 s left. Its reason: ${text}`);
   assert.equal(eventLine({type: "notice_created", text}), `Notice: ${text}`);
 });
 

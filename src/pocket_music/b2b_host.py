@@ -74,6 +74,14 @@ def _write_private(path: Path, value: dict) -> None:
         stream.write(json.dumps(value, sort_keys=True) + "\n")
 
 
+def _report_fault(fault) -> None:
+    """The broker's first host fault, on the terminal. Agent control has already stopped."""
+    print("b2b host fault: agent control stopped for the rest of this host; your controls still work.",
+          file=sys.stderr)
+    if fault is not None:
+        traceback.print_exception(fault, file=sys.stderr)
+
+
 class _AgentServer(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
 
@@ -144,7 +152,8 @@ class B2bHost:
                 "clocks": list(getattr(self.clock, "names", ())), "profile": profile.name,
                 "mapping_sha256": profile.sha256, "pid": os.getpid(), "adapter": "synthetic"},
                 session_epoch=None)
-            self.broker = Broker(self.adapter, self.clock, self.journal, host_epoch=self.host_epoch)
+            self.broker = Broker(self.adapter, self.clock, self.journal, host_epoch=self.host_epoch,
+                                 on_fault=_report_fault)
             self.page = TrustedPage(self.broker, self.broker.trusted_channel(), adapter=self.adapter,
                                     sync=self.journal.sync)
             host_secrets = (self.page.issuer_token, self.page.public_csrf, self.nonce)

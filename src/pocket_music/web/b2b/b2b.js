@@ -200,6 +200,7 @@ function render(snapshot) {
   $("session").textContent = `Session epoch ${epoch} · revision ${revision} · ${whose}`;
   $("locked").hidden = true;
   $("journal").hidden = !snapshot.journal_degraded;
+  $("fault").hidden = !snapshot.host_fault;
   renderSettings(snapshot.settings, snapshot.settings_defaults);
   renderNotices(snapshot.notices, true);
   renderResources(snapshot);
@@ -251,8 +252,8 @@ function renderResources(snapshot) {
     name.append(el("span", resource.resource_id, {class: "id"}));
     const ownerCell = el("td", null, {class: "owner"});
     if (owner.kind === "agent") {  // the lease counts down in place
-      ownerCell.append(`Agent: ${reasons.get(owner.grant_id) || "working"}, `,
-                       countdown(owner.expires_monotonic_ns), " left");
+      ownerCell.append("Agent, ", countdown(owner.expires_monotonic_ns),
+                       ` left. Its reason: ${reasons.get(owner.grant_id) || "none given"}`);
     } else {
       ownerCell.append(ownerLabel(owner, {proactive, invited: invited.has(resource.resource_id)}));
     }
@@ -562,6 +563,7 @@ function renderPublic(publicView) {
   $("session").textContent = `Session epoch ${epoch} · revision ${revision}`;
   $("locked").hidden = false;
   $("journal").hidden = !publicView.journal_degraded;
+  $("fault").hidden = !publicView.host_fault;
   renderNotices(publicView.notices.map(notice => ({...notice, state: "pending",
     deadline_monotonic_ns: hostNowAfter(publicView.host_monotonic_ns, notice.remaining_ms)})), false);
   const deadline = item => hostNowAfter(publicView.host_monotonic_ns, item.remaining_ms);
