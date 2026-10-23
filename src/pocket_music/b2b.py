@@ -2,10 +2,10 @@
 """b2b: share named controls with an agent through a b2b host the person starts.
 
 These nine providers are what Python, the CLI and MCP all call. Each sends one bounded request
-to the agent socket of the host named in a sealed session, and returns the host's record
-unchanged. Only ``b2b_request_status`` can also answer from the retained journal after the host
-stops. Nothing here opens Serato, a controller, MIDI or an audio device: this version's only
-adapter is the host's built-in synthetic two-deck mixer.
+to the agent socket of the host named in a sealed session and returns the host's record;
+``b2b_prepare`` seals the session folder around it, and ``b2b_request_status`` can also answer
+from the retained journal after the host stops. Nothing here opens Serato, a controller, MIDI or
+an audio device: this version's only adapter is the host's built-in synthetic two-deck mixer.
 
 The agent channel proposes standing permissions but never issues one. Issuing a permission,
 acknowledging a notice and inviting the agent happen only on the host's page.
@@ -185,10 +185,11 @@ def _triple(expected_session_epoch, expected_control_revision, expected_state_sh
 
 
 def _existing_output_hint(output: Path, runtime: Path) -> str:
-    """What to do with an output_dir that exists: reuse it only when it is this running host's session."""
+    """What to do with an output_dir that exists: reuse it only when it is this host's session (same
+    runtime folder and host epoch; if that host has stopped, the next call says it can't be reached)."""
     if output.is_dir() and not output.is_symlink() and not any(output.iterdir()):
-        return ("This folder is empty, so an earlier b2b_prepare was interrupted. Remove it, then retry with "
-                "exactly the same arguments.")
+        return ("This folder is empty. Remove it and call b2b_prepare again; if an earlier prepare was "
+                "interrupted, use exactly the same arguments.")
     try:
         session, connection = _session(str(output)), _connection(str(runtime))
     except PocketError:

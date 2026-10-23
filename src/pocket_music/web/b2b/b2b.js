@@ -92,8 +92,12 @@ function triple() {
 }
 
 // One page action: post it, explain a refusal in words, then refresh the view either way.
-async function perform(path, body, key = "issuer") {
-  if (key !== "public" && performance.now() - app.layoutChangedAt < MOVE_GUARD_MS) {
+const justMoved = () => performance.now() - app.layoutChangedAt < MOVE_GUARD_MS;
+
+// ``guarded`` is false only for what can't hand the agent anything: reductions, and the issuer
+// actions that only narrow or refuse (Confirm change, Dismiss), so an agent can't block those either.
+async function perform(path, body, key = "issuer", guarded = key !== "public") {
+  if (guarded && justMoved()) {
     showError(new Error("The page just changed under your pointer, so nothing was sent. Press again."));
     return null;
   }
@@ -127,6 +131,8 @@ async function reduce(path, fields) {
   return perform(path, {request_id: newRequestId(), ...triple(), ...fields}, "public");
 }
 const increase = (path, fields) => perform(path, {request_id: newRequestId(), ...triple(), ...fields});
+const narrow = (path, fields) => perform(path, {request_id: newRequestId(), ...triple(), ...fields},
+                                         "issuer", false);
 
 async function refresh() {
   try {
@@ -194,8 +200,9 @@ function sendPresence() {
   return app.presence;
 }
 
-function countdown(deadline) {
-  return el("span", seconds(remainingMs(hostNow(), deadline)), {"data-deadline": deadline});
+function countdown(deadline) {  // fixed width, so a ticking countdown never reflows what follows it
+  return el("span", seconds(remainingMs(hostNow(), deadline)),
+            {"data-deadline": deadline, class: "countdown"});
 }
 
 function renderClock() {
@@ -441,10 +448,10 @@ async function issue(key, snapshot, name, statement) {
 
 async function amend(key, permission) {
   const preview = app.previews.get(key);
-  const result = await perform("/api/policy/amend", {
+  const result = await perform("/api/policy/amend", {  // an amendment only narrows: never guarded
     request_id: newRequestId(), permission_id: permission.permission_id,
     expected_permission_version: permission.version, expected_permission_sha256: permission.state_sha256,
-    change: preview.change, preview_sha256: preview.preview_sha256});
+    change: preview.change, preview_sha256: preview.preview_sha256}, "issuer", false);
   if (result && result.outcome && result.outcome.kind === "amended") closePreview(key);
 }
 
@@ -520,7 +527,7 @@ function renderProposals(snapshot) {
     } else {
       const id = {proposal_id: proposal.proposal_id};
       item.append(button("Review", () => review(key, id)), " ",
-                  button("Dismiss", () => increase("/api/proposals/dismiss", id), {class: "quiet"}));
+                  button("Dismiss", () => narrow("/api/proposals/dismiss", id), {class: "quiet"}));
     }
     return item;
   }) : [el("li", "No open proposals.", {class: "meta"})]));
@@ -534,8 +541,8 @@ function renderSettings(settings, defaults) {
   setHidden("settings", changed.length === 0);
 }
 
-function renderEvents(events) {
-  $("events").replaceChildren(...eventLines(events).reverse().map(line => el("li", line)));
+function renderEvents(events) {  // a fixed-height box of one-line items, so the panel below never moves
+  $("events").replaceChildren(...eventLines(events).reverse().map(line => el("li", line, {title: line})));
 }
 
 // The synthetic controller panel -----------------------------------------------------------------
@@ -606,6 +613,11 @@ function buildPanel(panel) {
   // hiding the page lifts it: a release that never comes must not let a later tap hand back.
   const down = event => {
     if (event.button !== 0 || !event.isPrimary) return;
+    if (justMoved()) {  // the panel just moved: this press may have been aimed at something else
+      showError(new Error("The page just changed under your pointer, so the pad ignored that press. "
+                          + "Press again."));
+      return;
+    }
     try {
       padButton.setPointerCapture(event.pointerId);
     } catch {
@@ -722,6 +734,9 @@ async function start() {
     showError(error);
   }
   setInterval(renderClock, 250);  // countdowns tick on the locked page too
+  // Anything that changes a section's size moves what is below it, whatever caused it.
+  const resized = new ResizeObserver(moved);
+  for (const section of document.querySelectorAll("header, main > section")) resized.observe(section);
   if (isLocked(token)) {
     publicLoop();
     return;

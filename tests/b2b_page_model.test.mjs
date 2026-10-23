@@ -281,7 +281,7 @@ test("a list keeps every unchanged item, so a button being pressed is never repl
   assert.deepEqual(list.children.map(child => child.getAttribute("data-key")), ["notice", "gain", "fx"]);
   assert.equal(list.children[1], gain);
   assert.equal(gain.moves, 0);
-  reconcile(list, [item("gain", "agent g-1", "40")]);
+  assert.equal(reconcile(list, [item("gain", "agent g-1", "40")]), true);  // a removal is a change
   assert.deepEqual(list.children, [gain]);
   assert.equal(gain.moves, 0);
 });

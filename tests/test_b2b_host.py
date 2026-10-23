@@ -437,7 +437,11 @@ def test_page_assets_use_text_content_const_and_strip_the_fragment():
     assert body.index('class="bar"') < body.index('id="stop"') < body.index("<header>")
     # An increase sent right after the page moved is refused, so a click can't land on a button that slid in.
     assert "const MOVE_GUARD_MS = 800;" in script
-    assert 'if (key !== "public" && performance.now() - app.layoutChangedAt < MOVE_GUARD_MS) {' in script
+    assert "if (guarded && justMoved()) {" in script and 'guarded = key !== "public"' in script
+    assert 'narrow("/api/proposals/dismiss", id)' in script  # what only narrows or refuses isn't guarded
+    assert "new ResizeObserver(moved)" in script and "if (justMoved()) {  // the panel just moved" in script
+    assert ".countdown { display: inline-block; min-width: 7.5em;" in css and "#events { height:" in css
+    assert "font-variant-numeric: tabular-nums" in css
     assert "proposals.map(p => [p.proposal_id, p.sha256])" in script
     assert "return (app.current && app.snapshot) || app.publicView || app.snapshot;" in script
     assert script.count("  redraw();\n") == 2 and "if (!app.current) return;  // an answer" in script
@@ -776,7 +780,7 @@ def test_an_existing_output_dir_gets_the_hint_for_what_happened(tmp_path, socket
         empty.mkdir()
         with pytest.raises(PocketError) as caught:
             b2b.b2b_prepare(str(first.runtime_dir), str(empty))
-        assert "Remove it, then retry with exactly the same arguments" in caught.value.hint
+        assert "Remove it and call b2b_prepare again" in caught.value.hint
     finally:
         first.stop()
     second = _host(tmp_path, socket_parent, name="run-2")

@@ -37,6 +37,10 @@ section { border-top: 1px solid var(--line); }
 #session { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 ul.plain, #notices, #grants, #proposals { list-style: none; padding: 0; margin: .4rem 0; }
 #notices { height: 11rem; overflow-y: auto; }
+.countdown { display: inline-block; min-width: 7.5em; white-space: nowrap;
+             font-variant-numeric: tabular-nums; }
+#events { height: 22rem; overflow-y: auto; }
+#events li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #notices li { background: var(--notice); border: 2px solid var(--warn); border-radius: 8px; padding: 10px;
               margin: 6px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 #notices li.ended { border-style: dashed; opacity: .85; }

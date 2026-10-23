@@ -208,8 +208,8 @@ class B2bHost:
         self.broker.tick()
 
     def _schedule(self) -> None:
-        # stop.wait paces the scheduler; the act wait is the host's other real-time bound. The broker never
-        # sleeps.
+        # stop.wait paces the scheduler. The broker never sleeps; the host's other real-time waits are
+        # the act-wait bound and main's stop wait.
         try:
             while not self._stop.wait(0.01):
                 self.tick()

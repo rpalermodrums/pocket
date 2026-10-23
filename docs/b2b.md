@@ -75,9 +75,10 @@ If you reload the page, it comes back locked. **Stop agent control**, **Hold eve
 control**, **Deny**, **Take it back**, **Withdraw** and **Revoke** keep working, because
 they can only take authority away. Everything else needs the address from the terminal again:
 acknowledging notices, inviting, issuing, **Release**, **Accept**, **Shorten**,
-**Turn off proactive claims** and the synthetic controller. No new move can start
-until you reopen it. Any local program that can reach the port can trigger those
-reductions too.
+**Turn off proactive claims** and the synthetic controller. No new claim can start
+until you reopen it; a grant the page already announced keeps its lease, and Stop,
+Take it back or Revoke ends it. Any local program that can reach the port can trigger
+those reductions too.
 
 Ctrl-C stops the host. Every agent grant ends first, and the decks keep playing.
 The runtime folder keeps `connection.json` and `journal.ndjson`; keep runtime
@@ -130,8 +131,8 @@ a writer restart, sleep, or a host fault. A second press before a release counts
 from the second press, unless the first was cancelled: a Hold or Stop's cancel lasts
 until you lift the pad, even through a reconnect; any other lasts until you lift the
 pad or a new epoch starts (the controller, route or writer comes back, or the computer
-wakes), after which a repeated press starts fresh. The page sends how long it saw the pad held, so a slow request can only make a
-press shorter, never longer.
+wakes), after which a repeated press starts fresh. The page sends how long it saw the
+pad held, so a slow request can only make a press shorter, never longer.
 
 The agent then:
 
@@ -252,8 +253,9 @@ up the request ID. See [contracts and errors](contracts.md#opt-in-machine-errors
 
 - **The page says "press again".** The agent changes what the page shows, and so where
   things are. Stop and every row's buttons stay in place, and for a moment after the
-  page changes, Invite, Release, Accept and Issue aren't sent, so a click never lands on
-  a button that slid under the pointer. Press again once the page is still.
+  page changes, nothing that hands the agent more (Invite, Release, Accept, Issue,
+  Confirm change, Dismiss) is sent, so a click on a button that just slid under the
+  pointer never hands the agent anything. Press again once the page is still.
 - **The notice wasn't shown.** The grant ends at its deadline and nothing is sent.
   A notice the page fetched but didn't acknowledge reads `notice_deadline_missed`;
   one it never showed, or showed while hidden, reads `notice_delivery_unknown`.

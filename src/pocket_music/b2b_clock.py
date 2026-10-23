@@ -4,9 +4,9 @@ to bound how long it waits for an act to finish.
 
 Leases and deadlines use a deadline clock that keeps counting while the machine sleeps, so a
 grant can't survive a suspend. A second uptime clock pauses during sleep; the broker compares
-the two between its entries to detect a suspend (``suspend_gap_ns``). ``time.monotonic()`` is
-not used: on macOS it pauses during sleep. Wall time is display metadata and never decides
-anything.
+the two between its entries to detect a suspend (``suspend_gap_ns``). Leases and deadlines never
+use ``time.monotonic()``, which pauses during sleep on macOS; only the host's bound on how long it
+waits for an act does. Wall time is display metadata and never decides anything.
 """
 from __future__ import annotations
 
