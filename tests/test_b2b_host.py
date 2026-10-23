@@ -416,7 +416,12 @@ def test_page_assets_use_text_content_const_and_strip_the_fragment():
     assert 'src="/b2b.js"' in html and 'href="/b2b.css"' in html and "<script>" not in html
     assert " style=" not in html and "http" not in html.replace("http-equiv", "")
     # The pad's rules live in padControl (tested in b2b_page_model.test.mjs); the page must use it.
-    assert "pad.control = padControl(gesture, send," in script
+    assert "pad.control = padControl(gesture, send, () => performance.now()," in script
+    assert "ms => new Promise(done => setTimeout(done, ms))" in script  # padControl's sleep
+    assert "event.button !== 0 || !event.isPrimary" in script and "setPointerCapture" in script
+    assert 'window.addEventListener("blur", up)' in script
+    # The person's buttons are rebuilt only when what their list shows changed.
+    assert all(f'changed("{name}"' in script for name in ("notices", "resources", "grants"))
     assert "pad.control.noteReduction(path, fields)" in script
     assert "pad.control.press()" in script and "pad.control.release()" in script
 
@@ -701,9 +706,16 @@ def test_the_page_pad_sends_its_own_hold_time_and_a_slow_request_stays_a_tap(hos
     tick(host, 600)  # the release request arrived late; the page saw an 80 ms tap
     issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 0], "held_ms": 80})
     assert b2b.b2b_observe(session)["invitations"] == []
-    status, refused, _ = http_call(host, "POST", "/api/synthetic/input",
-                                   {"message": [0x97, 64, 0], "held_ms": -1}, key=host.page.issuer_token)
-    assert status == 400 and "held_ms" in json.dumps(refused)
+    # A Stop or Hold the host saw before this press: the page says so on the release.
+    issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 127]})
+    tick(host, 700)
+    issuer(host, "POST", "/api/synthetic/input",
+           {"message": [0x97, 64, 0], "held_ms": 700, "cancelled": True})
+    assert b2b.b2b_observe(session)["invitations"] == []
+    for bad in ({"held_ms": -1}, {"cancelled": "yes"}):
+        status, refused, _ = http_call(host, "POST", "/api/synthetic/input",
+                                       {"message": [0x97, 64, 0], **bad}, key=host.page.issuer_token)
+        assert status == 400 and next(iter(bad)) in json.dumps(refused)
 
 
 def test_fault_reports_are_queued_then_printed_and_a_closed_terminal_stops_nothing(host, monkeypatch):

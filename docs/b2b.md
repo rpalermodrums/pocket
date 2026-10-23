@@ -127,8 +127,9 @@ pad is different: a long press hands back its controls, held or not. While the p
 is down, a Hold on one of its controls, or Stop, cancels that press, even if the
 Hold or Stop reaches the host first; so does a lost or returning controller or route,
 a writer restart, sleep, or a host fault. A second press before a release counts
-from the second press. The page sends how long it saw the pad held, so a slow
-request can only make a press shorter, never longer.
+from the second press, unless a Hold or Stop cancelled the first: that lasts until
+you lift the pad, even through a reconnect. The page sends how long it saw the pad
+held, so a slow request can only make a press shorter, never longer.
 
 The agent then:
 

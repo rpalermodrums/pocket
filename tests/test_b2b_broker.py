@@ -1574,3 +1574,6 @@ def test_a_stop_or_hold_outlasts_a_new_epoch_and_a_repeated_press(tmp_path):
         assert h.observe()["invitations"] == [], order
         if "hold" in order:
             assert owner(h, GAIN)["hold"] == "explicit", order
+        h.tick(100)
+        h.long_press(held_ms=700)  # the cancel ends with that release: the next long press hands back
+        assert events(h, "gesture_released")[-1]["outcome"] == "invitation_created", order

@@ -159,15 +159,18 @@ export function padControl(gesture, send, now, sleep) {
   const inOrder = make => (state.queue = state.queue.then(async () => {
     const wait = state.last + gap - now();
     if (wait > 0) await sleep(wait);
-    state.last = now();
     const [message, extra] = make();
-    return send(message, extra);
+    await send(message, extra);
+    state.last = now();  // from the host's answer, so a message it handled late still keeps its gap
   }));
   return {
     isDown: () => state.down,
     press() {
-      if (state.down) return false;
+      // A press while already down (its release never came) starts the press again, as the host
+      // does, keeping a cancel already made against it.
+      const keep = state.down && cancelled.delete(state.press);
       Object.assign(state, {down: true, at: now(), press: state.press + 1});
+      if (keep) cancelled.add(state.press);
       inOrder(() => [rawMessage(gesture.message, gesture.press_value), {}]);
       return true;
     },

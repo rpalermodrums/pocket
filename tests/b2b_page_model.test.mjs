@@ -147,10 +147,11 @@ test("the hand-back pad sends in order and spaced, says how long it was held, an
   clock.now += 80;
   assert.equal(pad.release(), true);
   await Promise.resolve();
+  clock.now += 40;  // the host answers the press late
   slow.release();
   await pad.settled();
   assert.deepEqual(values(), [[127, {}], [0, {held_ms: 80}]]);
-  assert.ok(sent[1][2] - sent[0][2] >= 50);  // never closer than the debounce plus a margin
+  assert.ok(sent[1][2] - sent[0][2] >= 50);  // counted from the answer: never inside the debounce
 
   pad.press();  // straight after the last release: it waits its turn and its gap
   pad.noteReduction("/api/holds", {resources: ["synthetic/left/gain"]});  // not one of the pad's controls
@@ -181,7 +182,8 @@ test("the hand-back pad sends in order and spaced, says how long it was held, an
   assert.deepEqual(values().at(-1), [0, {held_ms: 700}]);
   assert.equal(pad.release(), false);  // a second release without a press sends nothing
 
-  // Two presses in line behind a stalled request: a Stop cancels both, not just the one held now.
+  // Presses in line behind a stalled request: Hold every control cancels all of them, not just
+  // the newest or the one held now.
   const stalled = {open: null};
   const late = [];
   const gated = (message, extra) => {
@@ -189,16 +191,38 @@ test("the hand-back pad sends in order and spaced, says how long it was held, an
     return late.length === 1 ? new Promise(done => { stalled.open = done; }) : Promise.resolve();
   };
   const line = padControl(gesture, gated, () => clock.now, sleep);
+  for (const held of [700, 600]) {
+    line.press();
+    clock.now += held;
+    line.release();
+  }
   line.press();
-  clock.now += 700;
-  line.release();
-  line.press();
-  line.noteReduction("/api/panic", {});
-  clock.now += 700;
+  line.noteReduction("/api/holds", {resources: "all"});
+  clock.now += 500;
   line.release();
   await Promise.resolve();
   stalled.open();
   await line.settled();
   assert.deepEqual(late.filter(([value]) => value === 0).map(([, extra]) => extra),
-                   [{held_ms: 700, cancelled: true}, {held_ms: 700, cancelled: true}]);
+                   [{held_ms: 700, cancelled: true}, {held_ms: 600, cancelled: true},
+                    {held_ms: 500, cancelled: true}]);
+
+  // A press while already down (its release never came) starts the timing again and keeps a cancel.
+  const again = [];
+  const twice = padControl(gesture, (message, extra) => Promise.resolve(again.push([message[2], extra])),
+                           () => clock.now, sleep);
+  twice.press();
+  clock.now += 2000;
+  twice.press();
+  clock.now += 100;
+  twice.release();
+  await twice.settled();
+  assert.deepEqual(again, [[127, {}], [127, {}], [0, {held_ms: 100}]]);
+  twice.press();
+  twice.noteReduction("/api/panic", {});
+  twice.press();
+  clock.now += 900;
+  twice.release();
+  await twice.settled();
+  assert.deepEqual(again.at(-1), [0, {held_ms: 900, cancelled: true}]);
 });

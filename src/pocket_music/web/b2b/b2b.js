@@ -219,7 +219,10 @@ function render(snapshot) {
   renderPanel(snapshot.synthetic_panel);
 }
 
+// The lists below rebuild only when what they show changes, never for a countdown or an agent's step:
+// a button replaced between press and release gets no click, and these buttons are the person's.
 function renderNotices(notices, keyed) {
+  if (!changed("notices", [keyed, notices.map(n => [n.notice_id, n.state, n.text])])) return;
   const pending = notices.filter(notice => notice.state === "pending");
   const ended = keyed ? notices.filter(notice => notice.state !== "pending").slice(-3) : [];
   const items = [...pending, ...ended].map(notice => {
@@ -246,6 +249,10 @@ function groupOf(snapshot, resource) {
 
 function renderResources(snapshot) {
   const permission = snapshot.permissions[0] || null;
+  if (!changed("resources", [snapshot.resources.map(r => [r.resource_id, r.owner, r.blocked_by]),
+                             permission && [permission.resources, permission.proactive_claims.allowed],
+                             snapshot.invitations.map(i => i.resources),
+                             snapshot.grants.map(g => [g.grant_id, g.reason])])) return;
   const reasons = new Map(snapshot.grants.map(grant => [grant.grant_id, grant.reason]));
   const invited = new Set(snapshot.invitations.flatMap(invitation => invitation.resources));
   const rows = snapshot.resources.map(resource => {
@@ -288,6 +295,8 @@ function renderResources(snapshot) {
 }
 
 function renderGrants(grants, invitations) {
+  if (!changed("grants", [grants.map(g => [g.grant_id, g.reason, g.labels]),
+                          invitations.map(i => [i.invitation_id, i.labels])])) return;
   const held = grants.map(grant => {
     const item = el("li", `Agent holds ${grant.labels.join(", ")} for `);
     item.append(countdown(grant.deadline), `. Its reason: ${grant.reason} `,
@@ -522,15 +531,31 @@ function buildPanel(panel) {
   const padButton = $("handback");
   pad.control = padControl(gesture, send, () => performance.now(),
                            ms => new Promise(done => setTimeout(done, ms)));
-  const down = () => {
-    if (pad.control.press()) padButton.setAttribute("aria-pressed", "true");
+  // Only a primary press counts, the pad keeps the pointer until it lifts, and leaving the window or
+  // hiding the page lifts it: a release that never comes must not let a later tap hand back.
+  const down = event => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    try {
+      padButton.setPointerCapture(event.pointerId);
+    } catch {
+      // a synthetic event has no active pointer to capture; the release handlers still apply
+    }
+    pad.control.press();
+    padButton.setAttribute("aria-pressed", "true");
   };
   const up = () => {
     if (pad.control.release()) padButton.setAttribute("aria-pressed", "false");
   };
   padButton.textContent = `${gesture.label} (hold at least ${gesture.long_press_ms / 1000} s)`;
   padButton.addEventListener("pointerdown", down);
-  for (const name of ["pointerup", "pointercancel", "pointerleave"]) padButton.addEventListener(name, up);
+  padButton.addEventListener("contextmenu", event => event.preventDefault());
+  for (const name of ["pointerup", "pointercancel", "pointerleave", "lostpointercapture"]) {
+    padButton.addEventListener(name, up);
+  }
+  window.addEventListener("blur", up);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") up();
+  });
   const faults = [["Disconnect controller", "disconnect"], ["Reconnect controller", "reconnect"],
                   ["Lose master route", "lose_route"], ["Restore master route", "restore_route"],
                   ["Restart writer", "restart_writer"]];
