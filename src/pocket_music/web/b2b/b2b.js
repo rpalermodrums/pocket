@@ -457,8 +457,8 @@ function renderEvents(events) {
 
 // The synthetic controller panel -----------------------------------------------------------------
 
-function send(message) {
-  return api("/api/synthetic/input", {body: {message}}).catch(showError);
+function send(message, extra = {}) {
+  return api("/api/synthetic/input", {body: {message, ...extra}}).catch(showError);
 }
 
 function shortName(address) {
@@ -517,17 +517,19 @@ function buildPanel(panel) {
   controls.append(button("Send unknown message", () => send([0xb3, 99, 1]), {class: "quiet"}));
   const gesture = panel.gestures[0];
   const pad = $("handback");
-  // Press and release go one after the other, so the host never sees a release before its press.
-  const queue = {last: Promise.resolve()};
-  const inOrder = message => (queue.last = queue.last.then(() => send(message)));
+  // The release carries how long this page saw the pad held. The host takes the shorter of that and
+  // its own measure, so a slow request can't turn a tap into a hand-back.
+  const pressed = {at: 0};
   const down = () => {
     pad.setAttribute("aria-pressed", "true");
-    inOrder(rawMessage(gesture.message, gesture.press_value));
+    pressed.at = performance.now();
+    send(rawMessage(gesture.message, gesture.press_value));
   };
   const up = () => {
     if (pad.getAttribute("aria-pressed") !== "true") return;
     pad.setAttribute("aria-pressed", "false");
-    inOrder(rawMessage(gesture.message, gesture.release_value));
+    send(rawMessage(gesture.message, gesture.release_value),
+         {held_ms: Math.max(0, Math.round(performance.now() - pressed.at))});
   };
   pad.textContent = `${gesture.label} (hold at least ${gesture.long_press_ms / 1000} s)`;
   pad.addEventListener("pointerdown", down);

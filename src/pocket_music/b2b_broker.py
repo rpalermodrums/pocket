@@ -2094,7 +2094,11 @@ class Broker:
                 blocker = (self._resource_blocker(closure, kind, permission, now)
                            if kind == "invitation" or permission is not None else None)
                 blocked[kind] = (covered, blocker)
-            first = next((b for _, b in blocked.values() if b is not None), None)
+            # A row a basis covers waits only when every covering basis is blocked, and until the
+            # earliest of them clears; a row nothing covers reports what would block it.
+            covering = [b for covered, b in blocked.values() if covered]
+            first = ((None if None in covering else min(covering, key=lambda b: (b[2] is None, b[2] or 0)))
+                     if covering else next((b for _, b in blocked.values() if b is not None), None))
             resources.append({
                 "resource_id": rid, "label": d["label"], "aliases": list(self._profile.aliases_of(rid)),
                 "control_kind": d["control_kind"], "range": None if d["range"] is None else dict(d["range"]),
@@ -2935,6 +2939,9 @@ class Broker:
             self._counters["ignored_releases"] += 1
             return
         held = now - state["t0"]
+        reported = event.get("held_ms")
+        if type(reported) is int and reported >= 0:
+            held = min(held, reported * MS)  # the sender's own timing may shorten a press, never lengthen it
         self._gestures[gid] = {"state": "idle", "t0": None, "last_transition_ns": now}
         if state.get("voided"):
             outcome, invitation = "voided", None  # a Hold, Stop or new epoch cancelled this press

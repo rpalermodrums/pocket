@@ -124,7 +124,10 @@ use **Take it back**.
 **Invite** never drops a hold. Linked controls, like an FX unit's depth and route,
 are handed back together, so release any hold in that pair first. The hand-back
 pad is different: a long press hands back its controls, held or not. While the pad
-is down, a Hold on one of its controls, or Stop, cancels that press.
+is down, a Hold on one of its controls, or Stop, cancels that press; so does an epoch
+change, a lost controller or route, or a host fault. A press the host sees while the
+pad still reads pressed starts the timing again, and the page sends how long it saw
+the pad held, so a slow request can only make a press shorter, never longer.
 
 The agent then:
 
@@ -262,9 +265,10 @@ up the request ID. See [contracts and errors](contracts.md#opt-in-machine-errors
 - **The host hit an internal fault.** Agent control stops for the rest of that host,
   as when the journal fails: the page shows a banner and the terminal prints the
   fault. Touching your controls, Hold, Stop, Deny and Take it back keep working;
-  releasing a hold, accepting a pickup or issuing waits for a new host. `b2b_prepare`,
-  `b2b_authorize`, `b2b_claim` and `b2b_act` fail with `io_error`; `b2b_observe`,
-  `b2b_events`, `b2b_request_status`, `b2b_release` and `b2b_revoke` still answer.
+  releasing a hold, inviting, accepting a pickup or issuing waits for a new host.
+  `b2b_prepare`, `b2b_authorize`, `b2b_claim` and `b2b_act` fail with `io_error`;
+  `b2b_observe`, `b2b_events`, `b2b_request_status`, `b2b_release` and `b2b_revoke`
+  still answer.
 - **The host stopped.** Calls to the old session fail with `io_error`.
   `b2b_request_status` still answers from the old journal: `complete` with its
   receipt, `stopped_before_dispatch` when nothing was admitted, or `outcome_unknown`

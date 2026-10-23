@@ -17,7 +17,7 @@ import pytest
 from b2b_harness import MS, Harness, default_draft
 
 from pocket_music.artifact_store import digest
-from pocket_music.b2b_adapters import SyntheticAdapter
+from pocket_music.b2b_adapters import SyntheticAdapter, raw_message
 from pocket_music.b2b_broker import TrustedChannel
 from pocket_music.errors import PocketError
 
@@ -1506,3 +1506,42 @@ def test_a_cancelled_press_stays_cancelled_when_it_starts_again(tmp_path):
     h.release()
     assert events(h, "gesture_released")[-1]["outcome"] == "voided"
     assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+
+
+def test_the_senders_own_hold_time_can_shorten_a_press_but_never_lengthen_it(tmp_path):
+    h = make(tmp_path)
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})
+    gesture = h.profile.gesture_by_id["handback-right"]
+    release = raw_message(dict(gesture["message"]), gesture["release_value"])
+    h.press()
+    h.tick(600)  # the release request was slow; the page saw an 80 ms tap
+    h.adapter.inject_message(release, held_ms=80)
+    assert events(h, "gesture_released")[-1]["outcome"] == "short_press_ignored"
+    assert owner(h, GAIN)["hold"] == "explicit" and h.observe()["invitations"] == []
+    h.tick(100)
+    h.press()
+    h.tick(100)
+    h.adapter.inject_message(release, held_ms=900)  # a longer report never makes a long press
+    assert events(h, "gesture_released")[-1]["outcome"] == "short_press_ignored"
+
+
+def test_a_row_the_invitation_makes_claimable_is_not_shown_as_waiting(tmp_path):
+    h = make(tmp_path)
+    issued(h)
+    h.tick(4000)
+    h.invite([GAIN])
+    h.press()  # blocks idle claims under the permission, not the invitation
+    rows = {r["resource_id"]: r for r in h.observe()["resources"]}
+    assert rows[GAIN]["blocked_by"] is None and rows[GAIN]["claimable"]["invitation"] is True
+    assert rows[FILTER]["blocked_by"] == "gesture_in_progress"
+
+
+def test_a_row_only_the_permission_covers_reports_the_permissions_retry(tmp_path):
+    h = make(tmp_path)
+    issued(h)  # idle claims need 4 s of stillness
+    moved = h.now
+    h.move(TRIM_2, 90)
+    h.tick(2100)  # the activity hold has ended; the idle interval hasn't
+    row = next(r for r in h.observe()["resources"] if r["resource_id"] == GAIN)
+    assert (row["owner"]["kind"], row["blocked_by"]) == ("unowned", "human_active")
+    assert row["retry_not_before_monotonic_ns"] == moved + 4000 * MS  # not the invitation's settle time

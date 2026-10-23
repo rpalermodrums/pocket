@@ -718,8 +718,13 @@ class SyntheticAdapter:
             self._closed = True
             self._deferred = []
 
-    def inject_message(self, raw, origin: str = "controller") -> tuple[dict, ...]:
-        """Deliver one controller message, or feedback echo, as a native adapter would; return the events."""
+    def inject_message(self, raw, origin: str = "controller", *, held_ms: int | None = None
+                       ) -> tuple[dict, ...]:
+        """Deliver one controller message, or feedback echo, as a native adapter would; return the events.
+
+        ``held_ms`` is how long the sender saw a hand-back pad held. It rides on a release only, and
+        the broker uses it only to shorten what it measured, so a slow request can't lengthen a tap.
+        """
         if origin not in ("controller", "feedback"):
             raise ValueError("origin is controller or feedback")
         with self._delivery:
@@ -728,7 +733,10 @@ class SyntheticAdapter:
                 if self._dependencies.get("controller") != "available":
                     self._dropped_messages += 1
                     return ()
-                events = self._classify(raw, origin, now)
+                events = [{**event, "held_ms": held_ms}
+                          if held_ms is not None and event["type"] == "gesture"
+                          and event["phase"] == "release" else event
+                          for event in self._classify(raw, origin, now)]
             self._deliver(events)
         return tuple(events)
 

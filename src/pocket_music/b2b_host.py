@@ -194,10 +194,13 @@ class B2bHost:
     def _print_faults(self) -> None:
         while self._faults:
             fault = self._faults.popleft()
-            print("b2b host fault: agent control stopped for the rest of this host. Touching your controls, "
-                  "Hold and Stop still work; start a new host to release holds or play with the agent again.",
-                  file=sys.stderr, flush=True)
-            traceback.print_exception(fault, file=sys.stderr)
+            try:
+                print("b2b host fault: agent control stopped for the rest of this host. Touching your "
+                      "controls, Hold and Stop still work; start a new host to release holds or play with "
+                      "the agent again.", file=sys.stderr, flush=True)
+                traceback.print_exception(fault, file=sys.stderr)
+            except (OSError, ValueError):  # a closed terminal must not stop the scheduler or the exit
+                return
 
     def tick(self) -> None:
         """One scheduler pass: deliver adapter events, then the broker's due work (tests call it)."""
@@ -235,7 +238,6 @@ class B2bHost:
             self._stop.set()
             for thread in self._threads[2:]:  # the scheduler
                 thread.join(timeout=5)
-            self._print_faults()  # any the scheduler didn't print
             self.journal.sync()
             if self._threads:  # shutdown() waits for serve_forever, so only a started server can take it
                 self._page_server.shutdown()
@@ -247,6 +249,7 @@ class B2bHost:
             self.adapter.close()
             self.journal.close()
             shutil.rmtree(self.socket_dir, ignore_errors=True)
+            self._print_faults()  # last, so a blocked terminal can't hold up the stop
 
     def dispatch(self, message) -> dict:
         """The closed agent operation list. Nothing here can ack, invite, hold, issue or inject."""

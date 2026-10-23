@@ -169,7 +169,7 @@ const EVENT_TEXT = {
                              + "handed back",
                            voided: "Hand-back pad released: this press was cancelled, nothing handed back"}
                           [e.outcome] || "Hand-back pad released"),
-  release_lost: () => "Hand-back pad held too long: nothing handed back",
+  release_lost: () => "Hand-back pad: no release arrived in time, nothing handed back",
   unknown_input: e => `Unrecognised controller message (${e.classification}); everything yields`,
   invitation_created: () => "Controls handed to the agent",
   invitation_ended: e => `Invitation ${e.state}`,

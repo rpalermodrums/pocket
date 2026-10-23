@@ -481,7 +481,7 @@ def test_end_to_end_handback_proactive_and_stop_over_socket_and_page(host, tmp_p
     # 1. The person long-presses Hand back on the synthetic controller panel.
     issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 127]})
     tick(host, 600)
-    issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 0]})
+    issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 0], "held_ms": 600})  # as the page
     observed = b2b.b2b_observe(session)
     (invitation,) = observed["invitations"]
     assert invitation["source"] == "gesture" and GAIN in invitation["resources"]
@@ -688,3 +688,27 @@ def test_request_status_prefers_the_journal_when_the_host_no_longer_holds_a_requ
     status = b2b.b2b_request_status(session, "revoke-1")
     assert (status["source"], status["state"], status["host_running"]) == ("retained_journal", "complete",
                                                                             True)
+
+
+def test_the_page_pad_sends_its_own_hold_time_and_a_slow_request_stays_a_tap(host, tmp_path):
+    session = prepare(host, tmp_path)
+    attach(host)
+    issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 127]})
+    tick(host, 600)  # the release request arrived late; the page saw an 80 ms tap
+    issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 0], "held_ms": 80})
+    assert b2b.b2b_observe(session)["invitations"] == []
+    status, refused, _ = http_call(host, "POST", "/api/synthetic/input",
+                                   {"message": [0x97, 64, 0], "held_ms": -1}, key=host.page.issuer_token)
+    assert status == 400 and "held_ms" in json.dumps(refused)
+
+
+def test_fault_reports_print_outside_the_lock_and_a_closed_terminal_stops_nothing(host, monkeypatch):
+    shown = io.StringIO()
+    monkeypatch.setattr("sys.stderr", shown)
+    host._report_fault(RuntimeError("a host bug"))  # under the broker lock: queued, not printed
+    assert host.faulted.is_set() and shown.getvalue() == ""
+    host._print_faults()
+    assert "agent control stopped" in shown.getvalue() and "a host bug" in shown.getvalue()
+    shown.close()  # a closed terminal
+    host._report_fault(RuntimeError("another"))
+    host._print_faults()  # returns quietly; the scheduler would keep running

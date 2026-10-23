@@ -161,14 +161,18 @@ class TrustedPage:
 
     def synthetic_input(self, body) -> dict:
         self._require_synthetic()
-        _only(body, ("message", "origin"), "synthetic input")
+        _only(body, ("message", "origin", "held_ms"), "synthetic input")
         message, origin = body.get("message"), body.get("origin", "controller")
+        held_ms = body.get("held_ms")
+        if held_ms is not None and (type(held_ms) is not int or not 0 <= held_ms <= 600_000):
+            raise _bad("held_ms is a whole number of milliseconds",
+                       "Send how long the pad was held, or leave it out.")
         if (not isinstance(message, list) or not 1 <= len(message) <= 3
                 or any(type(b) is not int or not 0 <= b <= 255 for b in message)):
             raise _bad("message is a list of one to three bytes", "Send [status, data1, data2] as integers.")
         if origin not in ("controller", "feedback"):
             raise _bad("origin is controller or feedback", "Leave origin out for a controller message.")
-        events = self._adapter.inject_message(message, origin)
+        events = self._adapter.inject_message(message, origin, held_ms=held_ms)
         return {"delivered": len(events), "types": [event["type"] for event in events]}
 
     def synthetic_fault(self, body) -> dict:
