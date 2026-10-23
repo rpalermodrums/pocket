@@ -144,6 +144,41 @@ export function rawMessage(message, value) {
   return [status, message.number, value & 0x7f];
 }
 
+// The synthetic hand-back pad on this page. Press and release go out in order, so a late release
+// never ends the next press. The release says how long this page saw the pad held (the host keeps
+// the shorter of that and its own measure, so waiting in line never turns a tap into a hand-back),
+// and whether a Stop, or a Hold on one of the pad's controls, cancelled the press meanwhile: that
+// request may reach the host before the press does. ``send(message, extra)`` returns a promise.
+export function padControl(gesture, send, now) {
+  const state = {down: false, at: 0, cancelled: false, queue: Promise.resolve()};
+  const scope = new Set(gesture.scope || []);
+  const inOrder = (message, extra) => (state.queue = state.queue.then(() => send(message, extra)));
+  return {
+    isDown: () => state.down,
+    press() {
+      if (state.down) return false;
+      Object.assign(state, {down: true, at: now(), cancelled: false});
+      inOrder(rawMessage(gesture.message, gesture.press_value), {});
+      return true;
+    },
+    release() {
+      if (!state.down) return false;
+      state.down = false;
+      const held = Math.min(600000, Math.max(0, Math.round(now() - state.at)));
+      inOrder(rawMessage(gesture.message, gesture.release_value),
+              state.cancelled ? {held_ms: held, cancelled: true} : {held_ms: held});
+      return true;
+    },
+    noteReduction(path, fields) {
+      if (!state.down) return;
+      const resources = fields && fields.resources;
+      const covers = resources === "all" || (Array.isArray(resources) && resources.some(r => scope.has(r)));
+      if (path === "/api/panic" || (path === "/api/holds" && covers)) state.cancelled = true;
+    },
+    settled: () => state.queue,
+  };
+}
+
 const words = value => String(value ?? "").replaceAll("_", " ");
 
 const EVENT_TEXT = {

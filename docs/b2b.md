@@ -124,11 +124,11 @@ use **Take it back**.
 **Invite** never drops a hold. Linked controls, like an FX unit's depth and route,
 are handed back together, so release any hold in that pair first. The hand-back
 pad is different: a long press hands back its controls, held or not. While the pad
-is down, a Hold on one of its controls, or Stop, cancels that press; so does a
-controller reconnect, a lost or restored route, a writer restart, sleep, or a host
-fault. A second press before a release counts from the second press. The page sends
-how long it saw the pad held, so a slow request can only make a press shorter, never
-longer.
+is down, a Hold on one of its controls, or Stop, cancels that press, even if the
+Hold or Stop reaches the host first; so does a lost or returning controller or route,
+a writer restart, sleep, or a host fault. A second press before a release counts
+from the second press. The page sends how long it saw the pad held, so a slow
+request can only make a press shorter, never longer.
 
 The agent then:
 
@@ -261,8 +261,9 @@ up the request ID. See [contracts and errors](contracts.md#opt-in-machine-errors
   every entry, so the first call after waking already sees it. See
   [time has more than one clock](concepts.md#time-has-more-than-one-clock).
 - **The journal is full or failed.** Agent control stops and the page says so.
-  Touching your controls, Hold and Stop keep working; releasing a hold or accepting a
-  pickup waits for a new host. Restart the host with a new runtime folder.
+  Touching your controls, Hold and Stop keep working; releasing a hold, inviting,
+  accepting a pickup or issuing waits for a new host. Restart the host with a new
+  runtime folder.
 - **The host hit an internal fault.** Agent control stops for the rest of that host,
   as when the journal fails: the page shows a banner and the terminal prints the
   fault. Touching your controls, Hold, Stop, Deny and Take it back keep working;

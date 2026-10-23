@@ -4,7 +4,7 @@
 // leaves a locked page that can still stop, hold and deny.
 import {
   ackPayload, blockedLabel, changedSettings, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel,
-  rawMessage, remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
+  padControl, rawMessage, remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
 } from "/b2b-model.mjs";
 
 const token = tokenFromHash(location.hash);
@@ -96,13 +96,11 @@ async function perform(path, body, key = "issuer") {
   }
 }
 
-// The synthetic hand-back pad, while it is down on this page. A Hold or Stop pressed meanwhile
-// cancels the press here too, since its request may reach the host before the press does.
-const pad = {down: false, at: 0, cancelled: false, queue: Promise.resolve()};
+const pad = {control: null};  // the synthetic hand-back pad, once the panel is built
 
 // Reductions need only the public CSRF token; fetch it again if the page doesn't have it yet.
 async function reduce(path, fields) {
-  if (pad.down && (path === "/api/panic" || path === "/api/holds")) pad.cancelled = true;
+  if (pad.control) pad.control.noteReduction(path, fields);  // a Stop or Hold may cancel a press in flight
   if (!app.csrf) {
     try {
       app.csrf = (await api("/api/public", {key: "public"})).csrf_token;
@@ -522,21 +520,12 @@ function buildPanel(panel) {
   controls.append(button("Send unknown message", () => send([0xb3, 99, 1]), {class: "quiet"}));
   const gesture = panel.gestures[0];
   const padButton = $("handback");
-  // Press and release go in order, so a late release never ends the next press. The release carries
-  // how long this page saw the pad held (none if a Hold or Stop cancelled it), and the host takes the
-  // shorter of that and its own measure, so waiting in line never turns a tap into a hand-back.
-  const inOrder = (message, extra) => (pad.queue = pad.queue.then(() => send(message, extra)));
+  pad.control = padControl(gesture, send, () => performance.now());
   const down = () => {
-    padButton.setAttribute("aria-pressed", "true");
-    Object.assign(pad, {down: true, at: performance.now(), cancelled: false});
-    inOrder(rawMessage(gesture.message, gesture.press_value));
+    if (pad.control.press()) padButton.setAttribute("aria-pressed", "true");
   };
   const up = () => {
-    if (!pad.down) return;
-    padButton.setAttribute("aria-pressed", "false");
-    const held = pad.cancelled ? 0 : Math.min(600000, Math.max(0, Math.round(performance.now() - pad.at)));
-    pad.down = false;
-    inOrder(rawMessage(gesture.message, gesture.release_value), {held_ms: held});
+    if (pad.control.release()) padButton.setAttribute("aria-pressed", "false");
   };
   padButton.textContent = `${gesture.label} (hold at least ${gesture.long_press_ms / 1000} s)`;
   padButton.addEventListener("pointerdown", down);

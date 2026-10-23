@@ -1523,6 +1523,11 @@ def test_the_senders_own_hold_time_can_shorten_a_press_but_never_lengthen_it(tmp
     h.tick(100)
     h.adapter.inject_message(release, held_ms=900)  # a longer report never makes a long press
     assert events(h, "gesture_released")[-1]["outcome"] == "short_press_ignored"
+    h.tick(100)
+    h.press()
+    h.tick(700)
+    h.adapter.inject_message(release, held_ms=700, cancelled=True)  # a Stop or Hold the host hadn't seen yet
+    assert events(h, "gesture_released")[-1]["outcome"] == "voided" and h.observe()["invitations"] == []
 
 
 def test_a_row_the_invitation_makes_claimable_is_not_shown_as_waiting(tmp_path):

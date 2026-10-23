@@ -2944,7 +2944,7 @@ class Broker:
         if type(reported) is int and reported >= 0:
             held = min(held, reported * MS)  # the sender's own timing may shorten a press, never lengthen it
         self._gestures[gid] = {"state": "idle", "t0": None, "last_transition_ns": now}
-        if state.get("voided"):
+        if state.get("voided") or event.get("cancelled") is True:
             # A Hold, Stop, new epoch, lost controller or route, or host fault cancelled this press.
             outcome, invitation = "voided", None
         elif held < binding["long_press_ms"] * MS:

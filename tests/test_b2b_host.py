@@ -415,10 +415,10 @@ def test_page_assets_use_text_content_const_and_strip_the_fragment():
     assert html.splitlines()[:2] == ["<!doctype html>", "<!-- SPDX-License-Identifier: AGPL-3.0-only -->"]
     assert 'src="/b2b.js"' in html and 'href="/b2b.css"' in html and "<script>" not in html
     assert " style=" not in html and "http" not in html.replace("http-equiv", "")
-    # The pad's release carries the page's own hold time, zero once a Hold or Stop cancelled it, and
-    # press and release go in one ordered line.
-    assert "{held_ms: held}" in script and "pad.cancelled ? 0" in script and "pad.queue.then" in script
-    assert 'if (pad.down && (path === "/api/panic" || path === "/api/holds")) pad.cancelled = true;' in script
+    # The pad's rules live in padControl (tested in b2b_page_model.test.mjs); the page must use it.
+    assert "pad.control = padControl(gesture, send," in script
+    assert "pad.control.noteReduction(path, fields)" in script
+    assert "pad.control.press()" in script and "pad.control.release()" in script
 
 
 def test_socket_path_falls_back_to_tmp_and_refuses_when_too_long(tmp_path):
@@ -716,3 +716,15 @@ def test_fault_reports_are_queued_then_printed_and_a_closed_terminal_stops_nothi
     shown.close()  # a closed terminal
     host._report_fault(RuntimeError("another"))
     host._print_faults()  # returns quietly; the scheduler would keep running
+
+
+def test_a_scheduler_failure_still_stops_agent_control_on_a_closed_terminal(host, tmp_path, monkeypatch):
+    session = prepare(host, tmp_path)
+    closed = io.StringIO()
+    closed.close()
+    monkeypatch.setattr("sys.stderr", closed)
+    monkeypatch.setattr(host, "tick", lambda: 1 / 0)
+    host._schedule()  # returns after failing closed, as the scheduler thread would
+    assert host.failed.is_set()
+    events = b2b.b2b_events(session, max_events=256)["events"]
+    assert any(e["type"] == "panic" for e in events)  # the panic ran though nothing could be printed
