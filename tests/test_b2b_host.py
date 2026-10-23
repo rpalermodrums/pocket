@@ -419,7 +419,11 @@ def test_page_assets_use_text_content_const_and_strip_the_fragment():
     assert "pad.control = padControl(gesture, send, () => performance.now()," in script
     assert "ms => new Promise(done => setTimeout(done, ms))" in script  # padControl's sleep
     assert "event.button !== 0 || !event.isPrimary" in script and "setPointerCapture" in script
-    assert 'window.addEventListener("blur", up)' in script
+    assert 'window.addEventListener("blur", up)' in script and "if (event.isPrimary) up();" in script
+    assert 'spans[index].setAttribute("data-deadline", item.deadline)' in script  # a shortened lease
+    assert 'span.setAttribute("data-deadline", resource.owner.expires_monotonic_ns)' in script
+    assert "[kind, hold, grant_id, target_value, physical_value, reason]" in script  # what a row shows
+    assert 'changed("public-permission"' in script and "(event.buttons & 1) === 0" in script
     # The person's buttons are rebuilt only when what their list shows changed.
     assert all(f'changed("{name}"' in script for name in ("notices", "resources", "grants"))
     assert "pad.control.noteReduction(path, fields)" in script
@@ -707,11 +711,15 @@ def test_the_page_pad_sends_its_own_hold_time_and_a_slow_request_stays_a_tap(hos
     issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 0], "held_ms": 80})
     assert b2b.b2b_observe(session)["invitations"] == []
     # A Stop or Hold the host saw before this press: the page says so on the release.
+    tick(host, 100)  # past the debounce, so this press counts
     issuer(host, "POST", "/api/synthetic/input", {"message": [0x97, 64, 127]})
     tick(host, 700)
     issuer(host, "POST", "/api/synthetic/input",
            {"message": [0x97, 64, 0], "held_ms": 700, "cancelled": True})
     assert b2b.b2b_observe(session)["invitations"] == []
+    events = b2b.b2b_events(session, max_events=256)["events"]
+    released = [e for e in events if e["type"] == "gesture_released"]
+    assert released[-1]["outcome"] == "voided"  # cancelled, not a bounce or a lost release
     for bad in ({"held_ms": -1}, {"cancelled": "yes"}):
         status, refused, _ = http_call(host, "POST", "/api/synthetic/input",
                                        {"message": [0x97, 64, 0], **bad}, key=host.page.issuer_token)

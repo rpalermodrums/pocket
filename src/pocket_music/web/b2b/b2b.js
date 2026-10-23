@@ -219,8 +219,9 @@ function render(snapshot) {
   renderPanel(snapshot.synthetic_panel);
 }
 
-// The lists below rebuild only when what they show changes, never for a countdown or an agent's step:
+// The lists below rebuild only when their items change, never for a countdown or an agent's step:
 // a button replaced between press and release gets no click, and these buttons are the person's.
+// A deadline that moves (the agent shortened its lease) is updated in place.
 function renderNotices(notices, keyed) {
   if (!changed("notices", [keyed, notices.map(n => [n.notice_id, n.state, n.text])])) return;
   const pending = notices.filter(notice => notice.state === "pending");
@@ -249,17 +250,30 @@ function groupOf(snapshot, resource) {
 
 function renderResources(snapshot) {
   const permission = snapshot.permissions[0] || null;
-  if (!changed("resources", [snapshot.resources.map(r => [r.resource_id, r.owner, r.blocked_by]),
+  $("resources-table").hidden = false;  // before any early return: the locked view hides it
+  // Only what a row shows: an owner's generation, start time or lease end changes without that.
+  const shown = ({kind, hold, grant_id, target_value, physical_value, reason}) =>
+    [kind, hold, grant_id, target_value, physical_value, reason];
+  if (!changed("resources", [snapshot.resources.map(r => [r.resource_id, shown(r.owner), r.blocked_by]),
                              permission && [permission.resources, permission.proactive_claims.allowed],
                              snapshot.invitations.map(i => i.resources),
-                             snapshot.grants.map(g => [g.grant_id, g.reason])])) return;
+                             snapshot.grants.map(g => [g.grant_id, g.reason])])) {
+    for (const resource of snapshot.resources) {  // a shortened lease: move its countdown in place
+      const row = `#resources tr[data-resource="${resource.resource_id}"]`;
+      const span = document.querySelector(`${row} [data-deadline]`);
+      if (span && resource.owner.kind === "agent") {
+        span.setAttribute("data-deadline", resource.owner.expires_monotonic_ns);
+      }
+    }
+    return;
+  }
   const reasons = new Map(snapshot.grants.map(grant => [grant.grant_id, grant.reason]));
   const invited = new Set(snapshot.invitations.flatMap(invitation => invitation.resources));
   const rows = snapshot.resources.map(resource => {
     const owner = resource.owner;
     const proactive = Boolean(permission && permission.proactive_claims.allowed
       && permission.resources.includes(resource.resource_id));
-    const row = el("tr");
+    const row = el("tr", null, {"data-resource": resource.resource_id});
     const name = el("td", resource.label);
     name.append(el("span", resource.resource_id, {class: "id"}));
     const ownerCell = el("td", null, {class: "owner"});
@@ -291,12 +305,17 @@ function renderResources(snapshot) {
     return row;
   });
   $("resources").replaceChildren(...rows);
-  $("resources-table").hidden = false;
 }
 
 function renderGrants(grants, invitations) {
   if (!changed("grants", [grants.map(g => [g.grant_id, g.reason, g.labels]),
-                          invitations.map(i => [i.invitation_id, i.labels])])) return;
+                          invitations.map(i => [i.invitation_id, i.labels])])) {
+    const spans = $("grants").querySelectorAll("[data-deadline]");  // one per item, in order
+    [...grants, ...invitations].forEach((item, index) => {
+      if (spans[index]) spans[index].setAttribute("data-deadline", item.deadline);
+    });
+    return;
+  }
   const held = grants.map(grant => {
     const item = el("li", `Agent holds ${grant.labels.join(", ")} for `);
     item.append(countdown(grant.deadline), `. Its reason: ${grant.reason} `,
@@ -384,6 +403,7 @@ function renderPermission(snapshot) {
   const head = snapshot.permission_head;
   if (!changed("permission", [active && active.state_sha256, head && head.state_sha256,
                               [...app.previews.keys()]])) return;
+  app.signatures.delete("public-permission");  // the locked view redraws its own if it returns
   const box = $("permission");
   if (active) {
     const card = el("div", null, {class: "card"});
@@ -549,8 +569,13 @@ function buildPanel(panel) {
   padButton.textContent = `${gesture.label} (hold at least ${gesture.long_press_ms / 1000} s)`;
   padButton.addEventListener("pointerdown", down);
   padButton.addEventListener("contextmenu", event => event.preventDefault());
+  padButton.addEventListener("pointermove", event => {
+    if (event.isPrimary && (event.buttons & 1) === 0) up();  // the primary button lifted mid-chord
+  });
   for (const name of ["pointerup", "pointercancel", "pointerleave", "lostpointercapture"]) {
-    padButton.addEventListener(name, up);
+    padButton.addEventListener(name, event => {
+      if (event.isPrimary) up();  // a second finger lifting or leaving doesn't end the press
+    });
   }
   window.addEventListener("blur", up);
   document.addEventListener("visibilitychange", () => {
@@ -601,10 +626,13 @@ function renderPublic(publicView) {
                                                                   deadline: deadline(invitation)})));
   $("resources-table").hidden = true;
   const permission = publicView.permission;
-  $("permission").replaceChildren(permission
-    ? button(`Revoke permission ${permission.permission_id}`, () => reduce("/api/permissions/revoke",
-      {permission_id: permission.permission_id}))
-    : el("p", "No standing permission.", {class: "meta"}));
+  app.signatures.delete("permission");  // the keyed view redraws its own on return
+  if (changed("public-permission", permission && [permission.permission_id, permission.version])) {
+    $("permission").replaceChildren(permission
+      ? button(`Revoke permission ${permission.permission_id}`, () => reduce("/api/permissions/revoke",
+        {permission_id: permission.permission_id}))
+      : el("p", "No standing permission.", {class: "meta"}));
+  }
   $("proposals").replaceChildren(el("li", "Reopen the page link from the host terminal to review proposals.",
                                     {class: "meta"}));
   $("events").replaceChildren(...publicView.holds.map(rid => el("li", `You hold ${rid}`)));
