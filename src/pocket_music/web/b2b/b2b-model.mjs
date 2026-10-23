@@ -123,6 +123,14 @@ export function waitingReason(code) {
   return WAITING[code] || code.replaceAll("_", " ");
 }
 
+// Why a free control can't be claimed: a person-owned reason on a free row is a linked control's.
+const LINKED = {resource_held_by_human: "Waiting: a linked control is held",
+                human_active: "Waiting: a linked control is moving"};
+
+export function blockedLabel(code) {
+  return LINKED[code] || waitingReason(code);
+}
+
 export function requestId(bytes) {
   return `page-${Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
@@ -155,6 +163,8 @@ const EVENT_TEXT = {
                            short_press_ignored: "Hand-back pad released too soon: nothing handed back",
                            invitation_limit_reached: "Hand-back pad released: too many open invitations",
                            agent_control_stopped: "Hand-back pad released: agent control is stopped, nothing "
+                             + "handed back",
+                           voided: "Hand-back pad released: Hold or Stop cancelled this press, nothing "
                              + "handed back"}
                           [e.outcome] || "Hand-back pad released"),
   release_lost: () => "Hand-back pad held too long: nothing handed back",

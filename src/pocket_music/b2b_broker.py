@@ -242,6 +242,14 @@ def _text(value, name: str, minimum: int, maximum: int) -> str:
     return value
 
 
+def _plain_text(value, name: str, minimum: int, maximum: int) -> str:
+    """Agent text the page shows: no control or formatting characters, so no bidi override."""
+    text = _text(value, name, minimum, maximum)
+    if any(unicodedata.category(c) in ("Cc", "Cf") for c in text):
+        raise _bad(f"{name} must be plain text", f"Pass {name} without control or formatting characters.")
+    return text
+
+
 def _bool(value, name: str) -> bool:
     if type(value) is not bool:
         raise _bad(f"{name} must be true or false", f"Pass {name} as a JSON boolean.")
@@ -774,7 +782,8 @@ class Broker:
         self._secrets = ()  # host secrets no input may carry: they would otherwise reach the journal
         self._stopped = False  # set by shutdown: nothing more is granted, invited, issued or dispatched
         self._fault = None  # the first host fault, set when failing closed: agent control stays stopped
-        self._on_fault = on_fault  # told of that first fault (the host prints it to its terminal)
+        self._on_fault = on_fault  # told of each distinct fault once (the host prints it)
+        self._reported_faults = set()
         self._sink_violations = 0  # the action half reads it: a step in flight then has an unknown outcome
         self._counters = {"feedback": 0, "ignored_events": 0, "gesture_bounces": 0, "gesture_duplicates": 0,
                           "ignored_releases": 0, "lost_journal_entries": 0}
@@ -848,12 +857,18 @@ class Broker:
         fired = False
         uptime = self._clock.uptime_ns()
         gap = suspend_gap_ns(self._last_pair, (now, uptime))
-        if gap > self._settings["suspend_threshold_ms"] * MS:
+        if gap <= self._settings["suspend_threshold_ms"] * MS:
+            self._last_pair = (now, uptime)
+        else:
             # A suspend: deadline time moved on without uptime. Every lease lapsed; every token is stale.
-            # The pair moves on only once the new epoch is in place, so a failed renewal is retried.
-            self._new_epoch(now, self._adapter.renew_epoch("clock_discontinuity"), "clock_discontinuity")
-            fired = True
-        self._last_pair = (now, uptime)
+            try:
+                epoch = self._adapter.renew_epoch("clock_discontinuity")
+            except Exception as fault:  # noqa: BLE001 - the pair stays put, so the next entry retries
+                self._after_fault(fault, lambda fault=fault: self._fail_closed(fault))
+            else:
+                self._last_pair = (now, uptime)
+                self._new_epoch(now, epoch, "clock_discontinuity")
+                fired = True
         if self._journal.state != "ok" and not self._journal_degraded:
             self._degrade(now)
             fired = True
@@ -1201,7 +1216,7 @@ class Broker:
             for invitation in self._outstanding_invitations():
                 self._end_invitation(invitation, "cancelled", cancel_reason)
         if gestures:
-            self._gestures = {gid: self._idle_gesture() for gid in self._gestures}
+            self._void_gestures()
         self._cooldowns.clear()
         permission = self._active_permission()
         if permission is not None:
@@ -1528,13 +1543,24 @@ class Broker:
             return {"request_id": request_id, "status": "outcome_unknown", "outcome": outcome,
                     "warnings": [warning]}
 
-    @staticmethod
-    def _after_fault(fault: Exception, record) -> None:
-        """Run the fail-closed record; if it fails too, say so on the original fault, never silently."""
+    def _after_fault(self, fault: Exception, record) -> None:
+        """Run the fail-closed record; if it fails too, say so on the original fault, never silently.
+
+        Each distinct fault is then reported once (with any such note), even where it is swallowed.
+        """
         try:
             record()
         except Exception as also:  # noqa: BLE001 - the original fault propagates, carrying this one
             fault.add_note(f"Failing closed after this fault also raised {type(also).__name__}: {also}")
+        self._counters["host_faults"] = self._counters.get("host_faults", 0) + 1
+        key = (type(fault).__name__, str(fault)[:200])
+        fresh = key not in self._reported_faults and len(self._reported_faults) < 16
+        if self._on_fault is not None and fresh:
+            self._reported_faults.add(key)
+            try:
+                self._on_fault(fault)
+            except Exception:  # noqa: BLE001 - reporting must never undo failing closed
+                self._counters["unreported_faults"] = self._counters.get("unreported_faults", 0) + 1
 
     def _fail_closed(self, fault: Exception | None = None) -> None:
         """After a host fault, agent control stops for the rest of this host, as when the journal fails.
@@ -1564,15 +1590,13 @@ class Broker:
         attempt(self._end_permission_and_invitations)
         attempt(lambda: self._end_all_grants("outcome_unknown"))
         attempt(lambda: self._commit("host_fault"))
-        if first and self._on_fault is not None:
-            attempt(lambda: self._on_fault(fault))
         if failures:
             raise failures[0]
 
     def _end_permission_and_invitations(self) -> None:
         for invitation in self._outstanding_invitations():
             self._end_invitation(invitation, "cancelled", "outcome_unknown")
-        self._gestures = {gid: self._idle_gesture() for gid in self._gestures}
+        self._void_gestures()
         self._cooldowns.clear()
         permission = self._active_permission()
         if permission is not None:
@@ -1662,7 +1686,7 @@ class Broker:
                  "proactive_claims": claims,
                  "max_lease_ms": _int(value["max_lease_ms"], "max_lease_ms", 250, settings["max_lease_ms"]),
                  "duration_ms": _int(value["duration_ms"], "duration_ms", 1000, 14_400_000),
-                 "statement": _text(value["statement"], "statement", 1, 500)}
+                 "statement": _plain_text(value["statement"], "statement", 1, 500)}
         if normalized:
             draft["limits"] = [normalized[rid] for rid in sorted(normalized)]
         return draft
@@ -1799,9 +1823,7 @@ class Broker:
         _request_id(request["request_id"])
         triple = _triple(request)
         basis = self._basis(request["basis"])
-        reason = _text(request["reason"], "reason", 1, 200)
-        if any(unicodedata.category(c) in ("Cc", "Cf") for c in reason):  # no controls or bidi overrides
-            raise _bad("reason must be plain text", "Pass reason without control or formatting characters.")
+        reason = _plain_text(request["reason"], "reason", 1, 200)
         lease_ms = _int(request["lease_ms"], "lease_ms", 250, self._settings["max_lease_ms"])
         not_after = _int(request["not_after_monotonic_ns"], "not_after_monotonic_ns", 0, 2**63 - 1)
         resources = self._resolve(request["resources"])
@@ -2362,7 +2384,7 @@ class Broker:
         inputs = {"triple": list(triple), "resources": list(resources)}
 
         def evaluate(now):
-            held = [rid for rid in resources if self._owners[rid].explicit]
+            held = [self._profile.label(rid) for rid in resources if self._owners[rid].explicit]
             if held:  # a conflict group is invited whole, so one row's Invite could reach another's hold
                 return self._refused("resource_held_by_human",
                                      f"Release your hold on {', '.join(held)} first; an invitation never "
@@ -2657,10 +2679,7 @@ class Broker:
                          if set(i.scope) & set(resources)]
             for invitation_id in withdrawn:
                 self._end_invitation(self._invitations[invitation_id], "cancelled", "held_by_human")
-            # A hand-back pad pressed before this hold hands nothing back when it is lifted.
-            for gid, gesture in self._gestures.items():
-                if gesture["state"] == "pressed" and set(self._profile.gesture_scope[gid]) & set(resources):
-                    self._gestures[gid] = self._idle_gesture()
+            self._void_gestures(resources)  # a pad pressed before this hold hands nothing back
             return {"outcome": {"kind": "held", "resources": list(resources),
                                 "waiting_for_pickup": [r for r in resources
                                                        if self._owners[r].kind == "pickup_pending"],
@@ -2767,8 +2786,7 @@ class Broker:
             self._end_all_grants("panic")
             for invitation in self._outstanding_invitations():
                 self._end_invitation(invitation, "cancelled", "panic")
-            # A pad held down through Stop hands nothing back when it is lifted.
-            self._gestures = {gid: self._idle_gesture() for gid in self._gestures}
+            self._void_gestures()  # a pad held down through Stop hands nothing back when it is lifted
             if permission is not None:
                 self._end_permission(permission, "revoked", "panic", "panic")
             self._revocations += 1
@@ -2879,6 +2897,14 @@ class Broker:
     def _idle_gesture(self) -> dict:
         return {"state": "idle", "t0": None, "last_transition_ns": None}
 
+    def _void_gestures(self, resources=None) -> None:
+        """A pressed pad hands nothing back when lifted. It still counts as pressed until then, so
+        the agent stays blocked for the rest of the press (claims and steps both check it)."""
+        for gid, gesture in self._gestures.items():
+            if gesture["state"] == "pressed" and (
+                    resources is None or set(self._profile.gesture_scope[gid]) & set(resources)):
+                self._gestures[gid] = {**gesture, "voided": True}
+
     def _gesture(self, event, now: int) -> None:
         """Press/release timing is the broker's. Bounces, duplicates and lost releases never invite."""
         gid, phase = event.get("gesture_id"), event.get("phase")
@@ -2904,7 +2930,9 @@ class Broker:
             return
         held = now - state["t0"]
         self._gestures[gid] = {"state": "idle", "t0": None, "last_transition_ns": now}
-        if held < binding["long_press_ms"] * MS:
+        if state.get("voided"):
+            outcome, invitation = "voided", None  # a Hold, Stop or new epoch cancelled this press
+        elif held < binding["long_press_ms"] * MS:
             outcome, invitation = "short_press_ignored", None
         else:
             outcome, invitation = self._invite_by_gesture(gid, now)

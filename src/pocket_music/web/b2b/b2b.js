@@ -3,8 +3,8 @@
 // from the URL fragment once, removed from the address bar and kept only in memory, so a reload
 // leaves a locked page that can still stop, hold and deny.
 import {
-  ackPayload, changedSettings, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage,
-  remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
+  ackPayload, blockedLabel, changedSettings, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel,
+  rawMessage, remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
 } from "/b2b-model.mjs";
 
 const token = tokenFromHash(location.hash);
@@ -258,7 +258,7 @@ function renderResources(snapshot) {
       ownerCell.append(ownerLabel(owner, {proactive, invited: invited.has(resource.resource_id)}));
     }
     if (resource.blocked_by && owner.kind === "unowned") {
-      ownerCell.append(el("span", waitingReason(resource.blocked_by), {class: "id"}));
+      ownerCell.append(el("span", blockedLabel(resource.blocked_by), {class: "id"}));
     }
     const actions = el("td", null, {class: "actions"});
     const held = owner.hold === "explicit";
@@ -284,8 +284,8 @@ function renderResources(snapshot) {
 
 function renderGrants(grants, invitations) {
   const held = grants.map(grant => {
-    const item = el("li", `Agent holds ${grant.labels.join(", ")}: ${grant.reason} · `);
-    item.append(countdown(grant.deadline), " ",
+    const item = el("li", `Agent holds ${grant.labels.join(", ")} for `);
+    item.append(countdown(grant.deadline), `. Its reason: ${grant.reason} `,
                 button("Take it back", () => reduce("/api/grants/revoke", {grant_id: grant.grant_id})));
     return item;
   });

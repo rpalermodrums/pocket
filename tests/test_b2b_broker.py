@@ -1359,7 +1359,7 @@ def test_an_invite_never_drops_a_hold_on_another_control_in_its_group(tmp_path):
     h = make(tmp_path)
     h.broker.reduce_hold({"request_id": "page-hold", "resources": [FX]})
     receipt = refused(h.invite([FX, ROUTE]), "resource_held_by_human")
-    assert FX in receipt["outcome"]["detail"]
+    assert "FX unit 1 depth" in receipt["outcome"]["detail"]  # the label the page shows, not the id
     assert owner(h, FX)["hold"] == "explicit" and h.observe()["invitations"] == []
 
 
@@ -1371,6 +1371,7 @@ def test_stop_voids_a_hand_back_pad_held_through_it(tmp_path):
     h.tick(600)
     h.release()
     assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+    assert events(h, "gesture_released")[-1]["outcome"] == "voided"
 
 
 def test_withdraw_after_the_agent_claimed_the_invitation_ends_that_grant(tmp_path):
@@ -1400,11 +1401,16 @@ def test_a_hold_pressed_while_the_hand_back_pad_is_down_cancels_that_press(tmp_p
     for target in ([GAIN], "all"):
         (tmp_path / str(len(target))).mkdir()
         h = make(tmp_path / str(len(target)))
+        permission = issued(h)
+        h.tick(4000)
         h.press()
         h.broker.reduce_hold({"request_id": "page-hold", "resources": target})
         h.tick(600)
+        if target != "all":  # the pad still counts as pressed: the agent stays out until it is lifted
+            refused(h.claim([FILTER], h.permission_basis(permission)), "gesture_in_progress")
         h.release()
         assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+        assert events(h, "gesture_released")[-1]["outcome"] == "voided"
 
 
 def test_a_pickup_still_waits_after_a_new_epoch_or_a_route_that_returns(tmp_path):
@@ -1431,6 +1437,7 @@ def test_the_agents_reason_is_labelled_and_plain_text(tmp_path):
                               "(lease 0.3 s)")
     raises("invalid_arguments", h.claim, [FILTER], h.invitation_basis(h.invite([FILTER])),
            reason="shape it\u202e evol")  # a bidi override could reorder what the page shows
+    raises("invalid_arguments", h.propose, default_draft(statement="ride it\u202e evol"))
 
 
 def test_withdraw_still_ends_the_claim_after_the_invitation_record_is_trimmed(tmp_path):

@@ -74,14 +74,6 @@ def _write_private(path: Path, value: dict) -> None:
         stream.write(json.dumps(value, sort_keys=True) + "\n")
 
 
-def _report_fault(fault) -> None:
-    """The broker's first host fault, on the terminal. Agent control has already stopped."""
-    print("b2b host fault: agent control stopped for the rest of this host; your controls still work.",
-          file=sys.stderr)
-    if fault is not None:
-        traceback.print_exception(fault, file=sys.stderr)
-
-
 class _AgentServer(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
 
@@ -140,7 +132,8 @@ class B2bHost:
         self._scheduler = scheduler
         self._stop = threading.Event()
         self._closing = threading.Event()
-        self.failed = threading.Event()
+        self.failed = threading.Event()  # the scheduler failed: the host exits
+        self.faulted = threading.Event()  # the broker failed closed: the host keeps serving the person
         self._threads = []
         self.socket_dir = _socket_dir(socket_parent)
         try:
@@ -153,7 +146,7 @@ class B2bHost:
                 "mapping_sha256": profile.sha256, "pid": os.getpid(), "adapter": "synthetic"},
                 session_epoch=None)
             self.broker = Broker(self.adapter, self.clock, self.journal, host_epoch=self.host_epoch,
-                                 on_fault=_report_fault)
+                                 on_fault=self._report_fault)
             self.page = TrustedPage(self.broker, self.broker.trusted_channel(), adapter=self.adapter,
                                     sync=self.journal.sync)
             host_secrets = (self.page.issuer_token, self.page.public_csrf, self.nonce)
@@ -189,6 +182,13 @@ class B2bHost:
             thread = threading.Thread(target=target, daemon=True)
             thread.start()
             self._threads.append(thread)
+
+    def _report_fault(self, fault) -> None:
+        """A host fault the broker failed closed on. Agent control has already stopped for good."""
+        self.faulted.set()
+        print("b2b host fault: agent control stopped for the rest of this host; your controls still work. "
+              "Stop this host and start a new one to play with the agent again.", file=sys.stderr, flush=True)
+        traceback.print_exception(fault, file=sys.stderr)
 
     def tick(self) -> None:
         """One scheduler pass: deliver adapter events, then the broker's due work (tests call it)."""
@@ -359,7 +359,7 @@ def main(argv=None, *, open_tty=_open_tty, stdout=None, stderr=None, wait=None) 
         host.stop()
         for number, handler in previous.items():
             signal.signal(number, handler)
-    return 1 if host.failed.is_set() else 0
+    return 1 if host.failed.is_set() or host.faulted.is_set() else 0
 
 
 if __name__ == "__main__":
