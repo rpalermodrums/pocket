@@ -277,10 +277,13 @@ export function eventLines(events) {
 // only children, getAttribute/setAttribute, querySelector, remove and insertBefore.
 export function reconcile(container, items) {
   const before = new Map([...container.children].map(node => [node.getAttribute("data-key"), node]));
+  const change = {any: false};  // returned: whether anything was built, removed or moved
   const nodes = items.map(({key, signature, build, deadline}) => {
     const sig = JSON.stringify(signature);
     const old = before.get(key);
-    const node = old && old.getAttribute("data-sig") === sig ? old : build();
+    const kept = Boolean(old) && old.getAttribute("data-sig") === sig;
+    if (!kept) change.any = true;
+    const node = kept ? old : build();
     if (node === old && deadline !== undefined) {
       const span = node.querySelector("[data-deadline]");
       if (span) span.setAttribute("data-deadline", deadline);
@@ -291,9 +294,16 @@ export function reconcile(container, items) {
   });
   const wanted = new Set(nodes);
   for (const node of [...container.children]) {
-    if (!wanted.has(node)) node.remove();
+    if (!wanted.has(node)) {
+      node.remove();
+      change.any = true;
+    }
   }
   nodes.forEach((node, index) => {  // a kept node moves only if the order itself changed
-    if (container.children[index] !== node) container.insertBefore(node, container.children[index] || null);
+    if (container.children[index] !== node) {
+      container.insertBefore(node, container.children[index] || null);
+      change.any = true;
+    }
   });
+  return change.any;
 }

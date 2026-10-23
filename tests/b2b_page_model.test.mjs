@@ -261,17 +261,19 @@ test("a list keeps every unchanged item, so a button being pressed is never repl
     span.setAttribute("data-deadline", deadline ?? "");
     return new FakeNode(`li ${key} ${signature}`, [span]);
   }});
-  reconcile(list, [item("gain", "agent g-1", "100"), item("filter", "free")]);
+  assert.equal(reconcile(list, [item("gain", "agent g-1", "100"), item("filter", "free")]), true);
   const [gain, filter] = list.children;
+  // Nothing changed: it says so, so the page doesn't count it as a move.
+  assert.equal(reconcile(list, [item("gain", "agent g-1", "100"), item("filter", "free")]), false);
   // The agent claims and releases another control over and over: the gain row stays the same node.
   for (const owner of ["agent g-2", "free", "agent g-3", "free"]) {
-    reconcile(list, [item("gain", "agent g-1", "100"), item("filter", owner)]);
+    assert.equal(reconcile(list, [item("gain", "agent g-1", "100"), item("filter", owner)]), true);
     assert.equal(list.children[0], gain);
     assert.equal(gain.moves, 0);
   }
   assert.notEqual(list.children[1], filter);  // the item that changed was rebuilt
-  // A shortened lease moves the countdown in place, on the same node.
-  reconcile(list, [item("gain", "agent g-1", "40"), item("filter", "free")]);
+  // A shortened lease moves the countdown in place, on the same node, and moves nothing else.
+  assert.equal(reconcile(list, [item("gain", "agent g-1", "40"), item("filter", "free")]), false);
   assert.equal(list.children[0], gain);
   assert.equal(gain.querySelector("[data-deadline]").getAttribute("data-deadline"), "40");
   // Items added before or after, or removed, leave the kept one where it is.

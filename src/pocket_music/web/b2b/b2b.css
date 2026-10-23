@@ -27,20 +27,36 @@ h3 { font-size: 1rem; margin: 1rem 0 .3rem; }
 section { border-top: 1px solid var(--line); }
 .eyebrow, .meta { color: var(--muted); font-size: .92rem; margin: .3rem 0; overflow-wrap: anywhere; }
 .banner { font-weight: 600; color: var(--warn); border-left: 4px solid var(--warn); padding-left: 8px; }
-#error { color: var(--warn); font-weight: 600; border-left: 4px solid var(--warn); padding-left: 8px; }
+/* Fixed heights where the agent changes content, so nothing the person aims at moves under the pointer. */
+.bar { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 8px 0 4px;
+       border-bottom: 1px solid var(--line); }
+.bar .row { margin: 0; }
+#error { color: var(--warn); font-weight: 600; border-left: 4px solid var(--warn); padding-left: 8px;
+         height: 3em; overflow: hidden; margin: .2rem 0; }
+#error[hidden] { display: block; visibility: hidden; }
+#session { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 ul.plain, #notices, #grants, #proposals { list-style: none; padding: 0; margin: .4rem 0; }
+#notices { height: 11rem; overflow-y: auto; }
 #notices li { background: var(--notice); border: 2px solid var(--warn); border-radius: 8px; padding: 10px;
               margin: 6px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 #notices li.ended { border-style: dashed; opacity: .85; }
 #notices li strong { flex: 1 1 320px; }
-.stop { padding: 12px 0; }
 .stop-button { font-size: 1.3rem; font-weight: 700; padding: 14px 28px; background: var(--stop);
                border-color: var(--stop); color: var(--stop-fg); }
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.col-control { width: 27%; }
+.col-owner { width: 31%; }
+.col-actions { width: 42%; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 td .id { display: block; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
 td.owner { font-weight: 600; }
-td.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.owner-text { height: 4.5em; overflow: hidden; overflow-wrap: anywhere; }
+.slots { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.slots button { width: 100%; padding: 6px 2px; font-size: .82rem; }
+.slot-off { visibility: hidden; }
+@media (max-width: 720px) {
+  .slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
         margin: 6px 0; }
 .card ol { margin: .4rem 0 .4rem 1.2rem; padding: 0; }

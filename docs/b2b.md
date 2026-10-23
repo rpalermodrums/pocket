@@ -250,6 +250,10 @@ up the request ID. See [contracts and errors](contracts.md#opt-in-machine-errors
 
 ## When something goes wrong
 
+- **The page says "press again".** The agent changes what the page shows, and so where
+  things are. Stop and every row's buttons stay in place, and for a moment after the
+  page changes, Invite, Release, Accept and Issue aren't sent, so a click never lands on
+  a button that slid under the pointer. Press again once the page is still.
 - **The notice wasn't shown.** The grant ends at its deadline and nothing is sent.
   A notice the page fetched but didn't acknowledge reads `notice_deadline_missed`;
   one it never showed, or showed while hidden, reads `notice_delivery_unknown`.

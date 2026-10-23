@@ -424,9 +424,20 @@ def test_page_assets_use_text_content_const_and_strip_the_fragment():
     assert 'app.signatures.delete("permission")' in script
     assert 'app.signatures.delete("public-permission")' in script
     assert script.index("setInterval(renderClock, 250)") < script.index("if (isLocked(token)) {")
-    # The person's lists keep unchanged items (reconcile, tested in b2b_page_model.test.mjs).
-    assert all(f'reconcile($("{name}"), ' in script for name in ("notices", "resources", "grants"))
-    assert "owner.reason, blocked, proactive, isInvited, reason]" in script  # what a row shows
+    # The person's lists keep unchanged items (reconcile, tested in b2b_page_model.test.mjs), and the
+    # controls are built once with their buttons in fixed places that the agent can't move or swap.
+    assert all(f'reconcile($("{name}"), ' in script for name in ("notices", "grants"))
+    assert 'const SLOTS = ["hold", "take", "release", "invite", "accept"];' in script
+    assert 'classList.toggle("slot-off", !shown[slot])' in script
+    css = (WEB / "b2b.css").read_text()
+    assert ".slot-off { visibility: hidden; }" in css and "table-layout: fixed" in css
+    assert "#error[hidden] { display: block; visibility: hidden; }" in css and "#notices { height:" in css
+    assert ".bar { position: sticky; top: 0;" in css
+    body = html[html.index("<body>"):]
+    assert body.index('class="bar"') < body.index('id="stop"') < body.index("<header>")
+    # An increase sent right after the page moved is refused, so a click can't land on a button that slid in.
+    assert "const MOVE_GUARD_MS = 800;" in script
+    assert 'if (key !== "public" && performance.now() - app.layoutChangedAt < MOVE_GUARD_MS) {' in script
     assert "proposals.map(p => [p.proposal_id, p.sha256])" in script
     assert "return (app.current && app.snapshot) || app.publicView || app.snapshot;" in script
     assert script.count("  redraw();\n") == 2 and "if (!app.current) return;  // an answer" in script

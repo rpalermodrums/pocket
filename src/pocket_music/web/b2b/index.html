@@ -9,6 +9,16 @@
   <script type="module" src="/b2b.js"></script>
 </head>
 <body>
+  <!-- First on the page and a fixed height, so nothing the agent changes can move Stop. -->
+  <div class="bar" role="region" aria-label="Stop agent control">
+    <div class="row">
+      <button type="button" id="stop" class="stop-button">Stop agent control</button>
+      <button type="button" id="hold-all" class="quiet">Hold every control</button>
+    </div>
+    <p class="meta">Your decks keep playing. Every agent grant ends and nothing is sent to the decks.</p>
+    <p id="error" role="alert" tabindex="-1" hidden></p>
+  </div>
+
   <header>
     <p class="eyebrow">Pocket b2b · synthetic two-deck mixer, not a real device</p>
     <h1>Who owns each control</h1>
@@ -25,8 +35,6 @@
   </header>
 
   <main>
-    <p id="error" role="alert" tabindex="-1" hidden></p>
-
     <section aria-labelledby="notices-heading" class="notices">
       <h2 id="notices-heading">Notices</h2>
       <p class="meta">Every agent claim is announced here before its first move. If this page can't show it in
@@ -34,15 +42,10 @@
       <ul id="notices" aria-live="assertive"></ul>
     </section>
 
-    <section class="stop">
-      <button type="button" id="stop" class="stop-button">Stop agent control</button>
-      <p class="meta">Your decks keep playing. Every agent grant ends and nothing is sent to the decks.</p>
-      <button type="button" id="hold-all" class="quiet">Hold every control</button>
-    </section>
-
     <section aria-labelledby="resources-heading">
       <h2 id="resources-heading">Controls</h2>
       <table id="resources-table">
+        <colgroup><col class="col-control"><col class="col-owner"><col class="col-actions"></colgroup>
         <thead>
           <tr><th scope="col">Control</th><th scope="col">Owner</th><th scope="col">Actions</th></tr>
         </thead>

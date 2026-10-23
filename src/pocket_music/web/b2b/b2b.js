@@ -15,7 +15,13 @@ const $ = id => document.getElementById(id);
 // One mutable holder for page state; every binding stays const.
 const app = {csrf: null, uiEpoch: null, snapshot: null, publicView: null, receivedAt: 0, current: true,
              acked: new Set(), ackTries: new Map(), previews: new Map(), signatures: new Map(),
-             panelBuilt: false, sliders: new Map(), presence: Promise.resolve()};
+             panelBuilt: false, sliders: new Map(), presence: Promise.resolve(),
+             rows: new Map(), rowIds: "", rowState: new Map(), layoutChangedAt: -Infinity};
+// The agent can change what the page shows, and so where things are. Anything that moves content marks
+// the time, and a change that adds authority (Invite, Release, Accept, Issue, Amend) is not sent for a
+// moment after, so a click aimed at one button never lands on another that just slid under the pointer.
+const MOVE_GUARD_MS = 800;
+const moved = () => { app.layoutChangedAt = performance.now(); };
 // A rejected ack (say, one that beat a "visible" report) is tried again, but not forever.
 const ACK_TRIES = 3;
 
@@ -87,6 +93,10 @@ function triple() {
 
 // One page action: post it, explain a refusal in words, then refresh the view either way.
 async function perform(path, body, key = "issuer") {
+  if (key !== "public" && performance.now() - app.layoutChangedAt < MOVE_GUARD_MS) {
+    showError(new Error("The page just changed under your pointer, so nothing was sent. Press again."));
+    return null;
+  }
   clearError();
   try {
     const result = await api(path, {body, key});
@@ -200,7 +210,14 @@ function changed(name, value) {
   const signature = JSON.stringify(value);
   if (app.signatures.get(name) === signature) return false;
   app.signatures.set(name, signature);
+  moved();  // every caller rebuilds what it guards
   return true;
+}
+
+function setHidden(id, hidden) {  // a banner that appears or goes moves everything below it
+  if ($(id).hidden === hidden) return;
+  $(id).hidden = hidden;
+  moved();
 }
 
 function render(snapshot) {
@@ -208,9 +225,9 @@ function render(snapshot) {
     : "another page attached; reopen the terminal link here";
   const {session_epoch: epoch, control_revision: revision} = snapshot;
   $("session").textContent = `Session epoch ${epoch} · revision ${revision} · ${whose}`;
-  $("locked").hidden = true;
-  $("journal").hidden = !snapshot.journal_degraded;
-  $("fault").hidden = !snapshot.host_fault;
+  setHidden("locked", true);
+  setHidden("journal", !snapshot.journal_degraded);
+  setHidden("fault", !snapshot.host_fault);
   renderSettings(snapshot.settings, snapshot.settings_defaults);
   renderNotices(snapshot.notices, true);
   renderResources(snapshot);
@@ -255,63 +272,93 @@ function groupOf(snapshot, resource) {
     : [resource.resource_id];
 }
 
+// Every row is built once, with all five buttons in fixed places: reductions first, and an increase
+// never where a reduction is. A button that doesn't apply is hidden but keeps its place, and each one
+// reads the row's state when clicked, so nothing the agent changes can move a button or swap it.
+const SLOTS = ["hold", "take", "release", "invite", "accept"];
+
 function renderResources(snapshot) {
   const permission = snapshot.permissions[0] || null;
-  $("resources-table").hidden = false;  // the locked view hides it
+  setHidden("resources-table", false);  // the locked view hides it
+  app.rowState = new Map(snapshot.resources.map(resource => [resource.resource_id, resource.owner]));
+  const ids = snapshot.resources.map(resource => resource.resource_id).join("\n");
+  if (ids !== app.rowIds) {  // the profile's controls never change within a session
+    app.rowIds = ids;
+    app.rows = new Map(snapshot.resources.map(resource => [resource.resource_id,
+                                                           buildRow(snapshot, resource)]));
+    $("resources").replaceChildren(...[...app.rows.values()].map(entry => entry.row));
+    moved();
+  }
   const reasons = new Map(snapshot.grants.map(grant => [grant.grant_id, grant.reason]));
   const invited = new Set(snapshot.invitations.flatMap(invitation => invitation.resources));
-  reconcile($("resources"), snapshot.resources.map(resource => {
+  for (const resource of snapshot.resources) {
     const owner = resource.owner;
+    const entry = app.rows.get(resource.resource_id);
     const proactive = Boolean(permission && permission.proactive_claims.allowed
       && permission.resources.includes(resource.resource_id));
     const isInvited = invited.has(resource.resource_id);
     const blocked = resource.blocked_by && owner.kind === "unowned" && (proactive || isInvited)
       ? resource.blocked_by : null;
     const reason = owner.kind === "agent" ? reasons.get(owner.grant_id) || "none given" : null;
-    return {
-      key: resource.resource_id,
-      // Only what the row shows: an owner's generation, start time or lease end changes without that.
-      signature: [owner.kind, owner.hold, owner.grant_id, owner.target_value, owner.physical_value,
-                  owner.reason, blocked, proactive, isInvited, reason],
-      deadline: owner.kind === "agent" ? owner.expires_monotonic_ns : undefined,
-      build: () => resourceRow(snapshot, resource, {proactive, isInvited, blocked, reason}),
-    };
-  }));
+    // Only what the row shows: an owner's generation, start time or lease end changes without that.
+    const signature = JSON.stringify([owner.kind, owner.hold, owner.grant_id, owner.target_value,
+                                      owner.physical_value, owner.reason, blocked, proactive, isInvited,
+                                      reason]);
+    if (entry.row.getAttribute("data-sig") !== signature) {
+      entry.row.setAttribute("data-sig", signature);
+      fillRow(entry, owner, {proactive, isInvited, blocked, reason});
+      moved();
+    } else if (owner.kind === "agent") {  // a shortened lease moves its countdown in place
+      const span = entry.owner.querySelector("[data-deadline]");
+      if (span) span.setAttribute("data-deadline", owner.expires_monotonic_ns);
+    }
+  }
 }
 
-function resourceRow(snapshot, resource, {proactive, isInvited, blocked, reason}) {
-  const owner = resource.owner;
-  const row = el("tr", null, {"data-resource": resource.resource_id});
+function buildRow(snapshot, resource) {
+  const rid = resource.resource_id;
+  const row = el("tr", null, {"data-resource": rid});
   const name = el("td", resource.label);
-  name.append(el("span", resource.resource_id, {class: "id"}));
+  name.append(el("span", rid, {class: "id"}));
+  const owner = el("div", null, {class: "owner-text"});
   const ownerCell = el("td", null, {class: "owner"});
-  if (owner.kind === "agent") {  // the lease counts down in place
-    ownerCell.append("Agent, ", countdown(owner.expires_monotonic_ns), ` left. Its reason: ${reason}`);
-  } else {
-    ownerCell.append(ownerLabel(owner, {proactive, invited: isInvited}));
-  }
-  if (blocked) ownerCell.append(el("span", blockedLabel(blocked), {class: "id"}));
+  ownerCell.append(owner);
+  const group = groupOf(snapshot, resource);  // a conflict group is handed back whole; holds stay
+  const current = () => app.rowState.get(rid) || {};
+  const slots = {
+    hold: button("Hold", () => reduce("/api/holds", {resources: [rid]})),
+    take: button("Take it back", () => {
+      if (current().kind === "agent") reduce("/api/grants/revoke", {grant_id: current().grant_id});
+    }),
+    release: button("Release", () => increase("/api/holds/release", {resources: [rid]})),
+    invite: button("Invite", () => increase("/api/invitations", {resources: group})),
+    accept: button("Accept", () => increase("/api/pickup/accept", {resource: rid})),
+  };
+  const grid = el("div", null, {class: "slots"});
+  grid.append(...SLOTS.map(slot => slots[slot]));
   const actions = el("td", null, {class: "actions"});
-  const held = owner.hold === "explicit";
-  const only = [resource.resource_id];
-  if (!held) actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
-  if (held) actions.append(button("Release", () => increase("/api/holds/release", {resources: only})));
-  if (!held && !["agent", "unavailable", "pickup_pending"].includes(owner.kind)) {
-    const group = groupOf(snapshot, resource);  // a conflict group is handed back whole; holds stay
-    actions.append(button("Invite", () => increase("/api/invitations", {resources: group})));
-  }
-  if (owner.kind === "agent") {
-    actions.append(button("Take it back", () => reduce("/api/grants/revoke", {grant_id: owner.grant_id})));
-  }
-  if (owner.kind === "pickup_pending") {
-    actions.append(button("Accept", () => increase("/api/pickup/accept", {resource: only[0]})));
-  }
+  actions.append(grid);
   row.append(name, ownerCell, actions);
-  return row;
+  return {row, owner, slots};
+}
+
+function fillRow(entry, owner, {proactive, isInvited, blocked, reason}) {
+  if (owner.kind === "agent") {  // the lease counts down in place
+    entry.owner.replaceChildren("Agent, ", countdown(owner.expires_monotonic_ns),
+                                ` left. Its reason: ${reason}`);
+  } else {
+    entry.owner.replaceChildren(ownerLabel(owner, {proactive, invited: isInvited}));
+  }
+  if (blocked) entry.owner.append(el("span", blockedLabel(blocked), {class: "id"}));
+  const held = owner.hold === "explicit";
+  const shown = {hold: !held, take: owner.kind === "agent", release: held,
+                 invite: !held && !["agent", "unavailable", "pickup_pending"].includes(owner.kind),
+                 accept: owner.kind === "pickup_pending"};
+  for (const slot of SLOTS) entry.slots[slot].classList.toggle("slot-off", !shown[slot]);
 }
 
 function renderGrants(grants, invitations) {
-  reconcile($("grants"), [
+  if (reconcile($("grants"), [
     ...grants.map(grant => ({
       key: `grant:${grant.grant_id}`, signature: [grant.labels, grant.reason], deadline: grant.deadline,
       build: () => {
@@ -332,7 +379,7 @@ function renderGrants(grants, invitations) {
         return item;
       },
     })),
-  ]);
+  ])) moved();  // the permission and proposals below it move
 }
 
 function previewCard(key, preview, onIssue, onCancel) {
@@ -388,7 +435,7 @@ async function issue(key, snapshot, name, statement) {
   const result = await perform("/api/policy/issue", {
     request_id: newRequestId(), proposal_id: preview.proposal_id, proposal_sha256: preview.proposal_sha256,
     preview_sha256: preview.preview_sha256, attribution_name: name, attribution_statement: statement,
-    ...expectedPermission(snapshot)});
+    ...expectedPermission(view() || snapshot)});  // the head as it is now, not when the card was built
   if (result && result.outcome && result.outcome.kind === "issued") closePreview(key);
 }
 
@@ -484,7 +531,7 @@ function renderSettings(settings, defaults) {
   const changed = changedSettings(settings, defaults);
   $("settings").textContent = changed.length
     ? `The agent prepared this session with changed settings: ${changed.join(", ")}.` : "";
-  $("settings").hidden = changed.length === 0;
+  setHidden("settings", changed.length === 0);
 }
 
 function renderEvents(events) {
@@ -619,9 +666,9 @@ function renderPublic(publicView) {
   app.receivedAt = performance.now();
   const {session_epoch: epoch, control_revision: revision} = publicView;
   $("session").textContent = `Session epoch ${epoch} · revision ${revision}`;
-  $("locked").hidden = false;
-  $("journal").hidden = !publicView.journal_degraded;
-  $("fault").hidden = !publicView.host_fault;
+  setHidden("locked", false);
+  setHidden("journal", !publicView.journal_degraded);
+  setHidden("fault", !publicView.host_fault);
   renderNotices(publicView.notices.map(notice => ({...notice, state: "pending",
     deadline_monotonic_ns: hostNowAfter(publicView.host_monotonic_ns, notice.remaining_ms)})), false);
   const deadline = item => hostNowAfter(publicView.host_monotonic_ns, item.remaining_ms);
