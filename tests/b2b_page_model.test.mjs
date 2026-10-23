@@ -125,54 +125,59 @@ test("settings the agent changed are listed next to their defaults", () => {
   assert.deepEqual(changedSettings(undefined, defaults), []);
 });
 
-test("the hand-back pad sends in order, says how long it was held, and honours a cancel", async () => {
+test("the hand-back pad sends in order and spaced, says how long it was held, and honours a cancel",
+     async () => {
   const gesture = {message: {type: "note", channel: 8, number: 64}, press_value: 127, release_value: 0,
-                   scope: ["synthetic/right/gain", "synthetic/right/filter"]};
-  const clock = {now: 0};
+                   debounce_ms: 30, scope: ["synthetic/right/gain", "synthetic/right/filter"]};
+  const clock = {now: 1000};
   const sent = [];
   const slow = {release: null};
+  const sleep = ms => { clock.now += ms; return Promise.resolve(); };
   const send = (message, extra) => {
-    const delivered = () => sent.push([message[2], extra]);
-    // The press answers late; the release must still go out after it.
+    const delivered = () => sent.push([message[2], extra, clock.now]);
+    // The first press answers late; the release must still go out after it.
     if (message[2] === 127 && !slow.release) {
       return new Promise(done => { slow.release = () => done(delivered()); });
     }
     return Promise.resolve(delivered());
   };
-  const pad = padControl(gesture, send, () => clock.now);
+  const pad = padControl(gesture, send, () => clock.now, sleep);
+  const values = () => sent.map(([value, extra]) => [value, extra]);
   assert.equal(pad.press(), true);
-  clock.now = 80;
+  clock.now += 80;
   assert.equal(pad.release(), true);
   await Promise.resolve();
-  assert.deepEqual(sent, []);  // the release waits behind the press
   slow.release();
   await pad.settled();
-  assert.deepEqual(sent, [[127, {}], [0, {held_ms: 80}]]);
+  assert.deepEqual(values(), [[127, {}], [0, {held_ms: 80}]]);
+  assert.ok(sent[1][2] - sent[0][2] >= 50);  // never closer than the debounce plus a margin
 
-  pad.press();
+  pad.press();  // straight after the last release: it waits its turn and its gap
   pad.noteReduction("/api/holds", {resources: ["synthetic/left/gain"]});  // not one of the pad's controls
-  clock.now = 900;
+  clock.now += 900;
   pad.release();
   await pad.settled();
-  assert.deepEqual(sent.at(-1), [0, {held_ms: 820}]);
+  assert.deepEqual(values().at(-1), [0, {held_ms: 900}]);
+  assert.ok(sent.at(-2)[2] - sent.at(-3)[2] >= 50);
 
   pad.press();
   pad.noteReduction("/api/holds", {resources: ["synthetic/right/gain"]});
-  clock.now = 1700;
+  clock.now += 800;
   pad.release();
   await pad.settled();
-  assert.deepEqual(sent.at(-1), [0, {held_ms: 800, cancelled: true}]);
+  assert.deepEqual(values().at(-1), [0, {held_ms: 800, cancelled: true}]);
 
   pad.press();  // a new press starts uncancelled
-  clock.now = 1800;
+  clock.now += 100;
   pad.release();
-  pad.noteReduction("/api/panic", {});  // after the release: changes nothing
+  pad.noteReduction("/api/panic", {});  // after lifting, before the release goes out: still cancels
   await pad.settled();
-  assert.deepEqual(sent.at(-1), [0, {held_ms: 100}]);
+  assert.deepEqual(values().at(-1), [0, {held_ms: 100, cancelled: true}]);
+  pad.noteReduction("/api/panic", {});  // once it has gone out, nothing is left to cancel
   pad.press();
-  pad.noteReduction("/api/panic", {});
+  clock.now += 700;
   pad.release();
   await pad.settled();
-  assert.equal(sent.at(-1)[1].cancelled, true);
+  assert.deepEqual(values().at(-1), [0, {held_ms: 700}]);
   assert.equal(pad.release(), false);  // a second release without a press sends nothing
 });

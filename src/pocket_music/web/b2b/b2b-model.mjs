@@ -145,35 +145,50 @@ export function rawMessage(message, value) {
 }
 
 // The synthetic hand-back pad on this page. Press and release go out in order, so a late release
-// never ends the next press. The release says how long this page saw the pad held (the host keeps
-// the shorter of that and its own measure, so waiting in line never turns a tap into a hand-back),
-// and whether a Stop, or a Hold on one of the pad's controls, cancelled the press meanwhile: that
-// request may reach the host before the press does. ``send(message, extra)`` returns a promise.
-export function padControl(gesture, send, now) {
-  const state = {down: false, at: 0, cancelled: false, queue: Promise.resolve()};
+// never ends the next press, and at least a debounce apart, so the host never drops one as a bounce.
+// The release says how long this page saw the pad held (the host keeps the shorter of that and its
+// own measure, so waiting in line never turns a tap into a hand-back), and whether a Stop, or a Hold
+// on one of the pad's controls, came before it went out: that request may reach the host first.
+// ``send(message, extra)`` and ``sleep(ms)`` return promises.
+export function padControl(gesture, send, now, sleep) {
+  const gap = (gesture.debounce_ms || 30) + 20;
+  const state = {down: false, at: 0, press: 0, unsent: 0, last: -Infinity, queue: Promise.resolve()};
+  const cancelled = new Set();
   const scope = new Set(gesture.scope || []);
-  const inOrder = (message, extra) => (state.queue = state.queue.then(() => send(message, extra)));
+  const inOrder = make => (state.queue = state.queue.then(async () => {
+    const wait = state.last + gap - now();
+    if (wait > 0) await sleep(wait);
+    state.last = now();
+    const [message, extra] = make();
+    return send(message, extra);
+  }));
   return {
     isDown: () => state.down,
     press() {
       if (state.down) return false;
-      Object.assign(state, {down: true, at: now(), cancelled: false});
-      inOrder(rawMessage(gesture.message, gesture.press_value), {});
+      Object.assign(state, {down: true, at: now(), press: state.press + 1});
+      inOrder(() => [rawMessage(gesture.message, gesture.press_value), {}]);
       return true;
     },
     release() {
       if (!state.down) return false;
-      state.down = false;
+      const press = state.press;
       const held = Math.min(600000, Math.max(0, Math.round(now() - state.at)));
-      inOrder(rawMessage(gesture.message, gesture.release_value),
-              state.cancelled ? {held_ms: held, cancelled: true} : {held_ms: held});
+      Object.assign(state, {down: false, unsent: press});
+      inOrder(() => {
+        if (state.unsent === press) state.unsent = 0;
+        // Decided as it goes out, so a Stop clicked after lifting the pad still counts.
+        return [rawMessage(gesture.message, gesture.release_value),
+                cancelled.delete(press) ? {held_ms: held, cancelled: true} : {held_ms: held}];
+      });
       return true;
     },
     noteReduction(path, fields) {
-      if (!state.down) return;
+      const press = state.down ? state.press : state.unsent;
+      if (!press) return;
       const resources = fields && fields.resources;
       const covers = resources === "all" || (Array.isArray(resources) && resources.some(r => scope.has(r)));
-      if (path === "/api/panic" || (path === "/api/holds" && covers)) state.cancelled = true;
+      if (path === "/api/panic" || (path === "/api/holds" && covers)) cancelled.add(press);
     },
     settled: () => state.queue,
   };

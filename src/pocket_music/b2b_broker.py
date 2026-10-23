@@ -2684,7 +2684,7 @@ class Broker:
                          if set(i.scope) & set(resources)]
             for invitation_id in withdrawn:
                 self._end_invitation(self._invitations[invitation_id], "cancelled", "held_by_human")
-            self._void_gestures(resources)  # a pad pressed before this hold hands nothing back
+            self._void_gestures(resources, by_person=True)  # a pad pressed before this hands back nothing
             return {"outcome": {"kind": "held", "resources": list(resources),
                                 "waiting_for_pickup": [r for r in resources
                                                        if self._owners[r].kind == "pickup_pending"],
@@ -2791,7 +2791,7 @@ class Broker:
             self._end_all_grants("panic")
             for invitation in self._outstanding_invitations():
                 self._end_invitation(invitation, "cancelled", "panic")
-            self._void_gestures()  # a pad held down through Stop hands nothing back when it is lifted
+            self._void_gestures(by_person=True)  # a pad held down through Stop hands nothing back
             if permission is not None:
                 self._end_permission(permission, "revoked", "panic", "panic")
             self._revocations += 1
@@ -2902,13 +2902,15 @@ class Broker:
     def _idle_gesture(self) -> dict:
         return {"state": "idle", "t0": None, "last_transition_ns": None}
 
-    def _void_gestures(self, resources=None) -> None:
+    def _void_gestures(self, resources=None, *, by_person: bool = False) -> None:
         """A pressed pad hands nothing back when lifted. It still counts as pressed until then, so
-        the agent stays blocked for the rest of the press (proactive claims and steps check it)."""
+        the agent stays blocked for the rest of the press (proactive claims and steps check it).
+        ``by_person`` marks a Stop or Hold, which no later press or epoch can undo."""
         for gid, gesture in self._gestures.items():
             if gesture["state"] == "pressed" and (
                     resources is None or set(self._profile.gesture_scope[gid]) & set(resources)):
-                self._gestures[gid] = {**gesture, "voided": True}
+                self._gestures[gid] = {**gesture, "voided": True,
+                                       "by_person": by_person or gesture.get("by_person", False)}
 
     def _gesture(self, event, now: int) -> None:
         """Press/release timing is the broker's; a sender's own hold time can only shorten it.
@@ -2927,10 +2929,12 @@ class Broker:
             pressed = {"state": "pressed", "t0": now, "last_transition_ns": now, "epoch": self._adapter_epoch}
             if state["state"] == "pressed":
                 # Past the debounce, so its release was lost or this is a late duplicate. The press
-                # starts again: a stale start must never turn a short tap into a long press. A press
-                # cancelled in this epoch stays cancelled; one from an older epoch starts fresh.
+                # starts again: a stale start must never turn a short tap into a long press. A press a
+                # Stop or Hold cancelled stays cancelled; one an older epoch cancelled starts fresh.
                 self._counters["gesture_duplicates"] += 1
-                if state.get("voided") and state.get("epoch") == self._adapter_epoch:
+                if state.get("by_person"):
+                    pressed.update(voided=True, by_person=True)
+                elif state.get("voided") and state.get("epoch") == self._adapter_epoch:
                     pressed["voided"] = True
             self._gestures[gid] = pressed
             self._emit("gesture_pressed", gesture_id=gid)

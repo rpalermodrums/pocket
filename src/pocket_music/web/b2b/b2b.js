@@ -520,7 +520,8 @@ function buildPanel(panel) {
   controls.append(button("Send unknown message", () => send([0xb3, 99, 1]), {class: "quiet"}));
   const gesture = panel.gestures[0];
   const padButton = $("handback");
-  pad.control = padControl(gesture, send, () => performance.now());
+  pad.control = padControl(gesture, send, () => performance.now(),
+                           ms => new Promise(done => setTimeout(done, ms)));
   const down = () => {
     if (pad.control.press()) padButton.setAttribute("aria-pressed", "true");
   };

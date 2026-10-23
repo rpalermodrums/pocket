@@ -1550,3 +1550,27 @@ def test_a_row_only_the_permission_covers_reports_the_permissions_retry(tmp_path
     row = next(r for r in h.observe()["resources"] if r["resource_id"] == GAIN)
     assert (row["owner"]["kind"], row["blocked_by"]) == ("human", "human_active")
     assert row["retry_not_before_monotonic_ns"] == moved + 4000 * MS  # not the invitation basis's 2 s
+
+
+def test_a_stop_or_hold_outlasts_a_new_epoch_and_a_repeated_press(tmp_path):
+    for order in ("restart, stop", "stop, restart", "restart, hold", "hold, restart"):
+        folder = tmp_path / order.replace(", ", "-")
+        folder.mkdir()
+        h = make(folder)
+        h.press()
+        for step in order.split(", "):
+            if step == "restart":
+                h.adapter.restart_writer()
+                h.tick(10)
+            elif step == "stop":
+                h.broker.panic({})
+            else:
+                h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})
+        h.tick(100)
+        h.press()  # a repeated note-on while the pad is still down
+        h.tick(700)
+        h.release()
+        assert events(h, "gesture_released")[-1]["outcome"] == "voided", order
+        assert h.observe()["invitations"] == [], order
+        if "hold" in order:
+            assert owner(h, GAIN)["hold"] == "explicit", order
