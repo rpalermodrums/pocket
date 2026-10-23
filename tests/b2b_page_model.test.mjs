@@ -5,7 +5,7 @@ import test from "node:test";
 
 import {
   ackPayload, blockedLabel, changedSettings, eventLine, eventLines, hostNowAfter, isLocked, noticeBanner,
-  ownerLabel, padControl, rawMessage, remainingMs, requestId, seconds, shouldAck, tokenFromHash,
+  ownerLabel, padControl, rawMessage, reconcile, remainingMs, requestId, seconds, shouldAck, tokenFromHash,
   waitingReason,
 } from "../src/pocket_music/web/b2b/b2b-model.mjs";
 
@@ -225,4 +225,61 @@ test("the hand-back pad sends in order and spaced, says how long it was held, an
   twice.release();
   await twice.settled();
   assert.deepEqual(again.at(-1), [0, {held_ms: 900, cancelled: true}]);
+});
+
+// Just enough of the DOM for reconcile: children, attributes, querySelector("[data-deadline]"),
+// remove and insertBefore, counting every time a node is moved.
+class FakeNode {
+  constructor(name, children = []) {
+    Object.assign(this, {name, attributes: new Map(), parent: null, children: [], moves: 0});
+    for (const child of children) this.insertBefore(child, null);
+  }
+  getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  querySelector() { return this.children.find(child => child.attributes.has("data-deadline")) || null; }
+  remove() {
+    if (!this.parent) return;
+    this.parent.children.splice(this.parent.children.indexOf(this), 1);
+    this.parent = null;
+  }
+  insertBefore(node, before) {
+    if (node.parent) {
+      node.remove();
+      node.moves += 1;
+    }
+    const index = before ? this.children.indexOf(before) : this.children.length;
+    this.children.splice(index, 0, node);
+    node.parent = this;
+    return node;
+  }
+}
+
+test("a list keeps every unchanged item, so a button being pressed is never replaced", () => {
+  const list = new FakeNode("ul");
+  const item = (key, signature, deadline) => ({key, signature, deadline, build: () => {
+    const span = new FakeNode("span");
+    span.setAttribute("data-deadline", deadline ?? "");
+    return new FakeNode(`li ${key} ${signature}`, [span]);
+  }});
+  reconcile(list, [item("gain", "agent g-1", "100"), item("filter", "free")]);
+  const [gain, filter] = list.children;
+  // The agent claims and releases another control over and over: the gain row stays the same node.
+  for (const owner of ["agent g-2", "free", "agent g-3", "free"]) {
+    reconcile(list, [item("gain", "agent g-1", "100"), item("filter", owner)]);
+    assert.equal(list.children[0], gain);
+    assert.equal(gain.moves, 0);
+  }
+  assert.notEqual(list.children[1], filter);  // the item that changed was rebuilt
+  // A shortened lease moves the countdown in place, on the same node.
+  reconcile(list, [item("gain", "agent g-1", "40"), item("filter", "free")]);
+  assert.equal(list.children[0], gain);
+  assert.equal(gain.querySelector("[data-deadline]").getAttribute("data-deadline"), "40");
+  // Items added before or after, or removed, leave the kept one where it is.
+  reconcile(list, [item("notice", "pending"), item("gain", "agent g-1", "40"), item("fx", "free")]);
+  assert.deepEqual(list.children.map(child => child.getAttribute("data-key")), ["notice", "gain", "fx"]);
+  assert.equal(list.children[1], gain);
+  assert.equal(gain.moves, 0);
+  reconcile(list, [item("gain", "agent g-1", "40")]);
+  assert.deepEqual(list.children, [gain]);
+  assert.equal(gain.moves, 0);
 });

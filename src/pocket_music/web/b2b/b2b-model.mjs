@@ -269,3 +269,31 @@ export function eventLines(events) {
     return [...lines, {request_id: event.type === "step_admitted" ? event.request_id : null, text}];
   }, []).map(line => line.text);
 }
+
+// The page's lists keep every item whose own content is unchanged and replace only the items that
+// changed, so a button stays the same element while the agent changes another row, steps, or moves a
+// countdown: a button replaced between press and release gets no click. A moved deadline (the agent
+// shortened its lease) is updated in place. Each item is {key, signature, build, deadline?}; it uses
+// only children, getAttribute/setAttribute, querySelector, remove and insertBefore.
+export function reconcile(container, items) {
+  const before = new Map([...container.children].map(node => [node.getAttribute("data-key"), node]));
+  const nodes = items.map(({key, signature, build, deadline}) => {
+    const sig = JSON.stringify(signature);
+    const old = before.get(key);
+    const node = old && old.getAttribute("data-sig") === sig ? old : build();
+    if (node === old && deadline !== undefined) {
+      const span = node.querySelector("[data-deadline]");
+      if (span) span.setAttribute("data-deadline", deadline);
+    }
+    node.setAttribute("data-key", key);
+    node.setAttribute("data-sig", sig);
+    return node;
+  });
+  const wanted = new Set(nodes);
+  for (const node of [...container.children]) {
+    if (!wanted.has(node)) node.remove();
+  }
+  nodes.forEach((node, index) => {  // a kept node moves only if the order itself changed
+    if (container.children[index] !== node) container.insertBefore(node, container.children[index] || null);
+  });
+}

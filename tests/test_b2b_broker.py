@@ -1577,3 +1577,22 @@ def test_a_stop_or_hold_outlasts_a_new_epoch_and_a_repeated_press(tmp_path):
         h.tick(100)
         h.long_press(held_ms=700)  # the cancel ends with that release: the next long press hands back
         assert events(h, "gesture_released")[-1]["outcome"] == "invitation_created", order
+
+
+def test_a_cancel_from_a_lost_route_lasts_until_the_route_comes_back(tmp_path):
+    h = make(tmp_path)
+    h.press()
+    h.adapter.lose_route()  # cancels the press; the epoch stays the same while the route is gone
+    h.tick(100)
+    h.press()  # repeated before a release: still cancelled
+    h.tick(700)
+    h.release()
+    assert events(h, "gesture_released")[-1]["outcome"] == "voided"
+    h.tick(100)
+    h.press()
+    h.adapter.restore_route()  # cancels this press too, and starts a new epoch
+    h.tick(100)
+    h.press()  # repeated in the new epoch: starts fresh
+    h.tick(700)
+    h.release()
+    assert events(h, "gesture_released")[-1]["outcome"] == "invitation_created"

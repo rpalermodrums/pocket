@@ -128,9 +128,10 @@ is down, a Hold on one of its controls, or Stop, cancels that press, even if the
 Hold or Stop reaches the host first; so does a lost or returning controller or route,
 a writer restart, sleep, or a host fault. A second press before a release counts
 from the second press, unless the first was cancelled: a Hold or Stop's cancel lasts
-until you lift the pad, even through a reconnect, and any other lasts until the next
-epoch. The page sends how long it saw the pad held, so a slow request can only make
-a press shorter, never longer.
+until you lift the pad, even through a reconnect; any other lasts until you lift the
+pad or the controller, route or writer comes back, after which a repeated press starts
+fresh. The page sends how long it saw the pad held, so a slow request can only make a
+press shorter, never longer.
 
 The agent then:
 
@@ -302,8 +303,10 @@ JSON; `pocket b2b-observe --spec …` and the other flat commands work too.
 
 Mutations return [receipts](concepts.md#stores-artifacts-and-handles). All but
 `b2b_prepare` take a `request_id`, reused only to retry the same request, as everywhere
-in [Pocket](concepts.md#nothing-is-overwritten); an identical `b2b_prepare` retry
-returns the same session. Using b2b from an assistant works as in
+in [Pocket](concepts.md#nothing-is-overwritten). If the host's answer to `b2b_prepare`
+is lost, an identical retry returns the same session; if `output_dir` already holds a
+sealed `b2b.json`, the earlier prepare finished, so use that folder as `session_dir`.
+Using b2b from an assistant works as in
 [Use Pocket with an agent](agents.md).
 
 ## What this version establishes

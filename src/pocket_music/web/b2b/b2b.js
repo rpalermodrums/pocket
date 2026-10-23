@@ -4,7 +4,8 @@
 // leaves a locked page that can still stop, hold and deny.
 import {
   ackPayload, blockedLabel, changedSettings, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel,
-  padControl, rawMessage, remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
+  padControl, rawMessage, reconcile, remainingMs, requestId, seconds, shouldAck, tokenFromHash,
+  waitingReason,
 } from "/b2b-model.mjs";
 
 const token = tokenFromHash(location.hash);
@@ -68,8 +69,13 @@ function clearError() {
   $("error").hidden = true;
 }
 
-function view() {
-  return app.snapshot || app.publicView;
+function view() {  // once another page has taken over, this page reads the public view
+  return (app.current && app.snapshot) || app.publicView || app.snapshot;
+}
+
+function redraw() {
+  if (app.current && app.snapshot) render(app.snapshot);
+  else if (app.publicView) renderPublic(app.publicView);
 }
 
 function triple() {
@@ -219,26 +225,26 @@ function render(snapshot) {
   renderPanel(snapshot.synthetic_panel);
 }
 
-// The lists below rebuild only when their items change, never for a countdown or an agent's step:
-// a button replaced between press and release gets no click, and these buttons are the person's.
-// A deadline that moves (the agent shortened its lease) is updated in place.
 function renderNotices(notices, keyed) {
-  if (!changed("notices", [keyed, notices.map(n => [n.notice_id, n.state, n.text])])) return;
   const pending = notices.filter(notice => notice.state === "pending");
   const ended = keyed ? notices.filter(notice => notice.state !== "pending").slice(-3) : [];
-  const items = [...pending, ...ended].map(notice => {
-    const item = el("li", null, notice.state === "pending" ? {} : {class: "ended"});
-    item.append(el("strong", noticeBanner(notice)));
-    if (notice.state === "pending") {
-      const deadline = notice.deadline_monotonic_ns || null;
-      if (deadline) item.append(countdown(deadline));
-      item.append(button("Deny", () => reduce("/api/notices/deny",
-        {notice_id: notice.notice_id, grant_id: notice.grant_id})));
-    }
-    return item;
-  });
-  $("notices").replaceChildren(...(items.length ? items : [el("li", "No agent claim is waiting.",
-    {class: "ended"})]));
+  const items = [...pending, ...ended].map(notice => ({
+    key: notice.notice_id, signature: [keyed, notice.state, notice.text],
+    deadline: notice.state === "pending" ? notice.deadline_monotonic_ns || undefined : undefined,
+    build: () => {
+      const item = el("li", null, notice.state === "pending" ? {} : {class: "ended"});
+      item.append(el("strong", noticeBanner(notice)));
+      if (notice.state === "pending") {
+        const deadline = notice.deadline_monotonic_ns || null;
+        if (deadline) item.append(countdown(deadline));
+        item.append(button("Deny", () => reduce("/api/notices/deny",
+          {notice_id: notice.notice_id, grant_id: notice.grant_id})));
+      }
+      return item;
+    },
+  }));
+  reconcile($("notices"), items.length ? items : [{key: "none", signature: "none",
+    build: () => el("li", "No agent claim is waiting.", {class: "ended"})}]);
 }
 
 function groupOf(snapshot, resource) {
@@ -250,86 +256,82 @@ function groupOf(snapshot, resource) {
 
 function renderResources(snapshot) {
   const permission = snapshot.permissions[0] || null;
-  $("resources-table").hidden = false;  // before any early return: the locked view hides it
-  // Only what a row shows: an owner's generation, start time or lease end changes without that.
-  const shown = ({kind, hold, grant_id, target_value, physical_value, reason}) =>
-    [kind, hold, grant_id, target_value, physical_value, reason];
-  if (!changed("resources", [snapshot.resources.map(r => [r.resource_id, shown(r.owner), r.blocked_by]),
-                             permission && [permission.resources, permission.proactive_claims.allowed],
-                             snapshot.invitations.map(i => i.resources),
-                             snapshot.grants.map(g => [g.grant_id, g.reason])])) {
-    for (const resource of snapshot.resources) {  // a shortened lease: move its countdown in place
-      const row = `#resources tr[data-resource="${resource.resource_id}"]`;
-      const span = document.querySelector(`${row} [data-deadline]`);
-      if (span && resource.owner.kind === "agent") {
-        span.setAttribute("data-deadline", resource.owner.expires_monotonic_ns);
-      }
-    }
-    return;
-  }
+  $("resources-table").hidden = false;  // the locked view hides it
   const reasons = new Map(snapshot.grants.map(grant => [grant.grant_id, grant.reason]));
   const invited = new Set(snapshot.invitations.flatMap(invitation => invitation.resources));
-  const rows = snapshot.resources.map(resource => {
+  reconcile($("resources"), snapshot.resources.map(resource => {
     const owner = resource.owner;
     const proactive = Boolean(permission && permission.proactive_claims.allowed
       && permission.resources.includes(resource.resource_id));
-    const row = el("tr", null, {"data-resource": resource.resource_id});
-    const name = el("td", resource.label);
-    name.append(el("span", resource.resource_id, {class: "id"}));
-    const ownerCell = el("td", null, {class: "owner"});
-    if (owner.kind === "agent") {  // the lease counts down in place
-      ownerCell.append("Agent, ", countdown(owner.expires_monotonic_ns),
-                       ` left. Its reason: ${reasons.get(owner.grant_id) || "none given"}`);
-    } else {
-      ownerCell.append(ownerLabel(owner, {proactive, invited: invited.has(resource.resource_id)}));
-    }
-    if (resource.blocked_by && owner.kind === "unowned" && (proactive || invited.has(resource.resource_id))) {
-      ownerCell.append(el("span", blockedLabel(resource.blocked_by), {class: "id"}));
-    }
-    const actions = el("td", null, {class: "actions"});
-    const held = owner.hold === "explicit";
-    const only = [resource.resource_id];
-    if (!held) actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
-    if (held) actions.append(button("Release", () => increase("/api/holds/release", {resources: only})));
-    if (!held && !["agent", "unavailable", "pickup_pending"].includes(owner.kind)) {
-      const group = groupOf(snapshot, resource);  // a conflict group is handed back whole; holds stay
-      actions.append(button("Invite", () => increase("/api/invitations", {resources: group})));
-    }
-    if (owner.kind === "agent") {
-      actions.append(button("Take it back", () => reduce("/api/grants/revoke", {grant_id: owner.grant_id})));
-    }
-    if (owner.kind === "pickup_pending") {
-      actions.append(button("Accept", () => increase("/api/pickup/accept", {resource: only[0]})));
-    }
-    row.append(name, ownerCell, actions);
-    return row;
-  });
-  $("resources").replaceChildren(...rows);
+    const isInvited = invited.has(resource.resource_id);
+    const blocked = resource.blocked_by && owner.kind === "unowned" && (proactive || isInvited)
+      ? resource.blocked_by : null;
+    const reason = owner.kind === "agent" ? reasons.get(owner.grant_id) || "none given" : null;
+    return {
+      key: resource.resource_id,
+      // Only what the row shows: an owner's generation, start time or lease end changes without that.
+      signature: [owner.kind, owner.hold, owner.grant_id, owner.target_value, owner.physical_value,
+                  owner.reason, blocked, proactive, isInvited, reason],
+      deadline: owner.kind === "agent" ? owner.expires_monotonic_ns : undefined,
+      build: () => resourceRow(snapshot, resource, {proactive, isInvited, blocked, reason}),
+    };
+  }));
+}
+
+function resourceRow(snapshot, resource, {proactive, isInvited, blocked, reason}) {
+  const owner = resource.owner;
+  const row = el("tr", null, {"data-resource": resource.resource_id});
+  const name = el("td", resource.label);
+  name.append(el("span", resource.resource_id, {class: "id"}));
+  const ownerCell = el("td", null, {class: "owner"});
+  if (owner.kind === "agent") {  // the lease counts down in place
+    ownerCell.append("Agent, ", countdown(owner.expires_monotonic_ns), ` left. Its reason: ${reason}`);
+  } else {
+    ownerCell.append(ownerLabel(owner, {proactive, invited: isInvited}));
+  }
+  if (blocked) ownerCell.append(el("span", blockedLabel(blocked), {class: "id"}));
+  const actions = el("td", null, {class: "actions"});
+  const held = owner.hold === "explicit";
+  const only = [resource.resource_id];
+  if (!held) actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
+  if (held) actions.append(button("Release", () => increase("/api/holds/release", {resources: only})));
+  if (!held && !["agent", "unavailable", "pickup_pending"].includes(owner.kind)) {
+    const group = groupOf(snapshot, resource);  // a conflict group is handed back whole; holds stay
+    actions.append(button("Invite", () => increase("/api/invitations", {resources: group})));
+  }
+  if (owner.kind === "agent") {
+    actions.append(button("Take it back", () => reduce("/api/grants/revoke", {grant_id: owner.grant_id})));
+  }
+  if (owner.kind === "pickup_pending") {
+    actions.append(button("Accept", () => increase("/api/pickup/accept", {resource: only[0]})));
+  }
+  row.append(name, ownerCell, actions);
+  return row;
 }
 
 function renderGrants(grants, invitations) {
-  if (!changed("grants", [grants.map(g => [g.grant_id, g.reason, g.labels]),
-                          invitations.map(i => [i.invitation_id, i.labels])])) {
-    const spans = $("grants").querySelectorAll("[data-deadline]");  // one per item, in order
-    [...grants, ...invitations].forEach((item, index) => {
-      if (spans[index]) spans[index].setAttribute("data-deadline", item.deadline);
-    });
-    return;
-  }
-  const held = grants.map(grant => {
-    const item = el("li", `Agent holds ${grant.labels.join(", ")} for `);
-    item.append(countdown(grant.deadline), `. Its reason: ${grant.reason} `,
-                button("Take it back", () => reduce("/api/grants/revoke", {grant_id: grant.grant_id})));
-    return item;
-  });
-  const offered = invitations.map(invitation => {
-    const item = el("li", `Handed to the agent, not yet claimed: ${invitation.labels.join(", ")} · `);
-    item.append(countdown(invitation.deadline), " ",
-                button("Withdraw", () => reduce("/api/invitations/withdraw",
-                                                {invitation_id: invitation.invitation_id})));
-    return item;
-  });
-  $("grants").replaceChildren(...held, ...offered);
+  reconcile($("grants"), [
+    ...grants.map(grant => ({
+      key: `grant:${grant.grant_id}`, signature: [grant.labels, grant.reason], deadline: grant.deadline,
+      build: () => {
+        const item = el("li", `Agent holds ${grant.labels.join(", ")} for `);
+        item.append(countdown(grant.deadline), `. Its reason: ${grant.reason} `,
+                    button("Take it back", () => reduce("/api/grants/revoke", {grant_id: grant.grant_id})));
+        return item;
+      },
+    })),
+    ...invitations.map(invitation => ({
+      key: `invitation:${invitation.invitation_id}`, signature: [invitation.labels],
+      deadline: invitation.deadline,
+      build: () => {
+        const item = el("li", `Handed to the agent, not yet claimed: ${invitation.labels.join(", ")} · `);
+        item.append(countdown(invitation.deadline), " ",
+                    button("Withdraw", () => reduce("/api/invitations/withdraw",
+                                                    {invitation_id: invitation.invitation_id})));
+        return item;
+      },
+    })),
+  ]);
 }
 
 function previewCard(key, preview, onIssue, onCancel) {
@@ -370,14 +372,14 @@ async function review(key, body) {
   }
   app.signatures.delete("permission");
   app.signatures.delete("proposals");
-  render(app.snapshot);
+  redraw();
 }
 
 function closePreview(key) {
   app.previews.delete(key);
   app.signatures.delete("permission");
   app.signatures.delete("proposals");
-  render(app.snapshot);
+  redraw();
 }
 
 async function issue(key, snapshot, name, statement) {
@@ -457,7 +459,8 @@ function renderPermission(snapshot) {
 
 function renderProposals(snapshot) {
   const proposals = snapshot.proposals.filter(proposal => proposal.source !== "reissue");
-  if (!changed("proposals", [proposals.map(p => p.sha256), [...app.previews.keys()]])) return;
+  const signature = [proposals.map(p => [p.proposal_id, p.sha256]), [...app.previews.keys()]];
+  if (!changed("proposals", signature)) return;
   $("proposals").replaceChildren(...(proposals.length ? proposals.map(proposal => {
     const key = `proposal-${proposal.proposal_id}`;
     const item = el("li", null, {class: "card"});
@@ -670,6 +673,7 @@ async function start() {
   } catch (error) {
     showError(error);
   }
+  setInterval(renderClock, 250);  // countdowns tick on the locked page too
   if (isLocked(token)) {
     publicLoop();
     return;
@@ -686,7 +690,6 @@ async function start() {
     sendPresence().then(acknowledgeVisible);  // the host must hear "visible" before an ack counts
   });
   setInterval(sendPresence, 1000);
-  setInterval(renderClock, 250);
   waitLoop();
 }
 

@@ -191,8 +191,11 @@ def b2b_prepare(runtime_dir: str, output_dir: str, settings: B2bSettings | None 
     runtime = Path(_text(runtime_dir, "runtime_dir")).expanduser().resolve()
     output = Path(_text(output_dir, "output_dir")).expanduser().resolve()
     if output.exists() or output.is_symlink():
+        finished = (output / "b2b.json").is_file()
         raise PocketError("output_dir already exists", code="io_error",
-                          hint="Pass a new output_dir; b2b_prepare never writes into an existing folder.")
+                          hint=("An earlier b2b_prepare finished here: use this folder as session_dir."
+                                if finished else
+                                "Pass a new output_dir; b2b_prepare never writes into an existing folder."))
     request = {"output_dir_resolved": str(output)}
     for name, value in (("settings", settings), ("human_reserved", human_reserved),
                         ("proposed_policy", proposed_policy)):

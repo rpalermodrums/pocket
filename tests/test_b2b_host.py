@@ -420,12 +420,15 @@ def test_page_assets_use_text_content_const_and_strip_the_fragment():
     assert "ms => new Promise(done => setTimeout(done, ms))" in script  # padControl's sleep
     assert "event.button !== 0 || !event.isPrimary" in script and "setPointerCapture" in script
     assert 'window.addEventListener("blur", up)' in script and "if (event.isPrimary) up();" in script
-    assert 'spans[index].setAttribute("data-deadline", item.deadline)' in script  # a shortened lease
-    assert 'span.setAttribute("data-deadline", resource.owner.expires_monotonic_ns)' in script
-    assert "[kind, hold, grant_id, target_value, physical_value, reason]" in script  # what a row shows
     assert 'changed("public-permission"' in script and "(event.buttons & 1) === 0" in script
-    # The person's buttons are rebuilt only when what their list shows changed.
-    assert all(f'changed("{name}"' in script for name in ("notices", "resources", "grants"))
+    assert 'app.signatures.delete("permission")' in script
+    assert 'app.signatures.delete("public-permission")' in script
+    assert script.index("setInterval(renderClock, 250)") < script.index("if (isLocked(token)) {")
+    # The person's lists keep unchanged items (reconcile, tested in b2b_page_model.test.mjs).
+    assert all(f'reconcile($("{name}"), ' in script for name in ("notices", "resources", "grants"))
+    assert "owner.reason, blocked, proactive, isInvited, reason]" in script  # what a row shows
+    assert "proposals.map(p => [p.proposal_id, p.sha256])" in script
+    assert "return (app.current && app.snapshot) || app.publicView || app.snapshot;" in script
     assert "pad.control.noteReduction(path, fields)" in script
     assert "pad.control.press()" in script and "pad.control.release()" in script
 
