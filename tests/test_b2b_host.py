@@ -641,3 +641,30 @@ def test_prepare_leaves_no_folder_when_the_host_cannot_be_reached(tmp_path, sock
     with pytest.raises(PocketError) as caught:
         b2b.b2b_prepare(str(runtime), str(tmp_path / "session"))
     assert caught.value.code == "io_error" and not (tmp_path / "session").exists()
+
+
+def test_a_prepare_whose_folder_cannot_be_made_binds_no_session(host, tmp_path):
+    blocker = tmp_path / "a-file"
+    blocker.write_text("not a folder")
+    with pytest.raises(OSError):
+        b2b.b2b_prepare(str(host.runtime_dir), str(blocker / "session"))  # the folder comes first
+    assert prepare(host, tmp_path)  # so the host holds no session yet, and a valid prepare works
+
+
+def test_the_page_snapshot_carries_the_session_settings_and_their_defaults(host, tmp_path):
+    ui_epoch = attach(host)
+    b2b.b2b_prepare(str(host.runtime_dir), str(tmp_path / "session"), settings={"uncertainty_ms": 0})
+    state = issuer(host, "GET", f"/api/state?ui_epoch={ui_epoch}")
+    assert state["settings"]["uncertainty_ms"] == 0 and state["settings_defaults"]["uncertainty_ms"] == 2000
+
+
+def test_request_status_prefers_the_journal_when_the_host_no_longer_holds_a_request(host, tmp_path):
+    attach(host)
+    session = prepare(host, tmp_path)
+    observed = b2b.b2b_observe(session)
+    b2b.b2b_revoke(session, "revoke-1", **triple(observed), target={"kind": "all_own_authority"})
+    del host.broker._requests["agent"]["revoke-1"]  # as if the host had forgotten it
+    host.broker._receipts.pop(("agent", "revoke-1"))
+    status = b2b.b2b_request_status(session, "revoke-1")
+    assert (status["source"], status["state"], status["host_running"]) == ("retained_journal", "complete",
+                                                                            True)

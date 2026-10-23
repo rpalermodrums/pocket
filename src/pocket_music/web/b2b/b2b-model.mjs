@@ -47,10 +47,12 @@ const UNAVAILABLE = {
 };
 
 // The owner of one control, in words. ``context`` carries what the owner record can't:
-// {reason (the grant's), hostNow (string), proactive (an active permission may claim it when idle)}.
+// {reason (the grant's), hostNow (string), proactive (an active permission may claim it when idle),
+//  invited (an outstanding invitation covers it)}.
 export function ownerLabel(owner, context = {}) {
   if (!owner || typeof owner.kind !== "string") return "Unknown";
   if (owner.kind === "unowned") {
+    if (context.invited) return "Free, handed to the agent";
     return context.proactive ? "Free, agent may claim it when idle" : "Free, invite only";
   }
   if (owner.kind === "human") return owner.hold === "explicit" ? "You (holding)" : "You (moving)";
@@ -63,7 +65,7 @@ export function ownerLabel(owner, context = {}) {
       ? "Fader position unknown" : `Fader ${owner.physical_value}`;
     const software = owner.target_value === null || owner.target_value === undefined
       ? "software unknown" : `software ${owner.target_value}`;
-    return `${fader}, ${software}`;
+    return `${fader}, ${software}${owner.hold === "explicit" ? " (you hold it)" : ""}`;
   }
   if (owner.kind === "unavailable") {
     const why = UNAVAILABLE[owner.reason] || String(owner.reason || "unknown").replaceAll("_", " ");
@@ -147,6 +149,13 @@ const EVENT_TEXT = {
   notice_failed: e => waitingReason(`notice_${e.state}`),
   notice_denied: () => "You denied the agent's claim",
   human_input: e => `You moved ${e.resource}`,
+  gesture_pressed: () => "Hand-back pad pressed",
+  gesture_released: e => ({invitation_created: "Hand-back pad released: controls handed to the agent",
+                           coalesced: "Hand-back pad released: the earlier hand-back still stands",
+                           short_press_ignored: "Hand-back pad released too soon: nothing handed back",
+                           invitation_limit_reached: "Hand-back pad released: too many open invitations"}
+                          [e.outcome] || "Hand-back pad released"),
+  release_lost: () => "Hand-back pad held too long: nothing handed back",
   unknown_input: e => `Unrecognised controller message (${e.classification}); everything yields`,
   invitation_created: () => "Controls handed to the agent",
   invitation_ended: e => `Invitation ${e.state}`,
@@ -168,17 +177,26 @@ export function eventLine(event) {
   return text ? text(event) : String(event?.type || "event").replaceAll("_", " ");
 }
 
+// A step is announced as it is admitted, just before it goes to the adapter, so this says "admitted".
+function stepLine(event) {
+  return `Agent move on ${event.resource}: step ${event.step} of ${event.count} admitted`;
+}
+
+// Session settings the agent chose at b2b_prepare that differ from the defaults, as "name value (default d)".
+export function changedSettings(settings, defaults) {
+  return Object.entries(settings || {}).filter(([name, value]) => (defaults || {})[name] !== value)
+    .map(([name, value]) => `${name} ${value} (default ${defaults[name]})`);
+}
+
 // The person's event list, oldest first: consecutive steps of one move read as a single line,
 // so a long ramp can't push everything else out of the last few lines.
 export function eventLines(events) {
   return events.reduce((lines, event) => {
     const last = lines[lines.length - 1];
     if (event.type === "step_admitted" && last && last.request_id === event.request_id) {
-      return [...lines.slice(0, -1), {...last, text: `Agent move on ${event.resource}: ${event.step} of `
-        + `${event.count} steps sent`}];
+      return [...lines.slice(0, -1), {...last, text: stepLine(event)}];
     }
-    const text = event.type === "step_admitted"
-      ? `Agent move on ${event.resource}: ${event.step} of ${event.count} steps sent` : eventLine(event);
+    const text = event.type === "step_admitted" ? stepLine(event) : eventLine(event);
     return [...lines, {request_id: event.type === "step_admitted" ? event.request_id : null, text}];
   }, []).map(line => line.text);
 }

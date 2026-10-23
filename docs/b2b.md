@@ -68,8 +68,8 @@ bump, not a guarantee; if the agent starts the host itself, it can read the addr
 too, and the boundary is gone.
 
 If you reload the page, it comes back locked. **Stop agent control**, **Hold every
-control**, **Deny**, **Take it back** and **Revoke** keep working, because they can only
-take authority away. Everything else needs the address from the terminal again:
+control**, **Deny**, **Take it back**, **Withdraw** and **Revoke** keep working, because
+they can only take authority away. Everything else needs the address from the terminal again:
 acknowledging notices, inviting, issuing, **Release**, **Accept**, **Shorten**,
 **Turn off proactive claims** and the synthetic controller. No new move can start
 until you reopen it. Any local program that can reach the port can trigger those
@@ -112,7 +112,8 @@ token or nonce in it. Every other provider takes that `session_dir`.
 Long-press **Hand back** on the synthetic controller panel (half a second to five
 seconds), or press **Invite** on a row of the page. That creates one invitation for
 those controls, which the agent can use once. A short press, a bounce or a press
-you never release creates nothing.
+you never release creates nothing. Changed your mind? **Withdraw** on the page, or
+**Hold** on one of those controls, ends the invitation before the agent uses it.
 
 The agent then:
 
@@ -203,8 +204,8 @@ The synthetic faders are not motorized. When the agent lets go of a fader it mov
 the fader may still sit somewhere else. The page then shows both values, such as
 "Fader 98, software 40", and the control waits for you. Touch the fader (the jump
 from software to fader position is recorded) or press **Accept** on the page. Until
-then nobody can claim it, and **Hold** leaves it waiting for pickup rather than hiding
-the mismatch. This version has explicit pickup only.
+then nobody can claim it. **Hold** keeps it waiting for pickup, so the mismatch stays
+visible, and keeps it yours once you settle it. This version has explicit pickup only.
 
 ## When b2b says no
 

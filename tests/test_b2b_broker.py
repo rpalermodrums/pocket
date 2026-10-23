@@ -1089,16 +1089,17 @@ def test_sink_called_from_inside_submit_is_a_contract_violation_not_a_deadlock(t
 
     def observe():
         try:
-            broker.observe(h.session_id)
-            outcome.append("returned")
+            outcome.append(broker.observe(h.session_id))
         except AdapterContractError:
             outcome.append("contract_error")
 
     thread = threading.Thread(target=observe, daemon=True)
     thread.start()
     thread.join(timeout=10)
-    assert not thread.is_alive() and outcome == ["contract_error"]
-    assert broker._sink_violations == 1
+    assert not thread.is_alive() and len(outcome) == 1  # refused inside, never a deadlock
+    observed = outcome[0]  # the readback that re-entered is dropped, and the observation says so
+    assert broker._sink_violations >= 1 and observed["evidence"]["counters"]["sink_violations"] >= 1
+    assert any("from inside a broker section" in w for w in observed["warnings"])
     adapter.misbehave = False
     assert broker.observe(h.session_id)["session_id"] == h.session_id  # the lock was released
 
@@ -1166,13 +1167,59 @@ def test_an_invite_only_permission_preview_claims_no_limits_it_does_not_enforce(
     assert "Controls you invite aren't bound by this permission" in proactive["lines"][2]
 
 
-def test_a_hold_leaves_a_control_waiting_for_pickup(tmp_path):
+def test_a_hold_on_a_control_waiting_for_pickup_survives_the_touch_that_settles_it(tmp_path):
     h = make(tmp_path)
-    assert _pickup(h, FILTER, FILTER_2, 40, fader=100)["kind"] == "pickup_pending"
-    held = h.broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER, GAIN]})
-    assert held["outcome"] == {"kind": "held", "resources": [GAIN], "waiting_for_pickup": [FILTER]}
-    assert owner(h, FILTER)["kind"] == "pickup_pending"
-    refused(h.claim([FILTER], h.invitation_basis(h.invite([FILTER]))), "pickup_unsettled")
+    permission = issued(h)
+    assert _pickup(h, FILTER, FILTER_2, 40, fader=100)["kind"] == "pickup_pending"  # the agent made it so
+    held = h.broker.reduce_hold({"request_id": "page-hold", "resources": "all"})
+    assert FILTER in held["outcome"]["resources"] and held["outcome"]["waiting_for_pickup"] == [FILTER]
+    assert owner(h, FILTER)["kind"] == "pickup_pending" and owner(h, FILTER)["hold"] == "explicit"
+    h.move(FILTER_2, 40)  # the person settles the pickup by touch
+    h.tick(5000)
+    assert owner(h, FILTER)["kind"] == "human" and owner(h, FILTER)["hold"] == "explicit"
+    refused(h.claim([FILTER], h.permission_basis(permission)), "resource_held_by_human")
+    (tmp_path / "accept").mkdir()
+    accepted = make(tmp_path / "accept")
+    _pickup(accepted, FILTER, FILTER_2, 40, fader=100)
+    accepted.broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER]})
+    accepted.broker.trusted_accept_pickup(accepted.channel, {"request_id": "page-accept",
+                                                             **accepted.triple(), "resource": FILTER})
+    assert owner(accepted, FILTER)["kind"] == "human" and owner(accepted, FILTER)["hold"] == "explicit"
+
+
+def test_take_it_back_starts_the_cooldown_as_deny_does(tmp_path):
+    h = make(tmp_path)
+    permission = issued(h)
+    h.tick(4000)
+    grant = h.claim([GAIN], h.permission_basis(permission))["grant"]
+    h.broker.reduce_revoke_grant({"request_id": "page-take", "grant_id": grant["grant_id"]})
+    refused(h.claim([GAIN], h.permission_basis(permission)), "claim_cooldown")
+
+
+def test_an_invitation_can_be_withdrawn_and_a_hold_ends_it(tmp_path):
+    h = make(tmp_path)
+    first = h.invite([GAIN])["outcome"]["invitation"]
+    withdrawn = h.broker.reduce_withdraw_invitation({"request_id": "page-w",
+                                                     "invitation_id": first["invitation_id"]})
+    assert withdrawn["outcome"] == {"kind": "revoked", "invitation_id": first["invitation_id"]}
+    basis = {"kind": "invitation", "invitation_id": first["invitation_id"]}
+    refused(h.claim([GAIN], basis), "invitation_ended")
+    refused(h.broker.reduce_withdraw_invitation({"request_id": "page-w2",
+                                                 "invitation_id": first["invitation_id"]}),
+            "invitation_not_found")
+    second = h.invite([FILTER])["outcome"]["invitation"]
+    held = h.broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER]})
+    assert held["outcome"]["invitations_withdrawn"] == [second["invitation_id"]]
+    h.broker.trusted_release_hold(h.channel, {"request_id": "page-release", **h.triple(),
+                                              "resources": [FILTER]})
+    refused(h.claim([FILTER], {"kind": "invitation", "invitation_id": second["invitation_id"]}),
+            "invitation_ended")
+
+
+def test_a_panic_without_a_request_id_gets_one_nobody_can_post_first(tmp_path):
+    h = make(tmp_path)
+    ids = {h.broker.panic({})["request_id"] for _ in range(3)}
+    assert len(ids) == 3 and all(re.fullmatch(r"page-panic-[0-9a-f]{24}", rid) for rid in ids)
 
 
 def test_an_ack_from_a_page_that_reported_hidden_does_not_count(tmp_path):
@@ -1222,3 +1269,46 @@ def test_the_section_bounds_hold(tmp_path, monkeypatch, bound):
             h.broker.reduce_revoke_permission({"request_id": f"page-r{n}",
                                                "permission_id": permission["permission_id"]})
         assert len(h.broker._permissions) == 3
+
+
+def test_a_fault_inside_a_request_ends_agent_authority_and_keeps_the_sha_honest(tmp_path, monkeypatch):
+    h = make(tmp_path)
+    invited_grant(h, [FILTER])
+    before = h.observe()
+
+    def fault(*_args):
+        raise RuntimeError("a host bug")
+
+    monkeypatch.setattr(h.broker, "_evaluate_claim", fault)
+    request = {"request_id": "claim-fault", **h.triple(before), "resources": [GAIN],
+               "basis": {"kind": "invitation", "invitation_id": "i-0000000000000000"}, "reason": "x",
+               "lease_ms": 3000, "not_after_monotonic_ns": h.now + 5000 * MS}
+    with pytest.raises(RuntimeError):
+        h.broker.claim(h.session_id, request)
+    after = h.observe()
+    assert after["grants"] == [] and digest(after["authority_state"]) == after["state_sha256"]
+    assert after["control_revision"] > before["control_revision"]
+    replay = h.broker.claim(h.session_id, request)  # retained, never run again
+    assert replay["replayed"] is True and replay["outcome"]["kind"] == "outcome_unknown"
+    assert h.broker.request_status(h.session_id, "claim-fault")["state"] == "complete"
+
+
+def test_a_full_agent_table_refuses_reductions_rather_than_forget_a_request(tmp_path, monkeypatch):
+    import pocket_music.b2b_broker as broker_module
+
+    h = make(tmp_path)
+    grant = invited_grant(h, [GAIN])["grant"]
+    monkeypatch.setattr(broker_module, "MAX_REQUESTS", len(h.broker._requests["agent"]))
+    raises("invalid_request", release, h, grant["grant_id"])
+    assert h.broker.request_status(h.session_id, grant["request_id"])["state"] == "complete"
+    assert h.broker.panic({})["outcome"]["kind"] == "panic"  # the person can always stop
+
+
+def test_a_hand_back_after_shutdown_creates_no_invitation(tmp_path):
+    h = make(tmp_path)
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})
+    h.broker.shutdown()
+    h.long_press()
+    assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+    released = events(h, "gesture_released")[-1]
+    assert released["outcome"] == "agent_control_stopped" and released["invitation_id"] is None

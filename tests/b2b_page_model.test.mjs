@@ -4,13 +4,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  ackPayload, eventLine, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage,
-  remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
+  ackPayload, changedSettings, eventLine, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel,
+  rawMessage, remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
 } from "../src/pocket_music/web/b2b/b2b-model.mjs";
 
 test("owners read as words", () => {
   assert.equal(ownerLabel({kind: "unowned"}), "Free, invite only");
   assert.equal(ownerLabel({kind: "unowned"}, {proactive: true}), "Free, agent may claim it when idle");
+  assert.equal(ownerLabel({kind: "unowned"}, {proactive: true, invited: true}), "Free, handed to the agent");
+  assert.equal(eventLine({type: "gesture_released", outcome: "short_press_ignored"}),
+               "Hand-back pad released too soon: nothing handed back");
   assert.equal(ownerLabel({kind: "human", hold: "explicit"}), "You (holding)");
   assert.equal(ownerLabel({kind: "human", hold: "activity"}), "You (moving)");
   assert.equal(ownerLabel({kind: "agent", expires_monotonic_ns: "1002400000000"},
@@ -20,6 +23,8 @@ test("owners read as words", () => {
                "Fader 98, software 40");
   assert.equal(ownerLabel({kind: "pickup_pending", physical_value: null, target_value: 40}),
                "Fader position unknown, software 40");
+  assert.equal(ownerLabel({kind: "pickup_pending", physical_value: 9, target_value: 40, hold: "explicit"}),
+               "Fader 9, software 40 (you hold it)");
   assert.equal(ownerLabel({kind: "unavailable", reason: "controller_disconnected"}),
                "Unavailable: controller disconnected");
   assert.equal(ownerLabel({kind: "unavailable", reason: "route_lost:master", hold: "explicit"}),
@@ -95,7 +100,15 @@ test("long countdowns read in minutes, and a move's steps read as one line", () 
   const done = {type: "action_completed", outcome: "verified", resource: "synthetic/right/gain"};
   assert.deepEqual(eventLines([{type: "page_attached"}, step(1, "a"), step(2, "a"), step(3, "a"), done,
                                step(1, "b")]),
-                   ["This page attached", "Agent move on synthetic/right/gain: 3 of 3 steps sent",
+                   ["This page attached", "Agent move on synthetic/right/gain: step 3 of 3 admitted",
                     "Agent move verified on synthetic/right/gain",
-                    "Agent move on synthetic/right/gain: 1 of 3 steps sent"]);
+                    "Agent move on synthetic/right/gain: step 1 of 3 admitted"]);
+});
+
+test("settings the agent changed are listed next to their defaults", () => {
+  const defaults = {uncertainty_ms: 2000, activity_release_ms: 2000};
+  assert.deepEqual(changedSettings({uncertainty_ms: 0, activity_release_ms: 2000}, defaults),
+                   ["uncertainty_ms 0 (default 2000)"]);
+  assert.deepEqual(changedSettings(defaults, defaults), []);
+  assert.deepEqual(changedSettings(undefined, defaults), []);
 });

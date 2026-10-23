@@ -3,8 +3,8 @@
 // from the URL fragment once, removed from the address bar and kept only in memory, so a reload
 // leaves a locked page that can still stop, hold and deny.
 import {
-  ackPayload, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage, remainingMs,
-  requestId, seconds, shouldAck, tokenFromHash, waitingReason,
+  ackPayload, changedSettings, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage,
+  remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
 } from "/b2b-model.mjs";
 
 const token = tokenFromHash(location.hash);
@@ -13,8 +13,10 @@ history.replaceState(null, "", location.pathname);
 const $ = id => document.getElementById(id);
 // One mutable holder for page state; every binding stays const.
 const app = {csrf: null, uiEpoch: null, snapshot: null, publicView: null, receivedAt: 0, current: true,
-             acked: new Set(), previews: new Map(), signatures: new Map(), panelBuilt: false,
-             sliders: new Map()};
+             acked: new Set(), ackTries: new Map(), previews: new Map(), signatures: new Map(),
+             panelBuilt: false, sliders: new Map(), presence: Promise.resolve()};
+// A rejected ack (say, one that beat a "visible" report) is tried again, but not forever.
+const ACK_TRIES = 3;
 
 class HttpError extends Error {
   constructor(status, data) {
@@ -143,21 +145,33 @@ function acknowledgeVisible() {
   for (const notice of snapshot.notices) {
     if (!shouldAck(document.visibilityState, notice, app.acked)) continue;
     app.acked.add(notice.notice_id);
-    api("/api/notices/ack", {body: ackPayload(notice, app.uiEpoch)}).then(refresh, error => {
-      app.acked.delete(notice.notice_id);  // it never reached the host: the next render tries again
+    const tries = (app.ackTries.get(notice.notice_id) || 0) + 1;
+    app.ackTries.set(notice.notice_id, tries);
+    const retry = () => {
+      if (tries < ACK_TRIES) app.acked.delete(notice.notice_id);  // the next render tries again
+    };
+    api("/api/notices/ack", {body: ackPayload(notice, app.uiEpoch)}).then(answer => {
+      if (!answer.accepted && answer.outcome === "rejected") retry();
+      return refresh();
+    }, error => {
+      retry();
       showError(error);
     });
   }
 }
 
-async function sendPresence() {
-  if (isLocked(token) || !app.uiEpoch || !app.current) return;
-  try {
-    const visible = document.visibilityState === "visible";
-    await api("/api/presence", {body: {ui_epoch: app.uiEpoch, visible}});
-  } catch (error) {
-    showError(error);
-  }
+// Presence reports go one at a time, so an older "hidden" can never land after a newer "visible".
+function sendPresence() {
+  app.presence = app.presence.then(async () => {
+    if (isLocked(token) || !app.uiEpoch || !app.current) return;
+    try {
+      const visible = document.visibilityState === "visible";
+      await api("/api/presence", {body: {ui_epoch: app.uiEpoch, visible}});
+    } catch (error) {
+      showError(error);
+    }
+  });
+  return app.presence;
 }
 
 function countdown(deadline) {
@@ -190,7 +204,9 @@ function render(snapshot) {
   renderNotices(snapshot.notices, true);
   renderResources(snapshot);
   renderGrants(snapshot.grants.map(grant => ({grant_id: grant.grant_id, reason: grant.reason,
-    labels: grant.resources, deadline: grant.lease_expires_monotonic_ns})));
+    labels: grant.resources, deadline: grant.lease_expires_monotonic_ns})),
+               snapshot.invitations.map(invitation => ({invitation_id: invitation.invitation_id,
+    labels: invitation.resources, deadline: invitation.expires_monotonic_ns})));
   renderPermission(snapshot);
   renderProposals(snapshot);
   renderEvents(snapshot.recent_events);
@@ -225,6 +241,7 @@ function groupOf(snapshot, resource) {
 function renderResources(snapshot) {
   const permission = snapshot.permissions[0] || null;
   const reasons = new Map(snapshot.grants.map(grant => [grant.grant_id, grant.reason]));
+  const invited = new Set(snapshot.invitations.flatMap(invitation => invitation.resources));
   const rows = snapshot.resources.map(resource => {
     const owner = resource.owner;
     const proactive = Boolean(permission && permission.proactive_claims.allowed
@@ -232,18 +249,20 @@ function renderResources(snapshot) {
     const row = el("tr");
     const name = el("td", resource.label);
     name.append(el("span", resource.resource_id, {class: "id"}));
-    const ownerCell = el("td", ownerLabel(owner, {reason: reasons.get(owner.grant_id), hostNow: hostNow(),
-                                                  proactive}), {class: "owner"});
-    if (owner.kind === "agent") ownerCell.append(countdown(owner.expires_monotonic_ns));
+    const ownerCell = el("td", null, {class: "owner"});
+    if (owner.kind === "agent") {  // the lease counts down in place
+      ownerCell.append(`Agent: ${reasons.get(owner.grant_id) || "working"}, `,
+                       countdown(owner.expires_monotonic_ns), " left");
+    } else {
+      ownerCell.append(ownerLabel(owner, {proactive, invited: invited.has(resource.resource_id)}));
+    }
     if (resource.blocked_by && owner.kind === "unowned") {
       ownerCell.append(el("span", waitingReason(resource.blocked_by), {class: "id"}));
     }
     const actions = el("td", null, {class: "actions"});
     const held = owner.hold === "explicit";
     const only = [resource.resource_id];
-    if (!held && owner.kind !== "pickup_pending") {
-      actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
-    }
+    if (!held) actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
     if (held) actions.append(button("Release", () => increase("/api/holds/release", {resources: only})));
     if (!["agent", "unavailable", "pickup_pending"].includes(owner.kind)) {
       const group = groupOf(snapshot, resource);  // a conflict group is handed back whole
@@ -262,13 +281,21 @@ function renderResources(snapshot) {
   $("resources-table").hidden = false;
 }
 
-function renderGrants(grants) {
-  $("grants").replaceChildren(...grants.map(grant => {
+function renderGrants(grants, invitations) {
+  const held = grants.map(grant => {
     const item = el("li", `Agent holds ${grant.labels.join(", ")}: ${grant.reason} · `);
-    item.append(grant.deadline ? countdown(grant.deadline) : el("span", seconds(grant.remaining_ms)));
-    item.append(" ", button("Take it back", () => reduce("/api/grants/revoke", {grant_id: grant.grant_id})));
+    item.append(countdown(grant.deadline), " ",
+                button("Take it back", () => reduce("/api/grants/revoke", {grant_id: grant.grant_id})));
     return item;
-  }));
+  });
+  const offered = invitations.map(invitation => {
+    const item = el("li", `Handed to the agent, not yet claimed: ${invitation.labels.join(", ")} · `);
+    item.append(countdown(invitation.deadline), " ",
+                button("Withdraw", () => reduce("/api/invitations/withdraw",
+                                                {invitation_id: invitation.invitation_id})));
+    return item;
+  });
+  $("grants").replaceChildren(...held, ...offered);
 }
 
 function previewCard(key, preview, onIssue, onCancel) {
@@ -415,11 +442,10 @@ function renderProposals(snapshot) {
 
 // Session settings are the agent's choice at b2b_prepare; say so whenever one differs from the default.
 function renderSettings(settings, defaults) {
-  const changedSettings = Object.entries(settings || {}).filter(([name, value]) => defaults[name] !== value)
-    .map(([name, value]) => `${name} ${value} (default ${defaults[name]})`);
-  $("settings").textContent = changedSettings.length
-    ? `The agent prepared this session with changed settings: ${changedSettings.join(", ")}.` : "";
-  $("settings").hidden = changedSettings.length === 0;
+  const changed = changedSettings(settings, defaults);
+  $("settings").textContent = changed.length
+    ? `The agent prepared this session with changed settings: ${changed.join(", ")}.` : "";
+  $("settings").hidden = changed.length === 0;
 }
 
 function renderEvents(events) {
@@ -451,11 +477,13 @@ function slider(input, physical) {
     state.sending = false;
     flush();
   };
-  range.addEventListener("input", () => {
+  const move = () => {
     output.textContent = range.value;
     state.queued = Number(range.value);
     flush();
-  });
+  };
+  range.addEventListener("input", move);
+  range.addEventListener("pointerup", move);  // a touch sends its position even when it didn't change
   label.append(output, range);
   app.sliders.set(input.address, {range, output});
   return label;
@@ -536,8 +564,10 @@ function renderPublic(publicView) {
   $("journal").hidden = !publicView.journal_degraded;
   renderNotices(publicView.notices.map(notice => ({...notice, state: "pending",
     deadline_monotonic_ns: hostNowAfter(publicView.host_monotonic_ns, notice.remaining_ms)})), false);
-  renderGrants(publicView.agent_grants.map(grant => ({...grant,
-    deadline: hostNowAfter(publicView.host_monotonic_ns, grant.remaining_ms)})));
+  const deadline = item => hostNowAfter(publicView.host_monotonic_ns, item.remaining_ms);
+  renderGrants(publicView.agent_grants.map(grant => ({...grant, deadline: deadline(grant)})),
+               (publicView.invitations || []).map(invitation => ({...invitation,
+                                                                  deadline: deadline(invitation)})));
   $("resources-table").hidden = true;
   const permission = publicView.permission;
   $("permission").replaceChildren(permission

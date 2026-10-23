@@ -33,7 +33,7 @@ from .b2b_adapters import SyntheticAdapter, validate_profile
 from .b2b_broker import Broker
 from .b2b_clock import SystemClock
 from .b2b_journal import DEFAULT_MAX_BYTES, MAX_MAX_BYTES, MIN_MAX_BYTES, Journal
-from .b2b_ui import TrustedPage, make_page_server, page_link
+from .b2b_ui import TrustedPage, make_page_server, page_link, with_sync_warning
 from .errors import PocketError
 
 CONNECTION_SCHEMA = "pocket.b2b-connection/v1"
@@ -196,7 +196,8 @@ class B2bHost:
             print("b2b host: the scheduler failed, so agent control stopped and this host is exiting. Your "
                   "controls work as before.", file=sys.stderr, flush=True)
             try:
-                self.broker.panic({"request_id": "host-scheduler-failed"})
+                # A fresh id: a fixed one could be posted first and turn this into a harmless replay.
+                self.broker.panic({"request_id": f"host-scheduler-failed-{secrets.token_hex(12)}"})
             except Exception:  # noqa: BLE001 - the exit below still ends every grant with the process
                 traceback.print_exc(file=sys.stderr)
             finally:
@@ -207,14 +208,14 @@ class B2bHost:
         if self._closing.is_set():
             return
         self._closing.set()  # agent mutations are refused from here; reads still answer
-        self._stop.set()
-        for thread in self._threads[2:]:  # the scheduler: no step is admitted by a tick after this
-            thread.join(timeout=5)
         try:
-            self.broker.shutdown("host_stopping")
+            self.broker.shutdown("host_stopping")  # from here no step is admitted, by a tick or a page ack
         except Exception:  # noqa: BLE001 - keep closing; the process exit ends authority anyway
             traceback.print_exc(file=sys.stderr)
         finally:
+            self._stop.set()
+            for thread in self._threads[2:]:  # the scheduler
+                thread.join(timeout=5)
             self.journal.sync()
             if self._threads:  # shutdown() waits for serve_forever, so only a started server can take it
                 self._page_server.shutdown()
@@ -259,11 +260,7 @@ class B2bHost:
 
     def _synced(self, result: dict) -> dict:
         # fsync outside the broker lock, before the response leaves the host.
-        if self.journal.sync() == "ok":
-            return result
-        lost = ("journal_sync_failed: this outcome may not survive a host crash, and agent control has "
-                "stopped.")
-        return {**result, "warnings": [*result.get("warnings", []), lost]}
+        return with_sync_warning(result, self.journal.sync())
 
     def _act(self, session_id, request) -> dict:
         """Plan the act, then wait (lock released) until it is terminal, within a real-time bound."""

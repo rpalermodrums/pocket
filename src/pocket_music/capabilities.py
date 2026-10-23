@@ -22,7 +22,7 @@ PUBLIC_CAPABILITIES = (
     ('b2b_authorize', 'b2b', 'collaboration', 'authorize', False, 'Agents only propose a standing permission; the person issues it on the b2b host page.'),
     ('b2b_observe', 'b2b', 'collaboration', 'observe', True, 'Read owners, grants, notices, permissions and synthetic adapter evidence, each with its own age.'),
     ('b2b_claim', 'b2b', 'collaboration', 'claim', False, 'Atomically claim named idle resources under an invitation or standing permission; a page notice precedes any move.'),
-    ('b2b_act', 'b2b', 'collaboration', 'act', False, 'One bounded move (set, ramp up to 4 s, nudge or set_state) as short steps, each rechecked before dispatch.'),
+    ('b2b_act', 'b2b', 'collaboration', 'act', False, 'One bounded move (set, nudge or set_state as one step, or a ramp of up to 4 s in 50 ms steps), each step rechecked before dispatch.'),
     ('b2b_release', 'b2b', 'collaboration', 'release', False, 'Give back some or all of your grant and cancel its undispatched steps; controls stay where they are.'),
     ('b2b_revoke', 'b2b', 'collaboration', 'revoke', False, 'Shorten your lease or drop your own authority; only the person can revoke a standing permission.'),
     ('b2b_events', 'b2b', 'collaboration', 'events', True, 'Page through numbered b2b events after a cursor: notices, owner changes and act outcomes, a bounded batch per call.'),

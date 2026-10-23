@@ -33,7 +33,8 @@ _FILES = {"/": ("index.html", "text/html; charset=utf-8"),
           "/b2b-model.mjs": ("b2b-model.mjs", "text/javascript; charset=utf-8"),
           "/b2b.css": ("b2b.css", "text/css; charset=utf-8")}
 _PUBLIC_POSTS = {"/api/panic": "panic", "/api/holds": "hold", "/api/notices/deny": "deny",
-                 "/api/grants/revoke": "revoke_grant", "/api/permissions/revoke": "revoke_permission"}
+                 "/api/grants/revoke": "revoke_grant", "/api/permissions/revoke": "revoke_permission",
+                 "/api/invitations/withdraw": "withdraw_invitation"}
 _ISSUER_POSTS = {"/api/attach": "attach", "/api/presence": "presence", "/api/notices/ack": "ack",
                  "/api/invitations": "invite", "/api/holds/release": "release_hold",
                  "/api/pickup/accept": "accept_pickup", "/api/policy/preview": "preview",
@@ -95,6 +96,9 @@ class TrustedPage:
 
     def revoke_permission(self, body) -> dict:
         return self._broker.reduce_revoke_permission(body)
+
+    def withdraw_invitation(self, body) -> dict:
+        return self._broker.reduce_withdraw_invitation(body)
 
     def attach(self, body) -> dict:
         _only(body, (), "attach")
@@ -176,9 +180,8 @@ class TrustedPage:
         getattr(self._adapter, _FAULTS[action])()
         return {"applied": action, "panel": self._panel()}
 
-    def sync(self) -> None:
-        if self._sync is not None:
-            self._sync()
+    def sync(self) -> str:
+        return "ok" if self._sync is None else self._sync()
 
     def _require_synthetic(self) -> None:
         if not self.synthetic:
@@ -269,12 +272,23 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             body = read_json(self, MAX_BODY)
             result = getattr(page, method)(body)
-            page.sync()  # outside the broker lock, before the answer leaves the host
-            return send(self, 200, result)
+            # fsync outside the broker lock, before the answer leaves the host
+            return send(self, 200, with_sync_warning(result, page.sync()))
         except (PocketError, RequestRefused) as error:
             return self._refuse(error)
         except Exception:  # noqa: BLE001 - a host bug is reported, never swallowed
             return self._fail()
+
+
+def with_sync_warning(result: dict, state: str) -> dict:
+    """Say so on the answer when the journal could not be synced after this write."""
+    if state == "ok":
+        return result
+    warning = ("journal_full: the journal reached its budget, so agent control has stopped."
+               if state == "full" else
+               "journal_sync_failed: this outcome may not survive a host crash, and agent control has "
+               "stopped.")
+    return {**result, "warnings": [*result.get("warnings", []), warning]}
 
 
 def make_page_server(page: TrustedPage, port: int = 0) -> ThreadingHTTPServer:

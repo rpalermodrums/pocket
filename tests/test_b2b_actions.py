@@ -17,7 +17,7 @@ import pytest
 from b2b_harness import MS, Harness, default_draft
 
 from pocket_music.artifact_store import receipt as make_receipt
-from pocket_music.b2b_adapters import AdapterContractError, SyntheticAdapter
+from pocket_music.b2b_adapters import AdapterContractError, Readback, SyntheticAdapter
 from pocket_music.b2b_broker import Broker
 from pocket_music.b2b_journal import RESERVE_BYTES, read_entries
 from pocket_music.errors import PocketError
@@ -801,6 +801,7 @@ def test_finishing_a_long_run_never_evicts_it_from_history(tmp_path, monkeypatch
         h.act(short_grant, {"kind": "set", "resource": FILTER, "value": value})
     result = _until(h, run)  # used to raise KeyError out of tick() when the ramp finished
     assert result["outcome"]["kind"] == "verified" and h.broker.act_result(run) == result
+    assert run.request_id in h.broker._runs  # the run that just finished is kept, not trimmed
 
 
 def test_a_journal_failure_while_draining_is_outcome_unknown(tmp_path):
@@ -905,3 +906,24 @@ def test_verified_needs_its_readback_journaled(tmp_path):
     failing["on"] = True
     result = h.act(gid, {"kind": "set", "resource": GAIN, "value": 70})
     assert result["outcome"]["kind"] == "outcome_unknown"  # never verified with no evidence on record
+
+
+class _NanReadback(SyntheticAdapter):
+    """Sends the step, then reports a readback no journal can hold."""
+
+    def submit(self, step, admission):
+        submission = super().submit(step, admission)
+        nan = Readback(float("nan"), "control_readback", submission.submitted_monotonic_ns)
+        return replace(submission, readback=nan)
+
+
+def test_a_malformed_readback_after_a_submit_is_outcome_unknown(tmp_path):
+    h = Harness(tmp_path, broker=False)
+    adapter = _NanReadback()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000c8")
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    result = h.act(_granted(h), {"kind": "set", "resource": GAIN, "value": 70})
+    assert result["outcome"]["kind"] == "outcome_unknown" and adapter.sent_count == 1
+    assert h.broker.request_status(h.session_id, result["request_id"])["state"] == "complete"

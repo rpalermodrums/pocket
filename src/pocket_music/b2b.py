@@ -316,6 +316,8 @@ def b2b_request_status(session_dir: str, request_id: str) -> dict:
     except PocketError as error:
         # The host is gone or couldn't answer; the retained journal still can, and is read either way.
         host_error = error.code
+    # An answer of any kind, an error included, means a host process is still there to give it.
+    host_running = host is not None or (host_error is not None and host_error != "io_error")
     journal_path = Path(session["runtime_dir"]) / "journal.ndjson"
     try:
         retained = read_request(journal_path, request_id)
@@ -323,13 +325,15 @@ def b2b_request_status(session_dir: str, request_id: str) -> dict:
         raise PocketError("Cannot read this session's b2b journal", code="io_error",
                           hint="The journal is runtime_dir/journal.ndjson; keep the runtime_dir the host "
                                "wrote.") from error
-    if host is not None:
+    if host is not None and not (host["state"] == "not_found" and retained["state"] != "not_found"):
         state, found, unavailable = host["state"], host["receipt"], host["receipt_unavailable"]
-    else:
+    else:  # the host is gone, couldn't answer, or no longer holds a request its journal records
+        host = None
         state, found, unavailable = retained["state"], retained["receipt"], retained["receipt_unavailable"]
     chain = retained["journal"]
     return {"schema": REQUEST_STATUS_SCHEMA, "request_id": request_id,
-            "source": "host" if host is not None else "retained_journal", "host_running": host is not None,
+            "source": "host" if host is not None else "retained_journal",
+            "host_running": host_running,
             "state": state,
             "receipt": None if found is None else {**found, "replayed": True, "historical": True},
             "receipt_unavailable": unavailable,

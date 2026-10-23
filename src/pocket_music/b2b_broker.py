@@ -362,7 +362,7 @@ def _plain(value):
 
 _OWNER_FIELDS = {"unowned": (), "human": ("hold", "gesture_id", "since_monotonic_ns"),
                  "agent": ("grant_id", "expires_monotonic_ns"),
-                 "pickup_pending": ("target_value", "physical_value"),
+                 "pickup_pending": ("target_value", "physical_value", "hold"),
                  "unavailable": ("reason", "hold", "gesture_id")}
 
 
@@ -392,7 +392,7 @@ class ResourceOwner:
 
     @property
     def explicit(self) -> bool:
-        return self.kind in ("human", "unavailable") and self.hold == "explicit"
+        return self.kind in ("human", "unavailable", "pickup_pending") and self.hold == "explicit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -686,13 +686,19 @@ def _round_div(numerator: int, denominator: int) -> int:
     return rounded if numerator >= 0 else -rounded
 
 
+def _valid_readback(readback) -> bool:
+    """A control readback the broker can compare and journal: an int or a state name, a time, its scope."""
+    return (isinstance(readback, Readback) and type(readback.observed_monotonic_ns) is int
+            and readback.scope == "control_readback"
+            and (type(readback.value) is int or isinstance(readback.value, str)))
+
+
 def _valid_submission(submission) -> bool:
     """What submit must return: a Submission whose fields the broker can read without raising."""
     return (isinstance(submission, Submission) and isinstance(submission.submission_id, str)
             and submission.ack in ("ok", "failed", "pending")
             and type(submission.submitted_monotonic_ns) is int
-            and (submission.readback is None or (isinstance(submission.readback, Readback)
-                                                 and type(submission.readback.observed_monotonic_ns) is int)))
+            and (submission.readback is None or _valid_readback(submission.readback)))
 
 
 class TrustedChannel:
@@ -1014,7 +1020,7 @@ class Broker:
         evidence = self._evidence[rid]
         if d["control_kind"] != "absolute" or d["motorized"] or evidence["commanded_grant"] != grant.grant_id:
             return None
-        readback = self._adapter.readback(rid) if d["readback"] == "numeric" else None
+        readback = self._read_back(rid) if d["readback"] == "numeric" else None
         software = readback.value if readback is not None else evidence["commanded_value"]
         physical = evidence["physical_value"]
         if software is None or physical is None or abs(software - physical) > PICKUP_TOLERANCE:
@@ -1076,6 +1082,11 @@ class Broker:
             self._lose(self._grants[gid], rids, cause, release_owners=False, takeover=True)
         for rid in resources:
             owner = self._owners[rid]
+            if owner.kind == "pickup_pending" and owner.explicit:
+                # The touch settles the pickup; the person's hold on it stays.
+                self._set_owner(rid, "human", cause, hold="explicit", gesture_id=owner.gesture_id,
+                                since_monotonic_ns=now)
+                continue
             if owner.kind == "unavailable" or owner.explicit:
                 continue
             if owner.kind == "human":
@@ -1135,8 +1146,11 @@ class Broker:
     def _make_invitation(self, source: str, gesture_id: str | None, scope: tuple, now: int) -> Invitation:
         # Handing controls back is the person's choice, so a human owner (a hold included) lets go of them.
         for rid in scope:
-            if self._owners[rid].kind == "human":
+            owner = self._owners[rid]
+            if owner.kind == "human":
                 self._set_owner(rid, "unowned", "invited")
+            elif owner.kind == "pickup_pending" and owner.explicit:
+                self._owners[rid] = replace(owner, hold=None, gesture_id=None)  # still waits for pickup
         invitation = Invitation(f"i-{secrets.token_hex(8)}", source, gesture_id, tuple(sorted(scope)),
                                 self._adapter_epoch, self.session_epoch, now,
                                 now + self._settings["invitation_ttl_ms"] * MS)
@@ -1179,7 +1193,8 @@ class Broker:
         old = self.session_epoch
         self._adapter_epoch = adapter_epoch
         if dependencies is None:
-            dependencies = self._adapter.health()["dependencies"]
+            health = self._health()
+            dependencies = {} if health is None else health[0]  # unreadable health: nothing is available
         restored = []
         for rid in self._profile.order:
             owner = self._owners[rid]
@@ -1325,8 +1340,10 @@ class Broker:
         table = self._requests[channel]
         if len(table) < MAX_REQUESTS:
             return
+        # Only the public table forgets: its requests are reductions any local process can send, while an
+        # agent or page request_id must keep its replay and its status for the host's lifetime.
         finished = (rid for rid, entry in table.items() if entry.state == "complete")
-        oldest = next(finished, None) if reduction else None
+        oldest = next(finished, None) if reduction and channel == "public" else None
         if oldest is None:
             raise PocketError("This b2b host has kept its maximum number of requests",
                               code="invalid_request",
@@ -1348,9 +1365,10 @@ class Broker:
         sha = digest(result)
         ref = self._log("request_completed", {"request_id": request_id, "channel": channel,
                                               "receipt_sha256": sha, "receipt": result})
-        entry = self._requests[channel][request_id]
-        self._requests[channel][request_id] = replace(entry, state="complete", receipt_sha256=sha,
-                                                      journal_offset=None if ref is None else ref.offset)
+        entry = self._requests[channel].get(request_id)
+        if entry is not None:
+            self._requests[channel][request_id] = replace(entry, state="complete", receipt_sha256=sha,
+                                                          journal_offset=None if ref is None else ref.offset)
         self._retain_receipt(channel, request_id, result)
 
     def _retain_receipt(self, channel: str, request_id: str, result: dict) -> None:
@@ -1422,23 +1440,40 @@ class Broker:
         return self._reread(hit)
 
     def _evaluate(self, channel: str, operation: str, request_id: str, now: int, evaluate) -> dict:
-        """Run one request's domain evaluation. Nothing raised here may leave the request running."""
+        """Run one request's domain evaluation. Nothing raised here may leave the request running.
+
+        Input is validated before the request is recorded, so anything raised here is a host fault
+        that may come after a step went out: agent authority ends, the request is retained as
+        outcome_unknown, and the fault still propagates so the host reports it.
+        """
         try:
             return evaluate(now)
-        except PocketError:
-            # A validation error found while evaluating changed nothing: the request_id stays unused.
-            self._requests[channel].pop(request_id, None)
+        except Exception as fault:
+            def record():
+                self._fail_closed()
+                lost = "The b2b host failed while handling this request; agent authority ended."
+                result = {"outcome": {"kind": "outcome_unknown", "request_id": request_id,
+                                      "automatic_retry": False}, "warnings": [lost]}
+                made = self._receipt(operation, request_id, result, now, "not_required", None)
+                self._complete_request(channel, request_id, made)
+
+            self._after_fault(fault, record)
             raise
-        except Exception:
-            # A host fault mid-transaction: state may be half-changed, so agent authority ends, the request
-            # is retained as outcome_unknown, and the fault still propagates to the host to be reported.
-            self._end_all_grants("outcome_unknown")
-            result = {"outcome": {"kind": "outcome_unknown", "request_id": request_id,
-                                  "automatic_retry": False},
-                      "warnings": ["The b2b host failed while handling this request; agent authority ended."]}
-            self._complete_request(channel, request_id, self._receipt(operation, request_id, result, now,
-                                                                      "not_required", None))
-            raise
+
+    @staticmethod
+    def _after_fault(fault: Exception, record) -> None:
+        """Run the fail-closed record; if it fails too, say so on the original fault, never silently."""
+        try:
+            record()
+        except Exception as also:  # noqa: BLE001 - the original fault propagates, carrying this one
+            fault.add_note(f"Failing closed after this fault also raised {type(also).__name__}: {also}")
+
+    def _fail_closed(self) -> None:
+        """After a host fault: end every agent grant and commit, so the revision matches the state."""
+        for run in self._active_runs():  # first, so no run reads as merely cancelled or partial
+            self._unknown(run, self._entry_now, "The b2b host failed while this act was running")
+        self._end_all_grants("outcome_unknown")
+        self._commit("host_fault")
 
     def _check_running(self) -> None:
         if self._stopped:
@@ -1562,12 +1597,11 @@ class Broker:
                                        "state_sha256": self._sha, "monotonic_ns": now}
             return {**_plain(self._session["result"]), "replayed": False}
 
-    def _take_reserved(self, rid: str, gesture_id: str) -> bool:
+    def _take_reserved(self, rid: str, gesture_id: str) -> None:
         """A person's explicit hold. The agent channel can create this reduction but never undo it.
 
-        A control waiting for pickup stays that way: it already blocks every claim, and a hold
-        would hide the fader mismatch that releasing the hold would bring back. Returns whether
-        the control is held now.
+        A control waiting for pickup stays that way, so the fader mismatch stays visible, but the
+        hold is remembered: settling the pickup leaves the control the person's, not free.
         """
         owner = self._owners[rid]
         if owner.kind == "agent":
@@ -1575,14 +1609,12 @@ class Broker:
             if grant.state == "active":
                 self._end_grant(grant, "held_by_human")
             owner = self._owners[rid]
-        if owner.kind == "pickup_pending":
-            return False
-        if owner.kind == "unavailable":
-            self._owners[rid] = replace(owner, hold="explicit", gesture_id=gesture_id)
+        if owner.kind in ("unavailable", "pickup_pending"):
+            if not owner.explicit:
+                self._owners[rid] = replace(owner, hold="explicit", gesture_id=gesture_id)
         elif not owner.explicit:
             self._set_owner(rid, "human", "held_by_human", hold="explicit", gesture_id=gesture_id,
                             since_monotonic_ns=self._entry_now)
-        return True
 
     def _record_proposal(self, source: str, draft: dict, amend_of: tuple | None, now: int) -> Proposal | None:
         """Record a proposal for the person to review, coalescing an identical open one. Grants nothing."""
@@ -1931,7 +1963,7 @@ class Broker:
         evidence = {}
         for rid in self._profile.order:
             e = self._evidence[rid]
-            readback = self._adapter.readback(rid) if self._profile.resources[rid]["readback"] in (
+            readback = self._read_back(rid) if self._profile.resources[rid]["readback"] in (
                 "numeric", "state") else None
             evidence[rid] = {"readback": None if readback is None else {
                                  "scope": readback.scope, "value": readback.value,
@@ -1969,7 +2001,7 @@ class Broker:
                                           "last_seen_monotonic_ns": page["last_seen_ns"]},
                          "journal": {k: v for k, v in self._journal.status().items() if k != "last_seq"},
                          "uncertainty_until_monotonic_ns": uncertainty_until,
-                         "counters": dict(self._counters)},
+                         "counters": {**self._counters, "sink_violations": self._sink_violations}},
             "ages_ms": {"adapter_heartbeat": None if heartbeat is None else (now - heartbeat) // MS,
                         "trusted_page": None if page["last_seen_ns"] is None
                         else (now - page["last_seen_ns"]) // MS},
@@ -1977,7 +2009,10 @@ class Broker:
             "coverage": dict(COVERAGE),
             "warnings": ([] if self._page_ready(now) else
                          ["No b2b page is attached and visible; a claim would be refused."])
-            + ([] if health is not None else ["The adapter's health could not be read; acts are refused."])}
+            + ([] if health is not None else ["The adapter's health could not be read; acts are refused."])
+            + ([] if not self._sink_violations else
+               [(f"The adapter called the broker from inside a broker section {self._sink_violations} "
+                 "time(s); its readings may be missing.")])}
         return _plain(observation)
 
     def events(self, session_id: str, request: dict | None = None) -> dict:
@@ -2127,6 +2162,9 @@ class Broker:
                              "action_deadline_monotonic_ns": n.action_deadline_monotonic_ns,
                              "remaining_ms": max(0, (n.deadline_monotonic_ns - now) // MS)}
                             for n in self._notices.values() if n.state == "pending"],
+                "invitations": [{"invitation_id": i.invitation_id, "labels": [labels(r) for r in i.scope],
+                                 "remaining_ms": max(0, (i.expires_monotonic_ns - now) // MS)}
+                                for i in self._outstanding_invitations()],
                 "permission": None if permission is None else {
                     "permission_id": permission.permission_id, "version": permission.version,
                     "state": permission.state,
@@ -2219,7 +2257,7 @@ class Broker:
                 if owner.kind == "human" and owner.explicit:
                     self._set_owner(rid, "unowned", "hold_released")
                     released.append(rid)
-                elif owner.kind == "unavailable" and owner.explicit:
+                elif owner.kind in ("unavailable", "pickup_pending") and owner.explicit:
                     self._owners[rid] = replace(owner, hold=None, gesture_id=None)
                     released.append(rid)
                 else:
@@ -2241,7 +2279,11 @@ class Broker:
             owner = self._owners[rid]
             if owner.kind != "pickup_pending":
                 return self._refused("stale_page_state", f"{rid} is not waiting for pickup")
-            self._set_owner(rid, "unowned", "pickup_accepted")
+            if owner.explicit:  # settled, and still the person's
+                self._set_owner(rid, "human", "pickup_accepted", hold="explicit", gesture_id=owner.gesture_id,
+                                since_monotonic_ns=now)
+            else:
+                self._set_owner(rid, "unowned", "pickup_accepted")
             self._emit("pickup_settled", resource=rid, how="accepted_on_page")
             self._log("pickup", {"resource": rid, "state": "accepted"})
             return {"outcome": {"kind": "pickup_accepted", "resource": rid}}
@@ -2476,9 +2518,17 @@ class Broker:
         inputs = {"triple": None if triple is None else list(triple), "resources": list(resources)}
 
         def evaluate(now):
-            held = [rid for rid in resources if self._take_reserved(rid, f"page-hold-{next(self._seq)}")]
-            return {"outcome": {"kind": "held", "resources": held,
-                                "waiting_for_pickup": [rid for rid in resources if rid not in held]}}
+            for rid in resources:
+                self._take_reserved(rid, f"page-hold-{next(self._seq)}")
+            # Holding a control takes back any outstanding invitation that covers it.
+            withdrawn = [i.invitation_id for i in self._outstanding_invitations()
+                         if set(i.scope) & set(resources)]
+            for invitation_id in withdrawn:
+                self._end_invitation(self._invitations[invitation_id], "cancelled", "held_by_human")
+            return {"outcome": {"kind": "held", "resources": list(resources),
+                                "waiting_for_pickup": [r for r in resources
+                                                       if self._owners[r].kind == "pickup_pending"],
+                                "invitations_withdrawn": withdrawn}}
 
         return self._mutate("public", "hold", None, payload, inputs, triple, "record", evaluate,
                             increase=False)
@@ -2517,11 +2567,30 @@ class Broker:
             grant = self._grants.get(grant_id)
             if grant is None or grant.state != "active":
                 return self._refused("grant_not_found", "That grant already ended")
+            if grant.proactive:  # taking a claim back starts its cooldown, as Deny does
+                self._start_cooldown(grant.basis.permission_id, grant.resources, now)
             self._end_grant(grant, "revoked_by_human")
             return {"outcome": {"kind": "revoked", "grant_id": grant_id}}
 
         return self._mutate("public", "revoke_grant", None, payload, inputs, triple, "record", evaluate,
                             increase=False)
+
+    def reduce_withdraw_invitation(self, payload) -> dict:
+        """Take back an outstanding invitation before the agent uses it."""
+        self._page_inputs(payload, ("invitation_id",))
+        triple = _triple(payload, required=False)
+        invitation_id = _ident(payload["invitation_id"], "invitation_id", "i-")
+        inputs = {"triple": None if triple is None else list(triple), "invitation_id": invitation_id}
+
+        def evaluate(now):
+            invitation = self._invitations.get(invitation_id)
+            if invitation is None or invitation.state != "outstanding":
+                return self._refused("invitation_not_found", "That invitation already ended")
+            self._end_invitation(invitation, "cancelled", "withdrawn_by_human")
+            return {"outcome": {"kind": "revoked", "invitation_id": invitation_id}}
+
+        return self._mutate("public", "withdraw_invitation", None, payload, inputs, triple, "record",
+                            evaluate, increase=False)
 
     def reduce_revoke_permission(self, payload) -> dict:
         self._page_inputs(payload, ("permission_id",))
@@ -2544,7 +2613,7 @@ class Broker:
         """Stop agent control: end every grant and pending move, revoke the permission. Sends nothing."""
         payload = dict(payload or {})
         if "request_id" not in payload:
-            payload["request_id"] = f"page-panic-{next(self._seq)}"
+            payload["request_id"] = f"page-panic-{secrets.token_hex(12)}"  # never one a client could reuse
         self._page_inputs(payload, ())
         triple = _triple(payload, required=False)
         inputs = {"triple": None if triple is None else list(triple)}
@@ -2700,6 +2769,8 @@ class Broker:
                               "invitation_id": None if invitation is None else invitation.invitation_id})
 
     def _invite_by_gesture(self, gid: str, now: int):
+        if self._stopped or self._journal_degraded:
+            return "agent_control_stopped", None  # nothing is handed back, and holds stay
         for invitation in self._outstanding_invitations():
             if invitation.gesture_id == gid and invitation.adapter_epoch == self._adapter_epoch:
                 updated = replace(invitation, coalesced_presses=invitation.coalesced_presses + 1)
@@ -2935,8 +3006,7 @@ class Broker:
         except Exception as error:  # noqa: BLE001 - a broken adapter must never leave this request running
             return self._refused("adapter_unavailable",
                                  f"The adapter could not be read: {type(error).__name__}")
-        if readback is not None and (not isinstance(readback, Readback)
-                                     or type(readback.observed_monotonic_ns) is not int):
+        if readback is not None and not _valid_readback(readback):
             return self._refused("adapter_unavailable", "The adapter returned a malformed readback")
         down = [n for n in d["depends_on"] if dependencies.get(n) != "available"]
         if down:
@@ -3138,6 +3208,14 @@ class Broker:
             self._conclude(run, now)
         return True
 
+    def _read_back(self, rid: str) -> Readback | None:
+        """The adapter's readback for evidence, or None when it can't be read as declared."""
+        try:
+            readback = self._adapter.readback(rid)
+        except Exception:  # noqa: BLE001 - an adapter fault reads as no readback, never as a value
+            return None
+        return readback if _valid_readback(readback) else None
+
     def _health(self) -> tuple[dict, int | None] | None:
         """The adapter's dependencies and heartbeat, or None when health can't be read as declared."""
         try:
@@ -3267,22 +3345,22 @@ class Broker:
                 self._runs[run.request_id] = replace(run, state="running",
                                                      t0=max(run.created_monotonic_ns, now))
                 self._notify = True
-                self._advance_run(run.request_id, now)
+                self._advance_guarded(run.request_id, now)
 
     def _run_due(self, now: int) -> None:
         """From ``tick``, after every expiry due by ``now``: admit due steps."""
         for run in self._active_runs():
             if run.state != "running":
                 continue
-            try:
-                self._advance_run(run.request_id, now)
-            except Exception:
-                # A fault while admitting a step: it may have gone out. The run is outcome_unknown, and
-                # the fault propagates so the host stops agent control and says so.
-                current = self._runs.get(run.request_id)
-                if current is not None and current.active:
-                    self._unknown(current, now, "The b2b host failed while admitting a step")
-                raise
+            self._advance_guarded(run.request_id, now)
+
+    def _advance_guarded(self, request_id: str, now: int) -> None:
+        """Admit due steps. A fault here may follow a submit: fail closed, then let the host report it."""
+        try:
+            self._advance_run(request_id, now)
+        except Exception as fault:
+            self._after_fault(fault, self._fail_closed)
+            raise
 
     def _on_adapter_ack(self, event: dict, now: int) -> None:
         sid, status = event.get("submission_id"), event.get("status")
@@ -3301,10 +3379,10 @@ class Broker:
         self._counters["late_adapter_acks"] = self._counters.get("late_adapter_acks", 0) + 1
 
     def _on_adapter_readback(self, event: dict, now: int) -> None:
-        observed = event.get("observed_monotonic_ns")
-        if type(observed) is not int:
+        readback = Readback(event.get("value"), event.get("scope"), event.get("observed_monotonic_ns"))
+        if not _valid_readback(readback):
+            self._counters["ignored_events"] += 1
             return
-        readback = Readback(event.get("value"), event.get("scope") or "control_readback", observed)
         for run in self._active_runs():
             if run.resource == event.get("resource") and run.state == "draining":
                 self._conclude(self._note_readback(run, readback), now)
