@@ -181,7 +181,7 @@ NEXT_ACTIONS = MappingProxyType({
     "revoked": "Call b2b_observe before claiming again.",
 })
 
-_REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}")
+REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _STALE_HINT = "Call b2b_observe and pass its session_epoch, control_revision and state_sha256."
 _UNKNOWN_FIELD_HINT = ("Remove {field!r}. b2b requests take only their declared fields; no agent input "
@@ -244,7 +244,7 @@ def _bool(value, name: str) -> bool:
 
 
 def _request_id(value) -> str:
-    if not isinstance(value, str) or not _REQUEST_ID.fullmatch(value):
+    if not isinstance(value, str) or not REQUEST_ID.fullmatch(value):
         raise _bad("request_id must be 1-96 letters, digits, '.', '_' or '-' starting with a letter or digit",
                    "Pass a new request_id such as claim-0001 for each new request; reuse it only to retry.")
     return value
@@ -1686,7 +1686,8 @@ class Broker:
             return self._refused(code, detail, retry_not_before_monotonic_ns=retry)
         grant, notice = self._grant(request_id, resources, basis, reason, lease_ms, not_after, now)
         if basis.kind == "invitation":
-            self._end_invitation(self._invitations[basis.invitation_id], "consumed", "claimed", grant.grant_id)
+            invitation = self._invitations[basis.invitation_id]
+            self._end_invitation(invitation, "consumed", "claimed", grant.grant_id)
         return {"outcome": {"kind": "granted", "grant": grant.to_json()},
                 "fields": {"grant": grant.to_json(), "notice": notice.to_json()}}
 
@@ -1835,7 +1836,8 @@ class Broker:
                 "resource_id": rid, "label": d["label"], "aliases": list(self._profile.aliases_of(rid)),
                 "control_kind": d["control_kind"], "range": None if d["range"] is None else dict(d["range"]),
                 "states": None if d["states"] is None else list(d["states"]), "audibility": d["audibility"],
-                "agent_writable": d["agent_writable"], "owner": self._owners[rid].to_json(),
+                "agent_writable": d["agent_writable"], "conflict_group": d["conflict_group"],
+                "yield_group": d["yield_group"], "owner": self._owners[rid].to_json(),
                 "generation": self._owners[rid].generation,
                 "claimable": {"invitation": blocked["invitation"][0] and blocked["invitation"][1] is None,
                               "permission": blocked["standing_permission"][0]
@@ -2014,6 +2016,9 @@ class Broker:
                 ui_epoch=ui_epoch, current=current, host_monotonic_ns=now,
                 proposals=[p.to_json() for p in self._proposals.values() if p.state == "open"],
                 permission_history=[p.to_json() for p in permissions.values()],
+                # Issue cites this record exactly (expected_permission_*), or null when none was issued.
+                permission_head=self._permissions[-1].to_json() if self._permissions else None,
+                recent_events=_plain([event for event, _ in list(self._events)[-20:]]),
                 journal_degraded=self._journal_degraded)
             return page_json(observation)
 

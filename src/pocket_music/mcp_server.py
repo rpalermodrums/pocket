@@ -214,7 +214,10 @@ def build_server(error_format=None):
         "revision-bound updates. Spotify execution creates a fresh private playlist only from a reviewed "
         "plan; credentials must remain in the process environment, never tool arguments. "
         "Acquisition requires a selected source plan; model retrieval uses prepared independent local "
-        "audio/user-text receipts, never Spotify content. No inference runs in the live suggestion path."
+        "audio/user-text receipts, never Spotify content. No inference runs in the live suggestion path. "
+        "b2b grants come only from a person's invitation or a standing permission issued on the b2b host page; "
+        "b2b_authorize from an agent only proposes, and an outcome_unknown is never retried under a new "
+        "request_id."
     ))
     server.add_tool(identify_audio, annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
@@ -305,7 +308,8 @@ def build_server(error_format=None):
         server.add_tool(_compact_response(function), name=name, description=description,
                         structured_output=False,
                         annotations=ToolAnnotations(readOnlyHint=read_only, destructiveHint=False,
-                                                    idempotentHint=(read_only or name == 'shuttle_act') if module == 'shuttle' else True,
+                                                    idempotentHint=((read_only or name == 'shuttle_act') if module == 'shuttle'
+                                                                    else (name != 'b2b_prepare') if module == 'b2b' else True),
                                                     openWorldHint=False))
     return server
 

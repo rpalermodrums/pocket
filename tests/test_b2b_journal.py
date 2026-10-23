@@ -665,7 +665,8 @@ def test_journal_failure_after_submit_is_outcome_unknown_and_blocks_admissions(t
     h.tick(500)
     assert len(h.adapter.sent()) == 4  # nothing more is admitted
     assert h.invite(["synthetic/right/filter"])["outcome"]["code"] == "journal_unavailable"
-    refused = h.claim(["synthetic/right/filter"], {"kind": "invitation", "invitation_id": "i-0000000000000000"})
+    refused = h.claim(["synthetic/right/filter"],
+                      {"kind": "invitation", "invitation_id": "i-0000000000000000"})
     assert refused["outcome"]["code"] == "journal_unavailable"
     h.move("controller/synthetic/channel-2/trim", 30)  # human priority still applies in memory
     owner = next(r for r in h.observe()["resources"] if r["resource_id"] == GAIN)["owner"]
