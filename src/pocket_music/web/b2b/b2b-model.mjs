@@ -124,9 +124,11 @@ export function waitingReason(code) {
   return WAITING[code] || code.replaceAll("_", " ");
 }
 
-// Why a free control can't be claimed: a person-owned reason on a free row is a linked control's.
+// Why a free control the agent could otherwise claim is still waiting. A hold on a free row is a
+// linked control's; a recent move may be this control's own or a linked one's.
 const LINKED = {resource_held_by_human: "Waiting: a linked control is held",
-                human_active: "Waiting: a linked control is moving"};
+                human_active: "Waiting: this control or a linked one moved recently",
+                gesture_in_progress: "Waiting: the hand-back pad is pressed"};
 
 export function blockedLabel(code) {
   return LINKED[code] || waitingReason(code);
@@ -165,8 +167,7 @@ const EVENT_TEXT = {
                            invitation_limit_reached: "Hand-back pad released: too many open invitations",
                            agent_control_stopped: "Hand-back pad released: agent control is stopped, nothing "
                              + "handed back",
-                           voided: "Hand-back pad released: Hold or Stop cancelled this press, nothing "
-                             + "handed back"}
+                           voided: "Hand-back pad released: this press was cancelled, nothing handed back"}
                           [e.outcome] || "Hand-back pad released"),
   release_lost: () => "Hand-back pad held too long: nothing handed back",
   unknown_input: e => `Unrecognised controller message (${e.classification}); everything yields`,

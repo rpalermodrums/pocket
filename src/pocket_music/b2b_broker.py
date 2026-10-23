@@ -160,7 +160,7 @@ NEXT_ACTIONS = MappingProxyType({
     "outside_limits": "Stay within the limits b2b_observe shows.",
     "baseline_unknown": "Call b2b_observe; set the control before ramping it.",
     "state_unknown": "Call b2b_observe; never toggle without a known state.",
-    "evidence_stale": "Call b2b_observe; never toggle without a known state.",
+    "evidence_stale": "Call b2b_observe, then act again with fresh evidence.",
     "expansion_not_permitted": "Ask the person for a wider permission or an invitation.",
     "journal_unavailable": _HOST_HEALTH, "adapter_unavailable": _COME_BACK,
     "resource_unavailable": _COME_BACK,
@@ -2900,7 +2900,7 @@ class Broker:
 
     def _void_gestures(self, resources=None) -> None:
         """A pressed pad hands nothing back when lifted. It still counts as pressed until then, so
-        the agent stays blocked for the rest of the press (claims and steps both check it)."""
+        the agent stays blocked for the rest of the press (proactive claims and steps check it)."""
         for gid, gesture in self._gestures.items():
             if gesture["state"] == "pressed" and (
                     resources is None or set(self._profile.gesture_scope[gid]) & set(resources)):
@@ -2919,10 +2919,15 @@ class Broker:
             self._counters["gesture_bounces"] += 1
             return
         if phase == "press":
+            pressed = {"state": "pressed", "t0": now, "last_transition_ns": now, "epoch": self._adapter_epoch}
             if state["state"] == "pressed":
+                # Past the debounce, so its release was lost or this is a late duplicate. The press
+                # starts again: a stale start must never turn a short tap into a long press. A press
+                # cancelled in this epoch stays cancelled; one from an older epoch starts fresh.
                 self._counters["gesture_duplicates"] += 1
-                return
-            self._gestures[gid] = {"state": "pressed", "t0": now, "last_transition_ns": now}
+                if state.get("voided") and state.get("epoch") == self._adapter_epoch:
+                    pressed["voided"] = True
+            self._gestures[gid] = pressed
             self._emit("gesture_pressed", gesture_id=gid)
             self._log("gesture", {"gesture_id": gid, "phase": "press"})
             return

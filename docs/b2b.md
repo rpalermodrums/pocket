@@ -262,8 +262,9 @@ up the request ID. See [contracts and errors](contracts.md#opt-in-machine-errors
 - **The host hit an internal fault.** Agent control stops for the rest of that host,
   as when the journal fails: the page shows a banner and the terminal prints the
   fault. Touching your controls, Hold, Stop, Deny and Take it back keep working;
-  releasing a hold, accepting a pickup or issuing waits for a new host. Agent calls
-  that would add authority fail with `io_error`; `b2b_observe` still answers.
+  releasing a hold, accepting a pickup or issuing waits for a new host. `b2b_prepare`,
+  `b2b_authorize`, `b2b_claim` and `b2b_act` fail with `io_error`; `b2b_observe`,
+  `b2b_events`, `b2b_request_status`, `b2b_release` and `b2b_revoke` still answer.
 - **The host stopped.** Calls to the old session fail with `io_error`.
   `b2b_request_status` still answers from the old journal: `complete` with its
   receipt, `stopped_before_dispatch` when nothing was admitted, or `outcome_unknown`

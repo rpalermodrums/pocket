@@ -15,6 +15,7 @@ controller, MIDI or audio device is opened.
 from __future__ import annotations
 
 import argparse
+import collections
 import hmac
 import json
 import os
@@ -134,6 +135,7 @@ class B2bHost:
         self._closing = threading.Event()
         self.failed = threading.Event()  # the scheduler failed: the host exits
         self.faulted = threading.Event()  # the broker failed closed: the host keeps serving the person
+        self._faults = collections.deque()  # printed by the scheduler, outside the broker lock
         self._threads = []
         self.socket_dir = _socket_dir(socket_parent)
         try:
@@ -184,12 +186,18 @@ class B2bHost:
             self._threads.append(thread)
 
     def _report_fault(self, fault) -> None:
-        """A host fault the broker failed closed on. Agent control has already stopped for good."""
+        """A host fault the broker failed closed on. Called under the broker lock, so it only queues:
+        the scheduler prints it, since a blocked terminal must never hold up Stop or Hold."""
         self.faulted.set()
-        print("b2b host fault: agent control stopped for the rest of this host. Touching your controls, Hold "
-              "and Stop still work; start a new host to release holds or play with the agent again.",
-              file=sys.stderr, flush=True)
-        traceback.print_exception(fault, file=sys.stderr)
+        self._faults.append(fault)
+
+    def _print_faults(self) -> None:
+        while self._faults:
+            fault = self._faults.popleft()
+            print("b2b host fault: agent control stopped for the rest of this host. Touching your controls, "
+                  "Hold and Stop still work; start a new host to release holds or play with the agent again.",
+                  file=sys.stderr, flush=True)
+            traceback.print_exception(fault, file=sys.stderr)
 
     def tick(self) -> None:
         """One scheduler pass: deliver adapter events, then the broker's due work (tests call it)."""
@@ -201,6 +209,7 @@ class B2bHost:
         try:
             while not self._stop.wait(0.01):
                 self.tick()
+                self._print_faults()
         except Exception:  # noqa: BLE001 - fail closed: agent control stops and the host exits
             traceback.print_exc(file=sys.stderr)
             print("b2b host: the scheduler failed, so agent control stopped and this host is exiting. Your "
@@ -226,6 +235,7 @@ class B2bHost:
             self._stop.set()
             for thread in self._threads[2:]:  # the scheduler
                 thread.join(timeout=5)
+            self._print_faults()  # any the scheduler didn't print
             self.journal.sync()
             if self._threads:  # shutdown() waits for serve_forever, so only a started server can take it
                 self._page_server.shutdown()

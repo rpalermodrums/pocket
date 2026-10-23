@@ -12,14 +12,6 @@ test("owners read as words", () => {
   assert.equal(ownerLabel({kind: "unowned"}), "Free, invite only");
   assert.equal(ownerLabel({kind: "unowned"}, {proactive: true}), "Free, agent may claim it when idle");
   assert.equal(ownerLabel({kind: "unowned"}, {proactive: true, invited: true}), "Free, handed to the agent");
-  assert.equal(eventLine({type: "gesture_released", outcome: "short_press_ignored"}),
-               "Hand-back pad released too soon: nothing handed back");
-  assert.equal(eventLine({type: "gesture_released", outcome: "agent_control_stopped"}),
-               "Hand-back pad released: agent control is stopped, nothing handed back");
-  assert.equal(eventLine({type: "gesture_released", outcome: "voided"}),
-               "Hand-back pad released: Hold or Stop cancelled this press, nothing handed back");
-  assert.equal(blockedLabel("resource_held_by_human"), "Waiting: a linked control is held");
-  assert.equal(blockedLabel("pickup_unsettled"), "Waiting for you to settle the fader");
   assert.equal(ownerLabel({kind: "human", hold: "explicit"}), "You (holding)");
   assert.equal(ownerLabel({kind: "human", hold: "activity"}), "You (moving)");
   assert.equal(ownerLabel({kind: "agent", expires_monotonic_ns: "1002400000000"},
@@ -36,6 +28,19 @@ test("owners read as words", () => {
   assert.equal(ownerLabel({kind: "unavailable", reason: "route_lost:master", hold: "explicit"}),
                "Unavailable: master route lost (you hold it)");
   assert.equal(ownerLabel(null), "Unknown");
+});
+
+test("hand-back releases and waiting rows read as words", () => {
+  assert.equal(eventLine({type: "gesture_released", outcome: "short_press_ignored"}),
+               "Hand-back pad released too soon: nothing handed back");
+  assert.equal(eventLine({type: "gesture_released", outcome: "agent_control_stopped"}),
+               "Hand-back pad released: agent control is stopped, nothing handed back");
+  assert.equal(eventLine({type: "gesture_released", outcome: "voided"}),
+               "Hand-back pad released: this press was cancelled, nothing handed back");
+  assert.equal(blockedLabel("resource_held_by_human"), "Waiting: a linked control is held");
+  assert.equal(blockedLabel("human_active"), "Waiting: this control or a linked one moved recently");
+  assert.equal(blockedLabel("gesture_in_progress"), "Waiting: the hand-back pad is pressed");
+  assert.equal(blockedLabel("pickup_unsettled"), "Waiting for you to settle the fader");
 });
 
 test("countdowns use BigInt host time beyond 2^53 nanoseconds", () => {

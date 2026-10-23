@@ -1468,3 +1468,41 @@ def test_an_event_that_cannot_be_sent_leaves_no_gap_in_the_sequence(tmp_path):
         h.broker._emit("human_input", value=float("nan"))
     h.invite([GAIN])
     assert events(h, "invitation_created")[-1]["sequence"] == before + 1
+
+
+def test_two_short_taps_around_a_lost_release_hand_nothing_back(tmp_path):
+    h = make(tmp_path)
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})
+    h.press()
+    h.tick(20)
+    h.release()  # inside the debounce, so it is dropped and the pad still reads pressed
+    h.tick(900)
+    h.press()  # starts the press again: the stale start can't make this a long press
+    h.tick(100)
+    h.release()
+    assert events(h, "gesture_released")[-1]["outcome"] == "short_press_ignored"
+    assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+
+
+def test_a_deliberate_press_after_a_reconnect_starts_fresh(tmp_path):
+    h = make(tmp_path)
+    h.press()
+    h.adapter.disconnect_controller()  # voids the press, and its release can't arrive
+    h.tick(10)
+    h.release()
+    h.adapter.reconnect_controller()
+    h.tick(100)
+    h.long_press(held_ms=800)
+    assert events(h, "gesture_released")[-1]["outcome"] == "invitation_created"
+
+
+def test_a_cancelled_press_stays_cancelled_when_it_starts_again(tmp_path):
+    h = make(tmp_path)
+    h.press()
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})
+    h.tick(100)
+    h.press()  # a late duplicate in the same epoch
+    h.tick(700)
+    h.release()
+    assert events(h, "gesture_released")[-1]["outcome"] == "voided"
+    assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"

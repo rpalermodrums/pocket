@@ -204,10 +204,12 @@ function render(snapshot) {
   renderSettings(snapshot.settings, snapshot.settings_defaults);
   renderNotices(snapshot.notices, true);
   renderResources(snapshot);
+  const label = new Map(snapshot.resources.map(resource => [resource.resource_id, resource.label]));
+  const labels = ids => ids.map(id => label.get(id) || id);
   renderGrants(snapshot.grants.map(grant => ({grant_id: grant.grant_id, reason: grant.reason,
-    labels: grant.resources, deadline: grant.lease_expires_monotonic_ns})),
+    labels: labels(grant.resources), deadline: grant.lease_expires_monotonic_ns})),
                snapshot.invitations.map(invitation => ({invitation_id: invitation.invitation_id,
-    labels: invitation.resources, deadline: invitation.expires_monotonic_ns})));
+    labels: labels(invitation.resources), deadline: invitation.expires_monotonic_ns})));
   renderPermission(snapshot);
   renderProposals(snapshot);
   renderEvents(snapshot.recent_events);
@@ -257,7 +259,7 @@ function renderResources(snapshot) {
     } else {
       ownerCell.append(ownerLabel(owner, {proactive, invited: invited.has(resource.resource_id)}));
     }
-    if (resource.blocked_by && owner.kind === "unowned") {
+    if (resource.blocked_by && owner.kind === "unowned" && (proactive || invited.has(resource.resource_id))) {
       ownerCell.append(el("span", blockedLabel(resource.blocked_by), {class: "id"}));
     }
     const actions = el("td", null, {class: "actions"});
@@ -515,14 +517,17 @@ function buildPanel(panel) {
   controls.append(button("Send unknown message", () => send([0xb3, 99, 1]), {class: "quiet"}));
   const gesture = panel.gestures[0];
   const pad = $("handback");
+  // Press and release go one after the other, so the host never sees a release before its press.
+  const queue = {last: Promise.resolve()};
+  const inOrder = message => (queue.last = queue.last.then(() => send(message)));
   const down = () => {
     pad.setAttribute("aria-pressed", "true");
-    send(rawMessage(gesture.message, gesture.press_value));
+    inOrder(rawMessage(gesture.message, gesture.press_value));
   };
   const up = () => {
     if (pad.getAttribute("aria-pressed") !== "true") return;
     pad.setAttribute("aria-pressed", "false");
-    send(rawMessage(gesture.message, gesture.release_value));
+    inOrder(rawMessage(gesture.message, gesture.release_value));
   };
   pad.textContent = `${gesture.label} (hold at least ${gesture.long_press_ms / 1000} s)`;
   pad.addEventListener("pointerdown", down);

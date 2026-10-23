@@ -1184,3 +1184,43 @@ def test_a_wrong_kind_readback_from_submit_is_outcome_unknown(tmp_path):
     h.attach_page()
     result = h.act(_granted(h), {"kind": "set", "resource": GAIN, "value": 70})
     assert result["outcome"]["kind"] == "outcome_unknown" and adapter.sent_count == 1
+
+
+def _reporting(tmp_path, host_epoch: str):
+    reported = []
+    h = Harness(tmp_path, broker=False)
+    adapter = SyntheticAdapter()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch=host_epoch, on_fault=reported.append)
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    return h, reported
+
+
+def test_each_distinct_host_fault_is_reported_once(tmp_path, monkeypatch):
+    h, reported = _reporting(tmp_path, "h00000000000000ce")
+    fire = h.broker._fire
+
+    def failing(kind, key, at, now):
+        if kind == "activity":
+            raise RuntimeError(f"a host bug on {key}")
+        return fire(kind, key, at, now)
+
+    monkeypatch.setattr(h.broker, "_fire", failing)
+    h.move(TRIM_2, 90)
+    h.tick(2100)
+    h.move("controller/synthetic/channel-1/trim", 30)
+    h.tick(2100)  # both releases now fail on every entry
+    assert sorted(str(fault) for fault in reported) == ["a host bug on synthetic/left/gain",
+                                                         f"a host bug on {GAIN}"]
+
+
+def test_timers_still_run_while_an_epoch_renewal_keeps_failing(tmp_path, monkeypatch):
+    h, reported = _reporting(tmp_path, "h00000000000000cf")
+    h.move(TRIM_2, 90)
+    monkeypatch.setattr(h.adapter, "renew_epoch", _fault)
+    h.clock.suspend(60_000 * MS)  # the activity release is due, and every renewal fails
+    h.tick(10)
+    h.tick(10)
+    gain = next(r["owner"] for r in h.observe()["resources"] if r["resource_id"] == GAIN)
+    assert gain["kind"] == "unowned" and len(reported) == 1
