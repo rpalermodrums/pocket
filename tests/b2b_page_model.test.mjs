@@ -180,4 +180,25 @@ test("the hand-back pad sends in order and spaced, says how long it was held, an
   await pad.settled();
   assert.deepEqual(values().at(-1), [0, {held_ms: 700}]);
   assert.equal(pad.release(), false);  // a second release without a press sends nothing
+
+  // Two presses in line behind a stalled request: a Stop cancels both, not just the one held now.
+  const stalled = {open: null};
+  const late = [];
+  const gated = (message, extra) => {
+    late.push([message[2], extra]);
+    return late.length === 1 ? new Promise(done => { stalled.open = done; }) : Promise.resolve();
+  };
+  const line = padControl(gesture, gated, () => clock.now, sleep);
+  line.press();
+  clock.now += 700;
+  line.release();
+  line.press();
+  line.noteReduction("/api/panic", {});
+  clock.now += 700;
+  line.release();
+  await Promise.resolve();
+  stalled.open();
+  await line.settled();
+  assert.deepEqual(late.filter(([value]) => value === 0).map(([, extra]) => extra),
+                   [{held_ms: 700, cancelled: true}, {held_ms: 700, cancelled: true}]);
 });

@@ -152,7 +152,8 @@ export function rawMessage(message, value) {
 // ``send(message, extra)`` and ``sleep(ms)`` return promises.
 export function padControl(gesture, send, now, sleep) {
   const gap = (gesture.debounce_ms || 30) + 20;
-  const state = {down: false, at: 0, press: 0, unsent: 0, last: -Infinity, queue: Promise.resolve()};
+  const state = {down: false, at: 0, press: 0, last: -Infinity, queue: Promise.resolve()};
+  const unsent = new Set();  // presses lifted on this page whose release hasn't gone out yet
   const cancelled = new Set();
   const scope = new Set(gesture.scope || []);
   const inOrder = make => (state.queue = state.queue.then(async () => {
@@ -174,9 +175,10 @@ export function padControl(gesture, send, now, sleep) {
       if (!state.down) return false;
       const press = state.press;
       const held = Math.min(600000, Math.max(0, Math.round(now() - state.at)));
-      Object.assign(state, {down: false, unsent: press});
+      state.down = false;
+      unsent.add(press);
       inOrder(() => {
-        if (state.unsent === press) state.unsent = 0;
+        unsent.delete(press);
         // Decided as it goes out, so a Stop clicked after lifting the pad still counts.
         return [rawMessage(gesture.message, gesture.release_value),
                 cancelled.delete(press) ? {held_ms: held, cancelled: true} : {held_ms: held}];
@@ -184,11 +186,11 @@ export function padControl(gesture, send, now, sleep) {
       return true;
     },
     noteReduction(path, fields) {
-      const press = state.down ? state.press : state.unsent;
-      if (!press) return;
       const resources = fields && fields.resources;
       const covers = resources === "all" || (Array.isArray(resources) && resources.some(r => scope.has(r)));
-      if (path === "/api/panic" || (path === "/api/holds" && covers)) cancelled.add(press);
+      if (path !== "/api/panic" && !(path === "/api/holds" && covers)) return;
+      for (const press of unsent) cancelled.add(press);  // every press whose release is still in line
+      if (state.down) cancelled.add(state.press);
     },
     settled: () => state.queue,
   };
