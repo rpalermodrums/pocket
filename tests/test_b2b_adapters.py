@@ -2,6 +2,8 @@
 """b2b adapter profiles and the synthetic two-deck mixer. No device, thread or broker is used."""
 from __future__ import annotations
 
+import re
+
 import pytest
 from b2b_harness import MS, Harness, RecordingSink
 
@@ -142,23 +144,38 @@ def _unqualified_input_names_a_resource(p):
     _input(p, "controller/synthetic/headphone-level")["address"] = "synthetic/left/track-gain"
 
 
-@pytest.mark.parametrize("mutate, gate", [
-    (_unknown_top_field, None), (_unknown_descriptor_field, None), (_alias_to_unknown, None),
-    (_alias_equals_canonical, None), (_message_twice, None), (_gesture_on_a_control_message, None),
-    (_unbound_gesture_input, None), (_two_conflict_groups, None), (_two_yield_groups, None),
-    (_group_names_undeclared, None), (_motorized, None), (_soft_takeover, "b2b_soft_takeover"),
-    (_monitor_exemption, "b2b_monitor_exemption"), (_short_long_press, None), (_zero_debounce, None),
-    (_unbounded_hold, None), (_zero_step, None), (_native, "b2b_serato_adapter"),
-    (_partial_conflict_scope, None),
-    (_range_on_a_toggle, None), (_one_view_shared_bus, None), (_binding_outside_a_group, None),
-    (_encoding_for_another_kind, None), (_unqualified_input_names_a_resource, None),
+@pytest.mark.parametrize("mutate, gate, match", [
+    (_unknown_top_field, None, "exactly the pocket.b2b-adapter-profile/v1 fields"),
+    (_unknown_descriptor_field, None, "exactly the descriptor fields"),
+    (_alias_to_unknown, None, "names an undeclared resource"),
+    (_alias_equals_canonical, None, "repeats a canonical resource id"),
+    (_message_twice, None, "is mapped twice"),
+    (_gesture_on_a_control_message, None, "needs its own message"),
+    (_unbound_gesture_input, None, "have no gesture binding"),
+    (_two_conflict_groups, None, "in two conflict_groups"),
+    (_two_yield_groups, None, "in two yield_groups"),
+    (_group_names_undeclared, None, "names undeclared resource"),
+    (_motorized, None, "is motorized"),
+    (_soft_takeover, "b2b_soft_takeover", "unqualified pickup policy"),
+    (_monitor_exemption, "b2b_monitor_exemption", "unqualified classification"),
+    (_short_long_press, None, "A long press lasts at least 300 ms"),
+    (_zero_debounce, None, "debounce_ms must be"),
+    (_unbounded_hold, None, "max_hold_ms must be"),
+    (_zero_step, None, "step interval_ms must be"),
+    (_native, "b2b_serato_adapter", "runs only the synthetic adapter"),
+    (_partial_conflict_scope, None, "must cover whole conflict groups"),
+    (_range_on_a_toggle, None, "so it has no range"),
+    (_one_view_shared_bus, None, "shared_bus views must list"),
+    (_binding_outside_a_group, None, "can be a binding"),
+    (_encoding_for_another_kind, None, "can't move a relative control"),
+    (_unqualified_input_names_a_resource, None, "is unqualified, so it can't name a resource"),
 ])
 def test_profile_validation_refuses_conflicting_aliases_duplicate_messages_and_unqualified_features(
-        mutate, gate):
+        mutate, gate, match):
     profile = synthetic_profile()
     validate_profile(profile)
     mutate(profile)
-    with pytest.raises(PocketError) as raised:
+    with pytest.raises(PocketError, match=re.escape(match)) as raised:  # the rule this row is about
         validate_profile(profile)
     assert raised.value.code == "unsupported_profile"
     assert valid_hint(raised.value.hint)

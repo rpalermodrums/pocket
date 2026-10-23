@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  ackPayload, eventLine, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage, remainingMs, requestId,
-  shouldAck, tokenFromHash, waitingReason,
+  ackPayload, eventLine, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage,
+  remainingMs, requestId, seconds, shouldAck, tokenFromHash, waitingReason,
 } from "../src/pocket_music/web/b2b/b2b-model.mjs";
 
 test("owners read as words", () => {
@@ -83,4 +83,19 @@ test("panel messages and request ids are exact", () => {
   // A relative jog sends two's complement.
   assert.deepEqual(rawMessage({type: "cc", channel: 1, number: 33}, -4), [0xb0, 33, 124]);
   assert.equal(requestId(new Uint8Array([0, 15, 255])), "page-000fff");
+});
+
+test("long countdowns read in minutes, and a move's steps read as one line", () => {
+  assert.equal(seconds(2400), "2.4 s");
+  assert.equal(seconds(1732400), "28 min 52 s");
+  assert.equal(seconds(3900000), "1 h 5 min");
+  assert.equal(seconds(null), "–");
+  const step = (n, request) => ({type: "step_admitted", request_id: request,
+                                 resource: "synthetic/right/gain", step: n, count: 3});
+  const done = {type: "action_completed", outcome: "verified", resource: "synthetic/right/gain"};
+  assert.deepEqual(eventLines([{type: "page_attached"}, step(1, "a"), step(2, "a"), step(3, "a"), done,
+                               step(1, "b")]),
+                   ["This page attached", "Agent move on synthetic/right/gain: 3 of 3 steps sent",
+                    "Agent move verified on synthetic/right/gain",
+                    "Agent move on synthetic/right/gain: 1 of 3 steps sent"]);
 });

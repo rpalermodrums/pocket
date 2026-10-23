@@ -67,11 +67,13 @@ line, and whoever reads that output holds the right it carries. This is a speed
 bump, not a guarantee; if the agent starts the host itself, it can read the address
 too, and the boundary is gone.
 
-If you reload the page, it comes back locked. **Stop agent control**, **Hold** and
-**Deny** keep working, and so do **Take it back** and **Revoke**, because they can
-only take authority away. Acknowledging notices, inviting and issuing need the
-address from the terminal again, and no new move can start until you reopen it.
-Any local program that can reach the port can trigger those reductions too.
+If you reload the page, it comes back locked. **Stop agent control**, **Hold every
+control**, **Deny**, **Take it back** and **Revoke** keep working, because they can only
+take authority away. Everything else needs the address from the terminal again:
+acknowledging notices, inviting, issuing, **Release**, **Accept**, **Shorten**,
+**Turn off proactive claims** and the synthetic controller. No new move can start
+until you reopen it. Any local program that can reach the port can trigger those
+reductions too.
 
 Ctrl-C stops the host. Every agent grant ends first, and the decks keep playing.
 The runtime folder keeps `connection.json` and `journal.ndjson`; keep runtime
@@ -100,8 +102,9 @@ pocket b2b prepare --spec prepare.json --output private/b2b-session
 
 Preparing grants nothing. `human_reserved` controls start as yours (holding), and
 the agent can never undo that. A `proposed_policy` becomes a proposal on your page,
-waiting for you to read it. Each host holds one session; a second, different
-prepare is refused. The new session folder holds a sealed `b2b.json`, with no
+waiting for you to read it. If the agent changed any session setting, such as a
+timeout, the page says which, next to its default. Each host holds one session; a
+second, different prepare is refused. The new session folder holds a sealed `b2b.json`, with no
 token or nonce in it. Every other provider takes that `session_dir`.
 
 ## Hand the right deck back
@@ -136,28 +139,32 @@ each has been idle for the interval you chose. The agent can only propose one: a
 agent call to `b2b_authorize` always comes back refused, with
 `authority_issuer_required` and the proposal attached. You issue it on the page.
 
-Press **Review** on the proposal. The page shows the exact lines you would allow,
-for example:
+Press **Review** on the proposal. The page shows the exact lines you would allow.
+For the proposal above they begin:
 
-- May claim these controls once each has been idle for 4.0 s: Right deck gain (40–110), Right deck filter (0–127).
-- Moves allowed: set, ramp. Each claim lasts at most 3.0 s.
+- May claim these controls once each has been idle for 4.0 s: Right deck filter (0–127), Right deck gain (40–110).
+- Moves allowed on those claims: set, ramp. Each one lasts at most 3.0 s.
+- Controls you invite aren't bound by this permission: an invited claim follows each control's own range and the host's lease limit.
 - Every claim is announced on this page before its first move. If this page can't show it in time, nothing is sent.
-- After a refused or denied claim, it waits 5.0 s before trying that control again.
-- Lasts 30 minutes from when you press Issue. Stop agent control or Revoke ends it at once.
+
+A permission governs idle claims only. When the agent proposes a change to the
+permission you already issued, the preview begins by saying that it replaces it, and
+the lines that follow are the whole new permission.
 
 Type your name and press **Issue**. Your name and note are recorded as written; they
 don't sign anything. The page issues exactly the lines you read, or refuses if the
 proposal changed underneath you.
 
 While a permission is active, every claim under it still needs a visible page and
-its own notice, and still loses to your touch. A refused or denied claim starts the
-cooldown on those controls, so a busy control can't fill your page with notices.
+its own notice, and still loses to your touch. A claim refused because you were using
+the control, one you deny and one you take back all start the cooldown on those
+controls, so a busy control can't fill your page with notices.
 **Turn off proactive claims** and **Shorten** narrow the permission; **Revoke** and
 **Stop agent control** end it.
 
-A permission ends, and never comes back by itself, when the controller reconnects,
-the master route returns, the writer restarts, the computer wakes from sleep or the
-host restarts. Press **Issue again** to review the same lines and issue a new one.
+A permission ends, and never comes back by itself, when the controller or the master
+route drops or returns, the writer restarts, the computer sleeps or the host restarts.
+Press **Issue again** to review the same lines and issue a new one.
 
 ## Moves and outcomes
 
@@ -178,7 +185,7 @@ The receipt's `outcome` says what happened:
 
 | Outcome | Receipt status | Meaning |
 |---|---|---|
-| `verified` | `ok` | Every step went out and the control read the final value back. |
+| `verified` | `ok` | Every step went out and the control read back the final value, within 2 for a fader. |
 | `dispatched_unverified` | `ok` | Every step went out; no readback confirmed the final value. |
 | `partially_dispatched` | `partial` | Some steps went out, then it stopped. `last_step` says how far. |
 | `cancelled_before_dispatch` | `cancelled` | Nothing went out. `reason` says why. |
@@ -186,7 +193,9 @@ The receipt's `outcome` says what happened:
 | `refused` | `conflict` or `needs_input` | Nothing was planned. `code` says why. |
 
 "Verified" means only that the control reported the value back. Nothing here
-listens to the music, and nothing judges whether a move sounded right.
+listens to the music, and nothing judges whether a move sounded right. A step that
+already went out keeps its own outcome even if your touch or Stop ends the grant
+while its acknowledgement is still on the way.
 
 ## When a fader doesn't match: pickup
 
@@ -194,7 +203,8 @@ The synthetic faders are not motorized. When the agent lets go of a fader it mov
 the fader may still sit somewhere else. The page then shows both values, such as
 "Fader 98, software 40", and the control waits for you. Touch the fader (the jump
 from software to fader position is recorded) or press **Accept** on the page. Until
-then nobody can claim it. This version has explicit pickup only.
+then nobody can claim it, and **Hold** leaves it waiting for pickup rather than hiding
+the mismatch. This version has explicit pickup only.
 
 ## When b2b says no
 
@@ -204,13 +214,15 @@ Refusals are recorded receipts with a `code`, and each comes with a next step:
 |---|---|
 | `authority_issuer_required` | Ask the person to review the proposal on the page. |
 | `notice_destination_unavailable` | Ask the person to open the page link from the host terminal and keep it visible. |
-| `human_active`, `gesture_in_progress` | Wait until `retry_not_before_monotonic_ns`, then observe and claim with a new request ID. |
+| `human_active` | Wait until `retry_not_before_monotonic_ns`, then observe and claim with a new request ID. |
+| `gesture_in_progress` | The person is pressing a pad. Observe until gestures read idle, then claim with a new request ID. |
 | `resource_held_by_human` | Don't claim it. It stays held until the person releases it. |
 | `classification_uncertain`, `claim_cooldown` | Retry after `retry_not_before_monotonic_ns`. |
 | `pickup_unsettled` | The person settles it on the page; nothing the agent sends can. |
 | `permission_not_active`, `permission_scope`, `proactive_not_permitted` | Observe and use the current permission, or ask for an invitation. |
 | `baseline_unknown`, `state_unknown`, `evidence_stale` | Observe first. A ramp on a control with no readback needs a `set` first. |
-| `journal_unavailable`, `adapter_unavailable`, `resource_unavailable` | Observe, and wait for the person to restart the host. |
+| `adapter_unavailable`, `resource_unavailable` | Observe, and wait for the controller or master route to return; then claim again in the new epoch. |
+| `journal_unavailable` | Observe, and wait for the person to start a new host. |
 
 Mistakes in the request itself are errors, not receipts: a wrong field or type is
 `invalid_arguments`, a name that isn't declared is `unsupported_profile` (the hint
@@ -232,15 +244,18 @@ up the request ID. See [contracts and errors](contracts.md#opt-in-machine-errors
   permission end, and every observation goes stale. The host checks for a sleep at
   every entry, so the first call after waking already sees it. See
   [time has more than one clock](concepts.md#time-has-more-than-one-clock).
-- **The journal is full or failed.** Agent control stops and the page says so. Your
-  controls, holds and Stop keep working. Restart the host with a new runtime folder.
+- **The journal is full or failed.** Agent control stops and the page says so.
+  Touching your controls, Hold and Stop keep working; releasing a hold or accepting a
+  pickup waits for a new host. Restart the host with a new runtime folder.
 - **The host stopped.** Calls to the old session fail with `io_error`.
   `b2b_request_status` still answers from the old journal: `complete` with its
   receipt, `stopped_before_dispatch` when nothing was admitted, or `outcome_unknown`
   when a step was admitted. A new host starts with no grants and no permission.
 - **What the journal survives.** It is written before each step goes out and synced
-  before each answer, so it keeps outcomes through a host crash. It makes no claim
-  about a power loss or an operating system crash.
+  before the host answers each change, so it keeps outcomes through a host crash. It
+  makes no claim about a power loss or an operating system crash. If the journal can't
+  be read in full, `b2b_request_status` says `outcome_unknown` rather than claiming
+  nothing was sent.
 
 ## Providers
 
@@ -259,9 +274,10 @@ JSON; `pocket b2b-observe --spec …` and the other flat commands work too.
 | `b2b_events` | `b2b events` | Sequenced events after a cursor |
 | `b2b_request_status` | `b2b request-status` | Inspect a retained request, even after the host stops |
 
-Mutations return [receipts](concepts.md#stores-artifacts-and-handles) and take a
-`request_id`, reused only to retry the same request, as everywhere in
-[Pocket](concepts.md#nothing-is-overwritten). Using b2b from an assistant works as in
+Mutations return [receipts](concepts.md#stores-artifacts-and-handles). All but
+`b2b_prepare` take a `request_id`, reused only to retry the same request, as everywhere
+in [Pocket](concepts.md#nothing-is-overwritten); an identical `b2b_prepare` retry
+returns the same session. Using b2b from an assistant works as in
 [Use Pocket with an agent](agents.md).
 
 ## What this version establishes
@@ -274,8 +290,8 @@ Mutations return [receipts](concepts.md#stores-artifacts-and-handles) and take a
   a test clock: a touch stops the next step, an expiry wins over a due step, a late
   acknowledgement never produces a step. They measure no latency and run no soak, so
   no timing target is stated here as a result.
-- **Gated next steps.** `capabilities_list(domain="collaboration")` lists what is not
-  available yet: Serato control, Listen evidence, an instrument extension, a
+- **Gated next steps.** `capabilities_list(domain="collaboration")` lists, across its
+  pages, what is not available yet: Serato control, Listen evidence, an instrument extension, a
   monitoring exemption, soft takeover and a programmatic issuer. Each is
   [explicitly closed](concepts.md#profiles-limits-and-refusals) until it is qualified.
 - **A local boundary.** The page and the agent socket protect a local boundary only.

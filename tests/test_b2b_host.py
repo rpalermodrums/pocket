@@ -10,6 +10,7 @@ from __future__ import annotations
 import http.client
 import io
 import json
+import re
 import shutil
 import socket
 import socketserver
@@ -45,7 +46,7 @@ def _host(tmp_path, socket_parent, name="runtime") -> B2bHost:
     try:
         host = B2bHost(tmp_path / name, clock=TestClock(START_NS), scheduler=False,
                        socket_parent=socket_parent)
-    except PermissionError as error:
+    except OSError as error:  # PermissionError included: sandboxed runs may refuse the binds
         pytest.skip(f"Sockets are not available here: {error}")
     host.start()
     return host
@@ -142,8 +143,6 @@ def raw_rpc(host: B2bHost, message) -> dict:
         return json.loads(stream.makefile("rb").readline())
 
 
-# Runtime dir and the page link --------------------------------------------------------------------
-
 def test_host_refuses_an_existing_runtime_dir(tmp_path, socket_parent):
     (tmp_path / "runtime").mkdir()
     with pytest.raises(PocketError) as caught:
@@ -173,7 +172,7 @@ def test_page_link_goes_to_the_terminal_or_requires_the_piped_stdout_flag(tmp_pa
     try:
         code = main(["--runtime-dir", str(tmp_path / "tty")], open_tty=lambda: terminal, stdout=out,
                     stderr=err, wait=lambda host: None)
-    except PermissionError as error:
+    except OSError as error:
         pytest.skip(f"Sockets are not available here: {error}")
     assert code == 0 and "Open the b2b page: http://127.0.0.1:" in terminal.text and "/#k=" in terminal.text
     started = json.loads(out.getvalue())
@@ -223,7 +222,25 @@ def test_page_token_appears_in_no_file_receipt_event_or_journal(host, tmp_path):
     assert host.nonce.encode() not in journal  # the nonce lives only in the private connection.json
 
 
-# The agent socket ----------------------------------------------------------------------------------
+def test_inputs_carrying_a_host_secret_are_refused_before_anything_is_recorded(host, tmp_path):
+    # The agent can read the nonce and fetch the public CSRF token; echoing either back must not reach the
+    # journal.
+    attach(host)
+    session = prepare(host, tmp_path)
+    observed = b2b.b2b_observe(session)
+    public_csrf = http_call(host, "GET", "/api/public")[1]["csrf_token"]
+    claim = {**triple(observed), "resources": [GAIN],
+             "basis": {"kind": "invitation", "invitation_id": "i-0000000000000000"}, "lease_ms": 3000,
+             "not_after_monotonic_ns": observed["monotonic_ns"] + 5000 * MS}
+    for request_id, reason in ((host.nonce, "shape the level"), ("claim-1", f"echo {public_csrf}")):
+        with pytest.raises(PocketError) as caught:
+            b2b.b2b_claim(session, request_id, reason=reason, **claim)
+        assert caught.value.code == "invalid_arguments" and "host secret" in str(caught.value)
+    entries = [json.loads(line) for line in (host.runtime_dir / "journal.ndjson").read_text().splitlines()]
+    assert not [e for e in entries if e["kind"] == "request_started"]
+    retried = b2b.b2b_claim(session, "claim-1", reason="shape the level", **claim)
+    assert retried["outcome"]["kind"] == "refused"  # the request_id was not used up
+
 
 def test_agent_socket_rejects_nonce_mismatch_unknown_ops_and_trusted_operations(host):
     wrong = raw_rpc(host, {"op": "observe", "nonce": "0" * 48, "session_id": "x"})
@@ -269,7 +286,10 @@ def test_rpc_errors_keep_their_code_and_hint(host, tmp_path, socket_parent):
                       reason="x", lease_ms=3000, not_after_monotonic_ns=observed["monotonic_ns"] + MS)
     assert caught.value.code == "stale_revision" and "b2b_observe" in caught.value.hint
     silent_path = str(Path(socket_parent) / "silent.sock")
-    server = socketserver.ThreadingUnixStreamServer(silent_path, _SilentHandler)
+    try:
+        server = socketserver.ThreadingUnixStreamServer(silent_path, _SilentHandler)
+    except OSError as error:
+        pytest.skip(f"Sockets are not available here: {error}")
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         fake = _fake_session(tmp_path, silent_path)
@@ -288,8 +308,6 @@ def test_rpc_errors_keep_their_code_and_hint(host, tmp_path, socket_parent):
         b2b.b2b_release(gone, "release-2", "hfake.1", 0, "0" * 64, "g-" + "0" * 32)
     assert caught.value.code == "io_error" and "did not receive this request" in caught.value.hint
 
-
-# The trusted page ------------------------------------------------------------------------------------
 
 def test_trusted_page_operations_validate_without_a_socket(tmp_path):
     h = Harness(tmp_path)
@@ -373,15 +391,22 @@ def test_reduce_only_routes_work_after_a_reload_without_the_issuer_token(host, t
     assert stopped["outcome"]["kind"] == "panic" and host.adapter.sent_count == sent
 
 
+def _code_only(source: str) -> str:
+    """JavaScript with comments and string or template literals removed, for declaration checks."""
+    return re.sub(r"/\*.*?\*/|//[^\n]*|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", " ",
+                  source, flags=re.DOTALL)
+
+
 def test_page_assets_use_text_content_const_and_strip_the_fragment():
+    assert re.search(r"\b(let|var)\b", _code_only("for (let i = 0;;) {let x}"))  # the check can fail
+    assert not re.search(r"\b(let|var)\b", _code_only('const a = "let it be"; // var'))
     script = (WEB / "b2b.js").read_text()
     model = (WEB / "b2b-model.mjs").read_text()
     html = (WEB / "index.html").read_text()
     for source in (script, model):
         assert "innerHTML" not in source and "outerHTML" not in source and "insertAdjacentHTML" not in source
         assert "document.write" not in source and "eval(" not in source
-        assert not any(line.lstrip().startswith(("let ", "var ")) or " let " in line or " var " in line
-                       for line in source.splitlines())
+        assert not re.search(r"\b(let|var)\b", _code_only(source))
         assert "https://" not in source and "http://" not in source  # no external resources
     assert "textContent" in script and 'history.replaceState(null, "", location.pathname)' in script
     assert script.index("tokenFromHash(location.hash)") < script.index("history.replaceState")
@@ -405,8 +430,6 @@ def test_socket_path_falls_back_to_tmp_and_refuses_when_too_long(tmp_path):
     assert caught.value.code == "io_error" and "TMPDIR" in caught.value.hint
     assert list(long_parent.iterdir()) == []
 
-
-# Restart and the whole workflow ----------------------------------------------------------------------
 
 def test_restart_never_inherits_authority(tmp_path, socket_parent):
     first = _host(tmp_path, socket_parent, "run-1")
@@ -447,7 +470,7 @@ def test_restart_never_inherits_authority(tmp_path, socket_parent):
 
 def _act_in_thread(*args, **kwargs):
     box = {}
-    thread = threading.Thread(target=lambda: box.update(result=b2b.b2b_act(*args, **kwargs)))
+    thread = threading.Thread(target=lambda: box.update(result=b2b.b2b_act(*args, **kwargs)), daemon=True)
     thread.start()
     return thread, box
 
@@ -532,3 +555,89 @@ def test_end_to_end_handback_proactive_and_stop_over_socket_and_page(host, tmp_p
     status = b2b.b2b_request_status(session, "act-2")
     assert status["state"] == "complete" and status["receipt"]["outcome"]["kind"] == "verified"
     assert status["redispatched"] is False and host.adapter.sent_count == sent
+
+
+def test_host_faults_keep_a_code_that_says_what_the_agent_should_do(host, tmp_path, monkeypatch):
+    attach(host)
+    session = prepare(host, tmp_path)
+    session_id = json.loads((Path(session) / "b2b.json").read_text())["session_id"]
+
+    def broken(*_args):
+        raise RuntimeError("a host bug")
+
+    monkeypatch.setattr(host.broker, "claim", broken)
+    monkeypatch.setattr(host.broker, "observe", broken)
+    mutation = raw_rpc(host, {"op": "claim", "nonce": host.nonce, "session_id": session_id, "request": {}})
+    assert mutation["code"] == "request_not_complete" and "b2b_request_status" in mutation["hint"]
+    read = raw_rpc(host, {"op": "observe", "nonce": host.nonce, "session_id": session_id})
+    assert read["code"] == "invalid_request" and "nothing changed" in read["hint"]
+
+
+def test_writes_fsync_outside_the_broker_lock_and_report_a_failed_sync(host, tmp_path, monkeypatch):
+    attach(host)
+    session = prepare(host, tmp_path)
+    held = []
+    real = host.journal._fsync
+
+    def spy(fd):
+        held.append(host.broker._lock.locked())
+        real(fd)
+
+    monkeypatch.setattr(host.journal, "_fsync", spy)
+    observed = b2b.b2b_observe(session)
+    b2b.b2b_revoke(session, "revoke-1", **triple(observed), target={"kind": "all_own_authority"})
+    public(host, "/api/holds", {"request_id": "page-hold", "resources": [FILTER]})  # the page syncs too
+    assert held == [False, False]
+    monkeypatch.setattr(host.journal, "sync", lambda: "failed")
+    observed = b2b.b2b_observe(session)
+    late = b2b.b2b_revoke(session, "revoke-2", **triple(observed), target={"kind": "all_own_authority"})
+    assert late["warnings"][-1].startswith("journal_sync_failed")
+
+
+def test_a_stopping_host_still_answers_reads_but_refuses_changes(host, tmp_path):
+    attach(host)
+    session = prepare(host, tmp_path)
+    observed = b2b.b2b_observe(session)
+    b2b.b2b_revoke(session, "revoke-1", **triple(observed), target={"kind": "all_own_authority"})
+    host._closing.set()  # the first thing stop() does
+    status = b2b.b2b_request_status(session, "revoke-1")
+    assert (status["source"], status["host_running"], status["state"]) == ("host", True, "complete")
+    with pytest.raises(PocketError) as caught:
+        b2b.b2b_revoke(session, "revoke-2", **triple(observed), target={"kind": "all_own_authority"})
+    assert caught.value.code == "io_error" and "stopping" in str(caught.value)
+
+
+class _RefusingHandler(socketserver.StreamRequestHandler):
+    def handle(self):
+        self.rfile.readline()
+        self.wfile.write(b'{"status":"error","error":"broken","code":"invalid_request","hint":null}\n')
+
+
+def test_request_status_reads_the_journal_when_the_host_cannot_answer(tmp_path, socket_parent):
+    path = str(Path(socket_parent) / "refusing.sock")
+    try:
+        server = socketserver.ThreadingUnixStreamServer(path, _RefusingHandler)
+    except OSError as error:
+        pytest.skip(f"Sockets are not available here: {error}")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        session = _fake_session(tmp_path, path)
+        runtime = Path(json.loads((Path(session) / "b2b.json").read_text())["runtime_dir"])
+        (runtime / "journal.ndjson").write_bytes(b"")
+        status = b2b.b2b_request_status(session, "act-1")
+        assert (status["source"], status["state"], status["host_error"]) == ("retained_journal", "not_found",
+                                                                             "invalid_request")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_prepare_leaves_no_folder_when_the_host_cannot_be_reached(tmp_path, socket_parent):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "connection.json").write_text(json.dumps({
+        "schema": "pocket.b2b-connection/v1", "socket": str(Path(socket_parent) / "none.sock"),
+        "nonce": "n" * 48, "host_epoch": "hgone"}))
+    with pytest.raises(PocketError) as caught:
+        b2b.b2b_prepare(str(runtime), str(tmp_path / "session"))
+    assert caught.value.code == "io_error" and not (tmp_path / "session").exists()

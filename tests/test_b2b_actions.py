@@ -9,6 +9,7 @@ cancellation boundaries; none of them measures latency.
 from __future__ import annotations
 
 import itertools
+import os
 import threading
 from dataclasses import replace
 
@@ -83,6 +84,16 @@ def _until(h: Harness, run, limit_ms=5000) -> dict:
     raise AssertionError("the act did not finish")
 
 
+def _parked(broker, count: int = 1) -> None:
+    """Bounded wait until a thread waits on ``broker.changed``, so a missing notify can't pass by chance."""
+    for _ in range(5000):
+        with broker.changed:
+            if len(broker.changed._waiters) >= count:
+                return
+        threading.Event().wait(0.001)
+    raise AssertionError("the waiter never started waiting")
+
+
 def _after_steps(h: Harness, run, count: int) -> None:
     """Tick until ``count`` steps of this run were submitted (at most one per 50 ms)."""
     for _ in range(count * 10):
@@ -91,8 +102,6 @@ def _after_steps(h: Harness, run, count: int) -> None:
         h.tick(10)
     raise AssertionError(f"only {len(h.adapter.sent())} steps were sent")
 
-
-# Planning, outcomes and evidence ---------------------------------------------------------------
 
 def test_set_with_numeric_readback_is_verified_by_control_readback_only(tmp_path):
     h = _harness(tmp_path / "fresh")
@@ -369,7 +378,8 @@ class _SpyAdapter(SyntheticAdapter):
         self.held.append(self.broker._lock_owner == threading.get_ident() and self.broker._lock.locked())
         if self.thread is None:
             raw = [0xB1, 19, 90]  # channel-2 trim from another thread, while this step is in submit
-            self.thread = threading.Thread(target=lambda: (self.started.set(), self.inject_message(raw)))
+            self.thread = threading.Thread(target=lambda: (self.started.set(), self.inject_message(raw)),
+                                           daemon=True)
             self.thread.start()
             assert self.started.wait(5)
         return super().submit(step, admission)
@@ -484,8 +494,9 @@ def test_one_act_is_one_bounded_move_and_a_concurrent_act_on_the_grant_is_refuse
                 woke.set()
                 return
 
-    waiter = threading.Thread(target=wait)
+    waiter = threading.Thread(target=wait, daemon=True)
     waiter.start()
+    _parked(h.broker)  # so only a notify on the completing tick can wake it
     h.tick(20)
     assert woke.wait(5) and got[0]["outcome"]["kind"] == "verified"
     waiter.join(5)
@@ -499,8 +510,10 @@ def test_claim_ack_act_succeeds_with_the_claim_receipts_triple(tmp_path):
     receipt = _claim(h)
     cursor = h.broker.last_event_sequence
     woke = threading.Event()
-    waiter = threading.Thread(target=lambda: h.broker.wait_for_event(cursor, 30) > cursor and woke.set())
+    waiter = threading.Thread(target=lambda: h.broker.wait_for_event(cursor, 30) > cursor and woke.set(),
+                              daemon=True)
     waiter.start()
+    _parked(h.broker)
     assert h.ack(receipt["notice"])["accepted"]
     assert woke.wait(5)  # the page long-poll woke on the ack
     waiter.join(5)
@@ -527,8 +540,6 @@ def test_ack_before_the_deadline_admits_the_first_step(tmp_path):
     assert len(h.adapter.sent()) == 1  # admitted in the ack's own critical section, before any tick
     assert h.broker.act_result(run)["outcome"]["kind"] == "verified"
 
-
-# The notice gate --------------------------------------------------------------------------------
 
 def test_never_fetched_notice_is_delivery_unknown_and_cancelled_before_dispatch(tmp_path):
     h = _harness(tmp_path / "page")
@@ -689,8 +700,6 @@ def test_claim_is_refused_without_an_attached_visible_page(tmp_path):
     assert h.observe()["notices"] == []
 
 
-# Receipts and the adapter contract ---------------------------------------------------------------
-
 _CLOSED_STATUSES = {"ok", "needs_input", "unsupported", "conflict", "cancelled", "partial", "failed",
                     "outcome_unknown"}
 
@@ -704,7 +713,7 @@ def test_receipt_statuses_follow_the_outcome_table(tmp_path):
     run = h.act_begin(gid, RAMP)
     h.ack(granted["notice"])
     _after_steps(h, run, 2)
-    statuses["narrowed_or_released"] = h.broker.release(h.session_id, {
+    statuses["released"] = h.broker.release(h.session_id, {
         "request_id": h.request_id(), **h.triple(), "grant_id": gid})["status"]
     statuses["partially_dispatched"] = h.broker.act_result(run)["status"]
     pickup = h.claim([GAIN], h.invitation_basis(h.invite([GAIN])))  # the moved gain awaits pickup
@@ -721,6 +730,11 @@ def test_receipt_statuses_follow_the_outcome_table(tmp_path):
     unverified = h.act(gid, {"kind": "set", "resource": FILTER, "value": 60})
     statuses["dispatched_unverified"] = unverified["status"]
     assert unverified["uncertainty"] == [UNCERTAIN]
+    pair = _claim(h, ("synthetic/left/filter", "synthetic/left/transport"))["grant"]["grant_id"]
+    narrowed = h.broker.release(h.session_id, {"request_id": h.request_id(), **h.triple(), "grant_id": pair,
+                                               "resources": ["synthetic/left/filter"]})
+    assert narrowed["outcome"]["kind"] == "narrowed"
+    statuses["narrowed"] = narrowed["status"]
     statuses["revoked"] = h.broker.revoke(h.session_id, {"request_id": h.request_id(), **h.triple(),
                                                          "target": {"kind": "all_own_authority"}})["status"]
     left = "synthetic/left/gain"  # the right gain now waits for pickup again
@@ -730,7 +744,8 @@ def test_receipt_statuses_follow_the_outcome_table(tmp_path):
     statuses["cancelled_before_dispatch"] = blocked["status"]
     h.adapter.block_submit, h.adapter.ack_mode = False, "failed"
     statuses["outcome_unknown"] = h.act(gid, {"kind": "set", "resource": left, "value": 60})["status"]
-    assert statuses == {"granted": "ok", "narrowed_or_released": "ok", "partially_dispatched": "partial",
+    assert statuses == {"granted": "ok", "released": "ok", "narrowed": "ok",
+                        "partially_dispatched": "partial",
                         "pickup_unsettled": "needs_input",
                         "authority_issuer_required": "needs_input", "refused_other": "conflict",
                         "verified": "ok", "dispatched_unverified": "ok", "revoked": "ok",
@@ -773,3 +788,120 @@ def test_sink_called_from_inside_submit_makes_that_step_outcome_unknown(tmp_path
     assert len(adapter.sent()) == 1 and h.observe()["grants"] == []
     h.tick(600)
     assert len(adapter.sent()) == 1  # never retried
+
+
+def test_finishing_a_long_run_never_evicts_it_from_history(tmp_path, monkeypatch):
+    import pocket_music.b2b_broker as broker_module
+
+    monkeypatch.setattr(broker_module, "MAX_RUN_HISTORY", 3)
+    h = _harness(tmp_path)
+    long_grant, short_grant = _granted(h), _granted(h, (FILTER,))
+    run = h.act_begin(long_grant, RAMP)
+    for value in range(5):  # shorter acts finish (and are trimmed) while the ramp still runs
+        h.act(short_grant, {"kind": "set", "resource": FILTER, "value": value})
+    result = _until(h, run)  # used to raise KeyError out of tick() when the ramp finished
+    assert result["outcome"]["kind"] == "verified" and h.broker.act_result(run) == result
+
+
+def test_a_journal_failure_while_draining_is_outcome_unknown(tmp_path):
+    h = _harness(tmp_path, journal_max_bytes=1024 * 1024)
+    gid = _granted(h)
+    h.adapter.ack_mode = "deferred"
+    run = h.act_begin(gid, {"kind": "set", "resource": GAIN, "value": 70})  # submitted, ack still pending
+    h.journal.max_bytes = h.journal.bytes + RESERVE_BYTES
+    h.tick(300)
+    assert h.broker.act_result(run)["outcome"]["kind"] == "outcome_unknown"
+
+
+def test_a_submitted_step_keeps_its_outcome_when_its_grant_ends_during_the_drain(tmp_path):
+    h = _harness(tmp_path)
+    gid = _granted(h, lease_ms=500)
+    h.adapter.ack_mode = "deferred"  # the ack arrives 20 ms after submit
+    h.tick(480)
+    run = h.act_begin(gid, {"kind": "set", "resource": GAIN, "value": 70})
+    h.tick(20)  # the lease ends at 500 ms, as the ack is landing
+    h.tick(300)
+    result = h.broker.act_result(run)
+    assert result["outcome"]["kind"] == "verified" and h.adapter.value(GAIN) == 70
+
+
+def test_after_shutdown_nothing_is_granted_or_dispatched(tmp_path):
+    h = _harness(tmp_path)
+    gid = _granted(h)
+    run = h.act_begin(gid, RAMP)
+    _after_steps(h, run, 2)
+    h.broker.shutdown()
+    assert h.broker.act_result(run)["outcome"]["cancel_reason"] == "host_stopping"
+    for call in (lambda: h.invite([FILTER]),
+                 lambda: h.claim([FILTER], {"kind": "invitation", "invitation_id": "i-0000000000000000"}),
+                 lambda: h.act_begin(gid, {"kind": "set", "resource": GAIN, "value": 70})):
+        with pytest.raises(PocketError) as caught:
+            call()
+        assert caught.value.code == "io_error"
+    h.tick(500)
+    assert len(h.adapter.sent()) == 2
+    assert h.broker.panic({})["outcome"]["kind"] == "panic"  # reductions still apply
+
+
+class _BadSubmission(SyntheticAdapter):
+    """Sends the step, then returns something that is not a Submission."""
+
+    def submit(self, step, admission):
+        submission = super().submit(step, admission)
+        return {"submission_id": submission.submission_id, "ack": "ok"}  # a dict, not a Submission
+
+
+def test_a_malformed_submission_is_outcome_unknown_and_never_resent(tmp_path):
+    h = Harness(tmp_path, broker=False)
+    adapter = _BadSubmission()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000c6")
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    result = h.act(_granted(h), RAMP)
+    assert result["outcome"]["kind"] == "outcome_unknown" and result["steps"]["uncertain_step"] == 1
+    h.tick(600)
+    assert adapter.sent_count == 1 and h.observe()["grants"] == []
+
+
+class _BrokenHealth(SyntheticAdapter):
+    broken = False
+
+    def health(self):
+        return {"dependencies": None} if self.broken else super().health()
+
+
+def test_unreadable_adapter_health_refuses_or_stops_with_a_reason(tmp_path):
+    h = Harness(tmp_path, broker=False)
+    adapter = _BrokenHealth()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000c7")
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    gid = _granted(h)
+    adapter.broken = True
+    refused = h.act(gid, RAMP)
+    assert refused["outcome"] == {"kind": "refused", "code": "adapter_unavailable",
+                                  "detail": "The adapter's health could not be read"}
+    adapter.broken = False
+    run = h.act_begin(gid, RAMP)
+    _after_steps(h, run, 2)
+    adapter.broken = True
+    stopped = _until(h, run)
+    assert stopped["outcome"]["cancel_reason"] == "evidence_stale"
+    assert stopped["warnings"] == ["evidence_stale: The adapter's health could not be read"]
+
+
+def test_verified_needs_its_readback_journaled(tmp_path):
+    failing = {"on": False}
+
+    def writer(fd, data):
+        if failing["on"] and b'"kind":"readback"' in data:
+            raise OSError(28, "No space left on device")
+        return os.write(fd, data)
+
+    h = _harness(tmp_path, writer=writer)
+    gid = _granted(h)
+    failing["on"] = True
+    result = h.act(gid, {"kind": "set", "resource": GAIN, "value": 70})
+    assert result["outcome"]["kind"] == "outcome_unknown"  # never verified with no evidence on record

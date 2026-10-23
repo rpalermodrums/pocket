@@ -53,8 +53,8 @@ _STATUS_NEXT = {
                   "send it again with the same request_id."),
     "stopped_before_dispatch": ("The host stopped before any step of this request was admitted, so nothing "
                                 "was sent. Grants never carry over; prepare a new session on a new host."),
-    "outcome_unknown": ("A step was admitted before the host stopped, so it may have gone out. Never retry "
-                        "it automatically; observe a new host before any move."),
+    "outcome_unknown": ("A step of this request may have gone out, and the journal can't show otherwise. "
+                        "Never retry it automatically; observe a new host before any move."),
 }
 
 
@@ -199,9 +199,15 @@ def b2b_prepare(runtime_dir: str, output_dir: str, settings: B2bSettings | None 
         if value is not None:
             request[name] = value
     _encode(request)
-    registered = _send(_connection(str(runtime)), "register", {"request": request}, mutation=True,
-                       lost_hint=_PREPARE_MAY_HAVE)
+    connection = _connection(str(runtime))
+    # The folder comes first, so a failed register leaves nothing behind and an identical retry works.
     output.mkdir(parents=True, exist_ok=False)
+    try:
+        registered = _send(connection, "register", {"request": request}, mutation=True,
+                           lost_hint=_PREPARE_MAY_HAVE)
+    except BaseException:
+        output.rmdir()
+        raise
     session = {"schema": SESSION_SCHEMA, "session_id": registered["session_id"], "runtime_dir": str(runtime),
                **{k: registered[k] for k in ("host_epoch", "adapter_profile", "mapping_sha256", "settings",
                                              "settings_sha256", "human_reserved", "proposal_id")}}
@@ -258,7 +264,7 @@ def b2b_claim(session_dir: str, request_id: str, expected_session_epoch: str, ex
 def b2b_act(session_dir: str, request_id: str, expected_session_epoch: str, expected_control_revision: int,
             expected_state_sha256: str, grant_id: str, action: B2bAction, not_after_monotonic_ns: int,
             max_evidence_age_ms: int | None = None) -> dict:
-    """One bounded move (set, ramp up to 4 s, nudge or set_state) as 50 ms steps; waits for its outcome.
+    """One bounded move (one step, or 50 ms steps for a ramp of up to 4 s); waits for its outcome.
 
     ``max_evidence_age_ms`` defaults to the session's setting (500 ms unless prepared otherwise).
     """
@@ -304,12 +310,12 @@ def b2b_request_status(session_dir: str, request_id: str) -> dict:
     """Inspect one retained request without redispatch, from the host or, after it stops, its journal."""
     session = _session(session_dir)
     _check_request_id(request_id)
-    host = None
+    host, host_error = None, None
     try:
         host = _call(session, "request_status", {"request_id": request_id}, mutation=False)
     except PocketError as error:
-        if error.code != "io_error":
-            raise
+        # The host is gone or couldn't answer; the retained journal still can, and is read either way.
+        host_error = error.code
     journal_path = Path(session["runtime_dir"]) / "journal.ndjson"
     try:
         retained = read_request(journal_path, request_id)
@@ -329,5 +335,5 @@ def b2b_request_status(session_dir: str, request_id: str) -> dict:
             "receipt_unavailable": unavailable,
             "journal": {"chain": chain["chain"], "last_seq": chain["last_seq"],
                         "bytes_read": chain["bytes_read"]},
-            "redispatched": False, "automatic_retry": False, "durability": "process_crash_only",
-            "next_actions": [_STATUS_NEXT[state]]}
+            "host_error": host_error, "redispatched": False, "automatic_retry": False,
+            "durability": "process_crash_only", "next_actions": [_STATUS_NEXT[state]]}

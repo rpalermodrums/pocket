@@ -42,6 +42,7 @@ MAX_SOCKET_PATH = 100  # bytes; AF_UNIX paths are limited to about 104 on macOS 
 _AGENT_OPS = frozenset({"register", "observe", "claim", "act", "release", "revoke", "authorize", "events",
                         "request_status"})
 _SHAPES = {"register": {"request"}, "observe": {"session_id"}, "request_status": {"session_id", "request_id"}}
+_READS = frozenset({"observe", "events", "request_status"})
 _NEED_TERMINAL = "Start the b2b host from your own terminal; it prints a private page address there."
 _PIPED_WARNING = ("This page address carries the right to issue standing permissions. Whoever reads this "
                   "output holds it.")
@@ -82,6 +83,7 @@ class _AgentHandler(socketserver.StreamRequestHandler):
 
     def handle(self):
         self.request.settimeout(30)
+        message = None
         try:
             raw = self.rfile.readline(MAX_RPC_BYTES + 1)
             if len(raw) > MAX_RPC_BYTES:
@@ -95,10 +97,12 @@ class _AgentHandler(socketserver.StreamRequestHandler):
             response = {"status": "error", "error": str(error), "code": error.code, "hint": error.hint}
         except Exception as error:  # noqa: BLE001 - a host bug is reported to the agent and the terminal
             traceback.print_exc(file=sys.stderr)
+            read = isinstance(message, dict) and message.get("op") in _READS
             response = {"status": "error", "error": f"The b2b host failed: {type(error).__name__}",
-                        "code": "invalid_request",
-                        "hint": ("Call b2b_request_status with this request_id before anything else; the "
-                                 "host may have recorded it.")}
+                        "code": "invalid_request" if read else "request_not_complete",
+                        "hint": ("The b2b host failed while reading; nothing changed. See the host terminal."
+                                 if read else "The b2b host may have recorded this request. Call "
+                                 "b2b_request_status with this request_id before anything else.")}
         self.wfile.write(json.dumps(response, allow_nan=False, separators=(",", ":")).encode() + b"\n")
 
 
@@ -141,8 +145,11 @@ class B2bHost:
                 "mapping_sha256": profile.sha256, "pid": os.getpid(), "adapter": "synthetic"},
                 session_epoch=None)
             self.broker = Broker(self.adapter, self.clock, self.journal, host_epoch=self.host_epoch)
-            self.page = TrustedPage(self.broker, self.broker.trusted_channel(), adapter=self.adapter)
-            self.journal.forbid(self.page.issuer_token, self.page.public_csrf, self.nonce)
+            self.page = TrustedPage(self.broker, self.broker.trusted_channel(), adapter=self.adapter,
+                                    sync=self.journal.sync)
+            host_secrets = (self.page.issuer_token, self.page.public_csrf, self.nonce)
+            self.journal.forbid(*host_secrets)
+            self.broker.forbid_inputs(*host_secrets)
             self.socket_path = self.socket_dir / "agent.sock"
             self._agent_server = _AgentServer(str(self.socket_path), _AgentHandler)
             self._agent_server.host = self
@@ -165,7 +172,8 @@ class B2bHost:
         return self._page_server.origin
 
     def start(self) -> None:
-        targets = [self._agent_server.serve_forever, self._page_server.serve_forever]
+        targets = [lambda: self._agent_server.serve_forever(poll_interval=0.05),
+                   lambda: self._page_server.serve_forever(poll_interval=0.05)]
         if self._scheduler:
             targets.append(self._schedule)
         for target in targets:
@@ -185,10 +193,12 @@ class B2bHost:
                 self.tick()
         except Exception:  # noqa: BLE001 - fail closed: agent control stops and the host exits
             traceback.print_exc(file=sys.stderr)
-            print("b2b host: the scheduler failed, so agent control stopped. Your controls work as before.",
-                  file=sys.stderr, flush=True)
+            print("b2b host: the scheduler failed, so agent control stopped and this host is exiting. Your "
+                  "controls work as before.", file=sys.stderr, flush=True)
             try:
                 self.broker.panic({"request_id": "host-scheduler-failed"})
+            except Exception:  # noqa: BLE001 - the exit below still ends every grant with the process
+                traceback.print_exc(file=sys.stderr)
             finally:
                 self.failed.set()
 
@@ -196,24 +206,27 @@ class B2bHost:
         """End agent authority and pending moves, sync the journal, close both servers."""
         if self._closing.is_set():
             return
-        self._closing.set()
-        started = bool(self._threads)
-        if started:  # shutdown() waits for serve_forever, so only a started server can take it
-            self._page_server.shutdown()
+        self._closing.set()  # agent mutations are refused from here; reads still answer
         self._stop.set()
-        self.broker.shutdown("host_stopping")
-        self.journal.sync()
-        if started:
-            self._agent_server.shutdown()
-        for thread in self._threads:
+        for thread in self._threads[2:]:  # the scheduler: no step is admitted by a tick after this
             thread.join(timeout=5)
-        self._agent_server.server_close()
-        self._page_server.server_close()
-        self.adapter.close()
-        self.journal.close()
-        shutil.rmtree(self.socket_dir, ignore_errors=True)
+        try:
+            self.broker.shutdown("host_stopping")
+        except Exception:  # noqa: BLE001 - keep closing; the process exit ends authority anyway
+            traceback.print_exc(file=sys.stderr)
+        finally:
+            self.journal.sync()
+            if self._threads:  # shutdown() waits for serve_forever, so only a started server can take it
+                self._page_server.shutdown()
+                self._agent_server.shutdown()
+            for thread in self._threads[:2]:
+                thread.join(timeout=5)
+            self._agent_server.server_close()
+            self._page_server.server_close()
+            self.adapter.close()
+            self.journal.close()
+            shutil.rmtree(self.socket_dir, ignore_errors=True)
 
-    # Agent RPC ------------------------------------------------------------------------------------
     def dispatch(self, message) -> dict:
         """The closed agent operation list. Nothing here can ack, invite, hold, issue or inject."""
         if not isinstance(message, dict):
@@ -226,7 +239,7 @@ class B2bHost:
         if op not in _AGENT_OPS:
             raise PocketError("The b2b agent socket has no such operation", code="invalid_request",
                               hint=_OPS_HINT)
-        if self._closing.is_set():
+        if self._closing.is_set() and op not in _READS:
             raise PocketError("This b2b host is stopping", code="io_error", hint=_STOPPING_HINT)
         if set(message) - {"op", "nonce"} != _SHAPES.get(op, {"session_id", "request"}):
             raise PocketError("This b2b request has the wrong fields for its operation",
@@ -246,8 +259,11 @@ class B2bHost:
 
     def _synced(self, result: dict) -> dict:
         # fsync outside the broker lock, before the response leaves the host.
-        self.journal.sync()
-        return result
+        if self.journal.sync() == "ok":
+            return result
+        lost = ("journal_sync_failed: this outcome may not survive a host crash, and agent control has "
+                "stopped.")
+        return {**result, "warnings": [*result.get("warnings", []), lost]}
 
     def _act(self, session_id, request) -> dict:
         """Plan the act, then wait (lock released) until it is terminal, within a real-time bound."""

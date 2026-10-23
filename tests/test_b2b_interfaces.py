@@ -68,6 +68,11 @@ def test_discovery_rows_status_side_effects_and_output_schemas(monkeypatch):
                                             name, "pocket.operation-receipt/v1")
     assert rows["b2b_act"]["side_effects"] == ["synthetic_adapter_controls", "b2b_control_journal"]
     assert rows["b2b_prepare"]["side_effects"] == ["new_local_artifacts", "b2b_host_session"]
+    assert rows["b2b_authorize"]["side_effects"] == ["b2b_policy_proposal", "b2b_control_journal"]
+    assert rows["b2b_claim"]["side_effects"] == ["b2b_authority_grant", "trusted_page_notice",
+                                                 "b2b_control_journal"]
+    for name in ("b2b_release", "b2b_revoke"):
+        assert rows[name]["side_effects"] == ["b2b_authority_reduction", "b2b_control_journal"]
     assert all(rows[name]["side_effects"] == [] for name in READS)
     monkeypatch.setattr(sys, "platform", "win32")
     elsewhere = _rows(domain="collaboration")
@@ -197,9 +202,11 @@ def test_broker_journal_and_adapter_modules_use_only_the_injected_clock():
     for name in ("b2b_broker", "b2b_journal", "b2b_adapters", "b2b_ui"):
         tree = _tree(SRC / f"{name}.py")
         for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in ("now", "utcnow", "today"):
+                # datetime.now() and datetime.datetime.now() both read the wall clock
+                assert "datetime" not in ast.unparse(node.value), f"{name} reads {ast.unparse(node)}"
             if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                 assert node.value.id != "time", f"{name} reads time.{node.attr}"
-                assert not (node.value.id == "datetime" and node.attr in ("now", "utcnow", "today")), name
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 plain = isinstance(node, ast.Import)
                 modules = [alias.name for alias in node.names] if plain else [node.module]

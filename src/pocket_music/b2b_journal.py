@@ -107,7 +107,11 @@ class Journal:
                        "wall_time_utc": self._clock.wall_utc()}
             line = self._line(kind, data, context)
             if any(secret in line for secret in self._forbidden):
-                raise ValueError("A journal entry would contain a host secret; nothing was written")
+                # A host bug, since the broker refuses inputs that carry a secret. Fail closed: nothing is
+                # written, and the journal stops, so agent authority ends at the broker's next entry.
+                self.state = "failed"
+                self.lost_entries += 1
+                raise JournalUnavailable("failed")
             try:
                 if self.bytes + len(line) + 1 <= self.max_bytes - RESERVE_BYTES:
                     return self._write(line)
@@ -235,8 +239,9 @@ def read_request(path, request_id: str, max_bytes: int = READ_LIMIT, channel: st
 
     ``complete`` needs that channel's ``request_completed``; ``outcome_unknown`` means a step was
     admitted (admission is written before the adapter is called) with no completion;
-    ``stopped_before_dispatch`` means the request started and nothing was admitted. The broker
-    writes ``channel`` in both ``request_started`` and ``request_completed``.
+    ``stopped_before_dispatch`` means the request started and nothing was admitted. A broken chain or
+    a read stopped at its bound can't prove "nothing was sent", so those read ``outcome_unknown``. The
+    broker writes ``channel`` in both ``request_started`` and ``request_completed``.
     """
     entries, chain = read_entries(path, max_bytes)
     started, completed, admitted = None, None, 0
@@ -258,7 +263,12 @@ def read_request(path, request_id: str, max_bytes: int = READ_LIMIT, channel: st
         state = "complete"
     elif admitted:
         state = "outcome_unknown"
+    elif chain["chain"] == "chain_broken" or chain["read_limit_reached"]:
+        # Entries past the break or the read bound are unread, so "nothing was sent" can't be claimed.
+        state = "outcome_unknown"
     else:
+        # A torn last line can only cut off entries written after it; admission is written before
+        # any submit, so a request with no admission on record sent nothing.
         state = "stopped_before_dispatch" if started is not None else "not_found"
     return {"state": state, "receipt": receipt,
             "receipt_unavailable": state == "complete" and receipt is None,

@@ -3,8 +3,8 @@
 // from the URL fragment once, removed from the address bar and kept only in memory, so a reload
 // leaves a locked page that can still stop, hold and deny.
 import {
-  ackPayload, eventLine, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage, remainingMs, requestId,
-  seconds, shouldAck, tokenFromHash, waitingReason,
+  ackPayload, eventLines, hostNowAfter, isLocked, noticeBanner, ownerLabel, rawMessage, remainingMs,
+  requestId, seconds, shouldAck, tokenFromHash, waitingReason,
 } from "/b2b-model.mjs";
 
 const token = tokenFromHash(location.hash);
@@ -48,8 +48,10 @@ async function api(path, {body, key = "issuer"} = {}) {
     Object.assign(options, {method: "POST", body: JSON.stringify(body)});
   }
   const response = await fetch(path, options);
-  const data = await response.json().catch(() => ({error: `Unexpected response (${response.status})`}));
-  if (!response.ok) throw new HttpError(response.status, data);
+  const data = await response.json().catch(() => null);
+  if (!response.ok || data === null || typeof data !== "object") {
+    throw new HttpError(response.status, data || {error: `Unexpected response (${response.status})`});
+  }
   return data;
 }
 
@@ -92,15 +94,24 @@ async function perform(path, body, key = "issuer") {
   }
 }
 
-const reduce = (path, fields) =>
-  perform(path, {request_id: newRequestId(), ...triple(), ...fields}, "public");
+// Reductions need only the public CSRF token; fetch it again if the page doesn't have it yet.
+async function reduce(path, fields) {
+  if (!app.csrf) {
+    try {
+      app.csrf = (await api("/api/public", {key: "public"})).csrf_token;
+    } catch (error) {
+      showError(error);
+    }
+  }
+  return perform(path, {request_id: newRequestId(), ...triple(), ...fields}, "public");
+}
 const increase = (path, fields) => perform(path, {request_id: newRequestId(), ...triple(), ...fields});
 
 async function refresh() {
   try {
-    if (isLocked(token)) {
+    if (isLocked(token) || !app.current) {
       renderPublic(await api("/api/public", {key: "public"}));
-    } else if (app.current) {
+    } else {
       adopt(await api(`/api/state?ui_epoch=${encodeURIComponent(app.uiEpoch)}`));
     }
   } catch (error) {
@@ -111,7 +122,11 @@ async function refresh() {
 function adopt(snapshot) {
   app.snapshot = snapshot;
   app.receivedAt = performance.now();
-  app.current = snapshot.current !== false;
+  if (snapshot.current === false && app.current) {
+    // Another page attached: this one no longer receives notices, so it falls back to the locked view.
+    app.current = false;
+    publicLoop();
+  }
   render(snapshot);
   acknowledgeVisible();
 }
@@ -128,7 +143,10 @@ function acknowledgeVisible() {
   for (const notice of snapshot.notices) {
     if (!shouldAck(document.visibilityState, notice, app.acked)) continue;
     app.acked.add(notice.notice_id);
-    api("/api/notices/ack", {body: ackPayload(notice, app.uiEpoch)}).then(refresh, showError);
+    api("/api/notices/ack", {body: ackPayload(notice, app.uiEpoch)}).then(refresh, error => {
+      app.acked.delete(notice.notice_id);  // it never reached the host: the next render tries again
+      showError(error);
+    });
   }
 }
 
@@ -168,6 +186,7 @@ function render(snapshot) {
   $("session").textContent = `Session epoch ${epoch} · revision ${revision} · ${whose}`;
   $("locked").hidden = true;
   $("journal").hidden = !snapshot.journal_degraded;
+  renderSettings(snapshot.settings, snapshot.settings_defaults);
   renderNotices(snapshot.notices, true);
   renderResources(snapshot);
   renderGrants(snapshot.grants.map(grant => ({grant_id: grant.grant_id, reason: grant.reason,
@@ -222,7 +241,9 @@ function renderResources(snapshot) {
     const actions = el("td", null, {class: "actions"});
     const held = owner.hold === "explicit";
     const only = [resource.resource_id];
-    if (!held) actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
+    if (!held && owner.kind !== "pickup_pending") {
+      actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
+    }
     if (held) actions.append(button("Release", () => increase("/api/holds/release", {resources: only})));
     if (!["agent", "unavailable", "pickup_pending"].includes(owner.kind)) {
       const group = groupOf(snapshot, resource);  // a conflict group is handed back whole
@@ -392,8 +413,17 @@ function renderProposals(snapshot) {
   }) : [el("li", "No open proposals.", {class: "meta"})]));
 }
 
+// Session settings are the agent's choice at b2b_prepare; say so whenever one differs from the default.
+function renderSettings(settings, defaults) {
+  const changedSettings = Object.entries(settings || {}).filter(([name, value]) => defaults[name] !== value)
+    .map(([name, value]) => `${name} ${value} (default ${defaults[name]})`);
+  $("settings").textContent = changedSettings.length
+    ? `The agent prepared this session with changed settings: ${changedSettings.join(", ")}.` : "";
+  $("settings").hidden = changedSettings.length === 0;
+}
+
 function renderEvents(events) {
-  $("events").replaceChildren(...[...events].reverse().map(event => el("li", eventLine(event))));
+  $("events").replaceChildren(...eventLines(events).reverse().map(line => el("li", line)));
 }
 
 // The synthetic controller panel -----------------------------------------------------------------
@@ -406,10 +436,11 @@ function shortName(address) {
   return address.replace("controller/synthetic/", "");
 }
 
-function slider(input, value) {
-  const label = el("label", `${shortName(input.address)} `);
-  const output = el("output", value ?? "–");
-  const range = el("input", null, {type: "range", min: "0", max: "127", value: String(value ?? 64)});
+// A synthetic fader is not motorized: the slider shows where it physically sits, never the software value.
+function slider(input, physical) {
+  const label = el("label", `${shortName(input.address)} fader `);
+  const output = el("output", physical ?? "–");
+  const range = el("input", null, {type: "range", min: "0", max: "127", value: String(physical ?? 64)});
   const state = {sending: false, queued: null};
   const flush = async () => {
     if (state.sending || state.queued === null) return;
@@ -442,7 +473,7 @@ function buildPanel(panel) {
   for (const input of panel.inputs) {
     if (input.classification === "gesture") continue;
     if (input.encoding === "absolute_7bit") {
-      controls.append(slider(input, panel.software[panel.aliases[input.address]] ?? null));
+      controls.append(slider(input, panel.physical[panel.aliases[input.address]] ?? null));
     } else if (input.encoding === "relative_twos_complement") {
       const box = el("div", `${shortName(input.address)} `);
       box.append(button("−", () => send(rawMessage(input.message, -4))), " ",
@@ -483,11 +514,13 @@ function renderPanel(panel) {
     .join(", ");
   $("panel-state").textContent = `Adapter epoch ${panel.adapter_epoch} · ${dependencies}`;
   for (const [address, {range, output}] of app.sliders) {
-    const value = panel.software[panel.aliases[address]];
-    if (value !== undefined && document.activeElement !== range) {
-      range.value = String(value);
-      output.textContent = String(value);
+    const resource = panel.aliases[address];
+    const physical = panel.physical[resource];
+    if (physical !== undefined && physical !== null && document.activeElement !== range) {
+      range.value = String(physical);
     }
+    const software = panel.software[resource];
+    output.textContent = `${physical ?? "–"}${software === undefined ? "" : ` · software ${software}`}`;
   }
 }
 
@@ -495,6 +528,7 @@ function renderPanel(panel) {
 
 function renderPublic(publicView) {
   app.publicView = publicView;
+  app.csrf = publicView.csrf_token || app.csrf;
   app.receivedAt = performance.now();
   const {session_epoch: epoch, control_revision: revision} = publicView;
   $("session").textContent = `Session epoch ${epoch} · revision ${revision}`;
@@ -560,8 +594,7 @@ async function start() {
   await sendPresence();
   await refresh();
   document.addEventListener("visibilitychange", () => {
-    sendPresence();
-    acknowledgeVisible();
+    sendPresence().then(acknowledgeVisible);  // the host must hear "visible" before an ack counts
   });
   setInterval(sendPresence, 1000);
   setInterval(renderClock, 250);

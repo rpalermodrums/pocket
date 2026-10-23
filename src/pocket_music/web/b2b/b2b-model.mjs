@@ -32,7 +32,11 @@ export function hostNowAfter(hostNowString, elapsedMs) {
 }
 
 export function seconds(ms) {
-  return ms === null || ms === undefined ? "–" : `${(ms / 1000).toFixed(1)} s`;
+  if (ms === null || ms === undefined) return "–";
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
+  const minutes = Math.floor(ms / 60000);
+  return minutes < 60 ? `${minutes} min ${Math.floor((ms % 60000) / 1000)} s`
+    : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
 const UNAVAILABLE = {
@@ -162,4 +166,19 @@ const EVENT_TEXT = {
 export function eventLine(event) {
   const text = EVENT_TEXT[event?.type];
   return text ? text(event) : String(event?.type || "event").replaceAll("_", " ");
+}
+
+// The person's event list, oldest first: consecutive steps of one move read as a single line,
+// so a long ramp can't push everything else out of the last few lines.
+export function eventLines(events) {
+  return events.reduce((lines, event) => {
+    const last = lines[lines.length - 1];
+    if (event.type === "step_admitted" && last && last.request_id === event.request_id) {
+      return [...lines.slice(0, -1), {...last, text: `Agent move on ${event.resource}: ${event.step} of `
+        + `${event.count} steps sent`}];
+    }
+    const text = event.type === "step_admitted"
+      ? `Agent move on ${event.resource}: ${event.step} of ${event.count} steps sent` : eventLine(event);
+    return [...lines, {request_id: event.type === "step_admitted" ? event.request_id : null, text}];
+  }, []).map(line => line.text);
 }

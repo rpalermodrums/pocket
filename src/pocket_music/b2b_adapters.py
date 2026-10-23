@@ -494,8 +494,6 @@ def _frozen_keys(table: dict) -> MappingProxyType:
     return MappingProxyType({key: _frozen(value) for key, value in table.items()})
 
 
-# The synthetic-two-deck/v1 profile --------------------------------------------------------------
-
 def _descriptor(rid, label, kind, *, readback, audibility="audible", states=None, conflict=None,
                 yield_group=None, shared_bus=None, binding=False, writable=True):
     absolute = kind == "absolute"
@@ -631,7 +629,6 @@ class SyntheticAdapter:
         self.readback_mode = "fresh"      # fresh | stale | mismatch
         self.heartbeat_interval_ms = 100
 
-    # Contract surface -------------------------------------------------------------------------
     @property
     def profile(self) -> dict:
         """A fresh copy of this adapter's profile document."""
@@ -721,7 +718,6 @@ class SyntheticAdapter:
             self._closed = True
             self._deferred = []
 
-    # Injection (tests and the trusted demo page only) ---------------------------------------
     def inject_message(self, raw, origin: str = "controller") -> tuple[dict, ...]:
         """Deliver one controller message, or feedback echo, as a native adapter would; return the events."""
         if origin not in ("controller", "feedback"):
@@ -786,7 +782,6 @@ class SyntheticAdapter:
                     "states": dict(self._states), "positions": dict(self._position),
                     "dropped_messages": self._dropped_messages}
 
-    # Internals --------------------------------------------------------------------------------
     def _now(self) -> int:
         if self._clock is None:
             raise AdapterContractError("Attach the adapter to a broker before using it")

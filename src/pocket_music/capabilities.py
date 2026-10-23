@@ -25,7 +25,7 @@ PUBLIC_CAPABILITIES = (
     ('b2b_act', 'b2b', 'collaboration', 'act', False, 'One bounded move (set, ramp up to 4 s, nudge or set_state) as short steps, each rechecked before dispatch.'),
     ('b2b_release', 'b2b', 'collaboration', 'release', False, 'Give back some or all of your grant and cancel its undispatched steps; controls stay where they are.'),
     ('b2b_revoke', 'b2b', 'collaboration', 'revoke', False, 'Shorten your lease or drop your own authority; only the person can revoke a standing permission.'),
-    ('b2b_events', 'b2b', 'collaboration', 'events', True, 'Read bounded sequenced notices, ownership changes and outcomes after a cursor.'),
+    ('b2b_events', 'b2b', 'collaboration', 'events', True, 'Page through numbered b2b events after a cursor: notices, owner changes and act outcomes, a bounded batch per call.'),
     ('b2b_request_status', 'b2b', 'collaboration', 'request_status', True, 'Inspect a retained b2b request without redispatch, from the journal after the host stops.'),
     ('request_status', 'artifact_store', 'artifact', 'status', True, 'Inspect request journals and retained artifact integrity without redispatching.'),
     ('material_import', 'material', 'material', 'import', False, 'Retain source bytes and project supported MIDI material.'),
@@ -316,7 +316,8 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         if module == 'b2b':
             profile = 'synthetic-two-deck/v1'
             prerequisites = [('A b2b host you start in your own terminal (python -m pocket_music.b2b_host); '
-                              'built-in synthetic two-deck mixer only, no Serato, controller, MIDI or audio device')]
+                              'built-in synthetic two-deck mixer only, '
+                              'no Serato, controller, MIDI or audio device')]
             if sys.platform not in ('darwin', 'linux'):
                 status = 'unsupported'
             elif name == 'b2b_request_status':
@@ -325,7 +326,8 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                 status = 'requires_optional_setup'
             side_effects = {'b2b_prepare': ['new_local_artifacts', 'b2b_host_session'],
                             'b2b_authorize': ['b2b_policy_proposal', 'b2b_control_journal'],
-                            'b2b_claim': ['b2b_authority_grant', 'trusted_page_notice', 'b2b_control_journal'],
+                            'b2b_claim': ['b2b_authority_grant', 'trusted_page_notice',
+                                          'b2b_control_journal'],
                             'b2b_act': ['synthetic_adapter_controls', 'b2b_control_journal'],
                             'b2b_release': ['b2b_authority_reduction', 'b2b_control_journal'],
                             'b2b_revoke': ['b2b_authority_reduction', 'b2b_control_journal']}.get(name, [])

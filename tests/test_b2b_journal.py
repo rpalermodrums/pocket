@@ -327,7 +327,7 @@ def test_append_is_one_write_and_fsync_runs_only_in_sync_without_blocking_append
     started(j, "r-1")
     admitted(j, "r-1")
     assert len(writes) == 2 and fsyncs == []
-    syncer = threading.Thread(target=j.sync)
+    syncer = threading.Thread(target=j.sync, daemon=True)
     syncer.start()
     assert fsync_started.wait(timeout=5)
     # An fsync in progress never holds up an append, which runs under the broker lock.
@@ -355,15 +355,16 @@ def test_journal_never_writes_a_forbidden_secret(tmp_path):
     token = "k" * 43
     j.forbid(token)
     with pytest.raises(ValueError):
-        j.append("host_started", {"page": f"http://127.0.0.1:1/#k={token}"}, session_epoch=SESSION)
-    assert j.seq == 0 and path.read_bytes() == b"" and j.state == "ok"
-    with pytest.raises(ValueError):
         j.forbid("short")
     j.append("host_started", {"page_link": "printed_to_terminal"}, session_epoch=SESSION)
     assert j.seq == 1
+    with pytest.raises(JournalUnavailable):
+        j.append("readback", {"page": f"http://127.0.0.1:1/#k={token}"}, session_epoch=SESSION)
+    # Nothing was written, and the journal failed closed: no later entry is written either.
+    assert j.seq == 1 and token.encode() not in path.read_bytes() and j.state == "failed"
+    with pytest.raises(JournalUnavailable):
+        j.append("readback", {"value": 1}, session_epoch=SESSION)
 
-
-# Clocks --------------------------------------------------------------------------------------
 
 def _scripted_clocks(monkeypatch, names, deadline, uptime):
     ids = {names[0]: 9001, names[1]: 9002}
@@ -583,8 +584,6 @@ def test_request_status_never_redispatches(tmp_path):
     assert len(h.entries("request_started")) == started and len(h.observe()["grants"]) == 1
 
 
-# Act-driven replay, durability ordering and the hour-long bound check ---------------------------
-
 GAIN = "synthetic/right/gain"
 RAMP = {"kind": "ramp", "resource": GAIN, "target": 40, "duration_ms": 500}
 
@@ -757,3 +756,43 @@ def test_synthetic_hour_stays_within_memory_and_journal_budgets(tmp_path):
     status = h.journal.status()
     assert status["state"] == "ok" and status["lost_entries"] == 0
     assert status["bytes"] <= status["max_bytes"] - RESERVE_BYTES
+
+
+def test_an_incomplete_read_never_says_nothing_was_sent(tmp_path):
+    j, path, _ = open_journal(tmp_path)
+    started(j, "r-act")
+    started(j, "r-later")  # its admission sits past the read bound below
+    admitted(j, "r-later")
+    j.sync()
+    bound = len(path.read_bytes().splitlines(keepends=True)[0]) + 10
+    assert read_request(path, "r-act", max_bytes=bound)["state"] == "outcome_unknown"  # bound reached
+    assert read_request(path, "r-later", max_bytes=bound)["state"] == "outcome_unknown"
+    assert read_request(path, "r-act")["state"] == "stopped_before_dispatch"  # a full read can say so
+    data = bytearray(path.read_bytes())
+    second = data.index(b"\n") + 1
+    data[second + 20:second + 21] = b"X"  # tamper with the second line: the chain breaks there
+    path.write_bytes(bytes(data))
+    broken = read_request(path, "r-missing")
+    assert broken["journal"]["chain"] == "chain_broken" and broken["state"] == "outcome_unknown"
+
+
+def test_refusals_while_the_journal_is_unavailable_stay_bounded(tmp_path, monkeypatch):
+    import pocket_music.b2b_broker as broker_module
+
+    monkeypatch.setattr(broker_module, "MAX_REQUESTS", 4)
+    monkeypatch.setattr(broker_module, "RECEIPT_CACHE", 2)
+    h = _broker(tmp_path, journal_max_bytes=1024 * 1024)
+    h.journal.max_bytes = h.journal.bytes + RESERVE_BYTES
+    with pytest.raises(JournalUnavailable):
+        h.journal.append("readback", {"pad": "x"}, session_epoch=SESSION)  # the journal is now full
+    basis = {"kind": "invitation", "invitation_id": "i-0000000000000000"}
+    accepted = 0
+    for _ in range(8):
+        try:
+            receipt = h.claim([GAIN], basis)
+        except PocketError as error:
+            assert error.code == "invalid_request"
+            break
+        assert receipt["outcome"]["code"] == "journal_unavailable"
+        accepted += 1
+    assert accepted < 8 and len(h.broker._requests["agent"]) <= 4 and len(h.broker._receipts) <= 2

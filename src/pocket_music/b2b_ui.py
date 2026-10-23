@@ -66,10 +66,11 @@ class TrustedPage:
     exactly as a controller's would.
     """
 
-    def __init__(self, broker, channel, *, adapter=None):
+    def __init__(self, broker, channel, *, adapter=None, sync=None):
         self._broker = broker
         self._channel = channel
         self._adapter = adapter
+        self._sync = sync  # the journal's fsync, run after each page write and before it is answered
         self.issuer_token = secrets.token_urlsafe(32)
         self.public_csrf = secrets.token_urlsafe(32)
 
@@ -77,7 +78,6 @@ class TrustedPage:
     def synthetic(self) -> bool:
         return self._adapter is not None
 
-    # Reduce-only: the public CSRF token is enough, so these survive a reload ---------------------
     def public(self) -> dict:
         return {**self._broker.trusted_public(), "csrf_token": self.public_csrf}
 
@@ -96,7 +96,6 @@ class TrustedPage:
     def revoke_permission(self, body) -> dict:
         return self._broker.reduce_revoke_permission(body)
 
-    # Issuer-keyed ---------------------------------------------------------------------------------
     def attach(self, body) -> dict:
         _only(body, (), "attach")
         return {"ui_epoch": self._broker.trusted_attach(self._channel)}
@@ -156,7 +155,6 @@ class TrustedPage:
     def dismiss(self, body) -> dict:
         return self._broker.trusted_dismiss_proposal(self._channel, body)
 
-    # The synthetic controller panel (``--adapter synthetic`` only) ---------------------------------
     def synthetic_input(self, body) -> dict:
         self._require_synthetic()
         _only(body, ("message", "origin"), "synthetic input")
@@ -177,6 +175,10 @@ class TrustedPage:
             raise _bad(f"action is one of {', '.join(_FAULTS)}", "Use the synthetic panel's fault buttons.")
         getattr(self._adapter, _FAULTS[action])()
         return {"applied": action, "panel": self._panel()}
+
+    def sync(self) -> None:
+        if self._sync is not None:
+            self._sync()
 
     def _require_synthetic(self) -> None:
         if not self.synthetic:
@@ -266,7 +268,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             body = read_json(self, MAX_BODY)
-            return send(self, 200, getattr(page, method)(body))
+            result = getattr(page, method)(body)
+            page.sync()  # outside the broker lock, before the answer leaves the host
+            return send(self, 200, result)
         except (PocketError, RequestRefused) as error:
             return self._refuse(error)
         except Exception:  # noqa: BLE001 - a host bug is reported, never swallowed

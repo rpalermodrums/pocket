@@ -104,7 +104,7 @@ def _race(h: Harness, calls):
         except PocketError as error:
             results[index] = error
 
-    threads = [threading.Thread(target=run, args=(i, c)) for i, c in enumerate(calls)]
+    threads = [threading.Thread(target=run, args=(i, c), daemon=True) for i, c in enumerate(calls)]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -760,11 +760,19 @@ def test_explicit_hold_survives_inactivity_and_activity_ownership_becomes_unowne
 
 def test_takeover_restores_nothing_and_never_resumes(tmp_path):
     h = make(tmp_path)
-    invited_grant(h, [GAIN], ack=True, lease_ms=10_000)
+    grant = invited_grant(h, [GAIN], ack=True, lease_ms=10_000)["grant"]
+    ramp = {"kind": "ramp", "resource": GAIN, "target": 40, "duration_ms": 1000}
+    run = h.act_begin(grant["grant_id"], ramp)
+    h.tick(200)
+    sent = len(h.adapter.sent())
+    assert 0 < sent < 20  # the ramp is part way through
     h.move(TRIM_2, 90)
-    h.tick(3000)
+    result = h.broker.act_result(run)
+    assert result["outcome"]["kind"] == "partially_dispatched" and result["outcome"]["last_step"] == sent
+    h.tick(12_000)  # past the activity release and past the lease the grant had
     assert owner(h, GAIN)["kind"] == "unowned" and grants(h) == []
-    assert h.adapter.sent() == () and h.adapter.value(GAIN) == 90  # the person's value stays
+    assert len(h.adapter.sent()) == sent and h.adapter.value(GAIN) == 90  # nothing restored, nothing resumed
+    assert h.broker.act_result(run) == result
     assert len(events(h, "grant_created")) == 1
 
 
@@ -835,12 +843,12 @@ def test_mutations_use_exact_cas_over_the_authority_state_sha(tmp_path):
 
 
 def test_revision_advances_iff_the_authority_sha_changes(tmp_path):
-    for seed in range(5):
+    for seed in range(25):  # 25 seeded sequences of 40 random events
         (tmp_path / f"seed-{seed}").mkdir()
         h = make(tmp_path / f"seed-{seed}", {"activity_release_ms": 300, "notice_ack_timeout_ms": 400})
         rng = random.Random(seed)
         previous = h.observe()
-        for _ in range(100):
+        for _ in range(40):
             step = rng.randrange(12)
             try:
                 if step == 0:
@@ -882,7 +890,7 @@ def test_revision_advances_iff_the_authority_sha_changes(tmp_path):
             assert digest(current["authority_state"]) == current["state_sha256"]
             if current["state_sha256"] != previous["state_sha256"]:
                 assert current["control_revision"] > previous["control_revision"]
-            else:
+            else:  # a state can change and change back between two observations; the chain below checks it
                 assert current["control_revision"] >= previous["control_revision"]
             previous = current
         chain = [e["data"] for e in h.entries("authority_changed")]
@@ -1086,10 +1094,131 @@ def test_sink_called_from_inside_submit_is_a_contract_violation_not_a_deadlock(t
         except AdapterContractError:
             outcome.append("contract_error")
 
-    thread = threading.Thread(target=observe)
+    thread = threading.Thread(target=observe, daemon=True)
     thread.start()
     thread.join(timeout=10)
     assert not thread.is_alive() and outcome == ["contract_error"]
     assert broker._sink_violations == 1
     adapter.misbehave = False
     assert broker.observe(h.session_id)["session_id"] == h.session_id  # the lock was released
+
+
+def test_a_full_request_table_never_disables_stop_hold_or_deny(tmp_path, monkeypatch):
+    import pocket_music.b2b_broker as broker_module
+
+    monkeypatch.setattr(broker_module, "MAX_REQUESTS", 5)
+    h = make(tmp_path)
+    grant = invited_grant(h, [GAIN], ack=True)["grant"]
+    for n in range(8):  # any local process can send refused reductions with the served CSRF token
+        refused(h.broker.reduce_deny({"request_id": f"page-junk-{n}", "notice_id": "n-0000000000000000",
+                                      "grant_id": "g-" + "0" * 32}), "grant_not_found")
+    assert len(h.broker._requests["public"]) == 5  # bounded by forgetting the oldest finished ones
+    invited = h.invite([FILTER])  # the issuer page keeps its own table, so it isn't crowded out
+    assert invited["outcome"]["kind"] == "invited"
+    held = h.broker.reduce_hold({"request_id": "page-hold", "resources": [LEFT_GAIN]})
+    assert held["outcome"]["kind"] == "held"
+    stopped = h.broker.panic({"request_id": "page-stop"})
+    assert stopped["outcome"]["kind"] == "panic" and stopped["outcome"]["grants"] == [grant["grant_id"]]
+    assert grants(h) == []
+
+
+def test_an_invalid_amendment_change_records_nothing(tmp_path):
+    h = make(tmp_path)
+    permission = issued(h)
+    request = {"request_id": "page-amend", "permission_id": permission["permission_id"],
+               "expected_permission_version": permission["version"],
+               "expected_permission_sha256": permission["state_sha256"], "preview_sha256": "0" * 64}
+    for change in ({"proactive_allowed": True}, {}, {"proactive_allowed": False, "expires_in_ms": 2000},
+                   {"expires_in_ms": 10}):
+        raises("invalid_arguments", h.broker.trusted_amend, h.channel, {**request, "change": change})
+    assert "page-amend" not in h.broker._requests["page"]  # the request_id is still unused
+    preview = h.broker.trusted_preview(h.channel, {"amend": {"permission_id": permission["permission_id"],
+                                                             "change": {"proactive_allowed": False}}})
+    amended = h.broker.trusted_amend(h.channel, {**request, "change": {"proactive_allowed": False},
+                                                 "preview_sha256": preview["preview_sha256"]})
+    assert amended["outcome"]["kind"] == "amended"
+
+
+def test_an_agent_proposed_amendment_previews_as_a_whole_replacement(tmp_path):
+    h = make(tmp_path)
+    permission = issued(h, default_draft(resources=[GAIN], limits=[]))
+    wide = default_draft(resources=[GAIN, FILTER, TRANSPORT], action_kinds=["set", "ramp", "set_state"],
+                         limits=[])
+    proposal = h.broker.authorize(h.session_id, {
+        "request_id": h.request_id(), **h.triple(), "permission": wide,
+        "expected_permission_id": permission["permission_id"],
+        "expected_permission_version": permission["version"],
+        "expected_permission_sha256": permission["state_sha256"]})["proposal"]
+    lines = h.broker.trusted_preview(h.channel, {"proposal_id": proposal["proposal_id"]})["lines"]
+    assert lines[0] == (f"Replaces permission {permission['permission_id']} version 1, which ends when you "
+                        "press Issue. These lines are the whole new permission, not a change to the old one.")
+
+
+def test_an_invite_only_permission_preview_claims_no_limits_it_does_not_enforce(tmp_path):
+    h = make(tmp_path)
+    draft = default_draft(proactive_claims={"allowed": False, "idle_interval_ms": 4000, "cooldown_ms": 5000})
+    proposal = h.propose(draft)["proposal"]
+    lines = h.broker.trusted_preview(h.channel, {"proposal_id": proposal["proposal_id"]})["lines"]
+    assert lines[0].startswith("Allows no idle claims on Right deck filter, Right deck gain.")
+    assert "not this permission" in lines[0]
+    assert not any(line.startswith(("Moves allowed", "May claim", "If a claim is refused")) for line in lines)
+    proactive = h.broker.trusted_preview(h.channel, {"proposal_id": h.propose()["proposal"]["proposal_id"]})
+    assert "Controls you invite aren't bound by this permission" in proactive["lines"][2]
+
+
+def test_a_hold_leaves_a_control_waiting_for_pickup(tmp_path):
+    h = make(tmp_path)
+    assert _pickup(h, FILTER, FILTER_2, 40, fader=100)["kind"] == "pickup_pending"
+    held = h.broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER, GAIN]})
+    assert held["outcome"] == {"kind": "held", "resources": [GAIN], "waiting_for_pickup": [FILTER]}
+    assert owner(h, FILTER)["kind"] == "pickup_pending"
+    refused(h.claim([FILTER], h.invitation_basis(h.invite([FILTER]))), "pickup_unsettled")
+
+
+def test_an_ack_from_a_page_that_reported_hidden_does_not_count(tmp_path):
+    h = make(tmp_path)
+    notice = invited_grant(h, [GAIN])["notice"]
+    h.page_state()
+    h.broker.trusted_presence(h.channel, h.ui_epoch, False)
+    assert h.ack(notice, fetch=False)["outcome"] == "rejected"
+    h.broker.trusted_presence(h.channel, h.ui_epoch, True)
+    assert h.ack(notice, fetch=False)["accepted"] is True
+
+
+@pytest.mark.parametrize("bound", ["grants", "invitations", "proposals", "claim_resources",
+                                   "permission_history"])
+def test_the_section_bounds_hold(tmp_path, monkeypatch, bound):
+    import pocket_music.b2b_broker as broker_module
+
+    h = make(tmp_path)
+    if bound == "grants":
+        monkeypatch.setattr(broker_module, "MAX_GRANTS", 2)
+        invited_grant(h, [GAIN])
+        invited_grant(h, [FILTER])
+        refused(h.claim([TRANSPORT], h.invitation_basis(h.invite([TRANSPORT]))), "grant_limit_reached")
+    elif bound == "invitations":
+        monkeypatch.setattr(broker_module, "MAX_INVITATIONS", 2)
+        h.invite([GAIN])
+        h.invite([FILTER])
+        refused(h.invite([TRANSPORT]), "invitation_limit_reached")
+    elif bound == "proposals":
+        monkeypatch.setattr(broker_module, "MAX_PROPOSALS", 2)
+        for statement in ("one", "two"):
+            assert h.propose(default_draft(statement=statement))["proposal"] is not None
+        third = h.propose(default_draft(statement="three"))
+        assert third["proposal"] is None and third["warnings"] == ["proposal_limit_reached"]
+    elif bound == "claim_resources":
+        monkeypatch.setattr(broker_module, "MAX_CLAIM_RESOURCES", 2)  # the synthetic profile has 11 controls
+        raises("unsupported_profile", h.claim, [GAIN, FILTER, TRANSPORT],
+               {"kind": "invitation", "invitation_id": "i-0000000000000000"})
+    else:
+        monkeypatch.setattr(broker_module, "MAX_PERMISSION_HISTORY", 3)
+        for n in range(5):
+            head = h.page_state()["permission_head"]
+            expected = None if head is None else (head["permission_id"], head["version"],
+                                                  head["state_sha256"])
+            receipt = h.issue(default_draft(statement=f"version {n}"), expected=expected)
+            permission = receipt["outcome"]["permission"]
+            h.broker.reduce_revoke_permission({"request_id": f"page-r{n}",
+                                               "permission_id": permission["permission_id"]})
+        assert len(h.broker._permissions) == 3

@@ -10,6 +10,7 @@ from __future__ import annotations
 import itertools
 
 from pocket_music.b2b_adapters import SyntheticAdapter, raw_message, validate_profile
+from pocket_music.b2b_broker import Broker
 from pocket_music.b2b_clock import TestClock
 from pocket_music.b2b_journal import Journal, read_entries
 
@@ -71,14 +72,11 @@ class Harness:
         self.sink = None
         self.broker = None
         if broker:
-            from pocket_music.b2b_broker import Broker  # built by a later step of this module
-
             self.broker = Broker(self.adapter, self.clock, self.journal, host_epoch=HOST_EPOCH)
         else:
             self.sink = RecordingSink()
             self.adapter.attach(self.sink, self.clock)
 
-    # Time ----------------------------------------------------------------------------------
     @property
     def now(self) -> int:
         return self.clock.now_ns()
@@ -95,7 +93,6 @@ class Harness:
         if self.broker is not None:
             self.broker.tick()
 
-    # Physical input --------------------------------------------------------------------------
     def raw(self, address: str, value: int) -> list[int]:
         """The bytes the synthetic controller sends for a physical input address."""
         for item in self.profile.inputs.values():
@@ -122,13 +119,11 @@ class Harness:
         self.tick(held_ms)
         self.release(gesture_id)
 
-    # Journal ---------------------------------------------------------------------------------
     def entries(self, kind: str | None = None) -> list[dict]:
         self.journal.sync()
         entries, _ = read_entries(self.journal_path)
         return [entry for _, entry in entries if kind is None or entry["kind"] == kind]
 
-    # Session and the trusted page (needs the broker) -------------------------------------------
     def register(self, *, settings=None, human_reserved=None, proposed_policy=None) -> dict:
         """b2b_prepare's host side, as the provider sends it; sets ``session_id``."""
         request = {"output_dir_resolved": str(self.runtime_dir.parent / "session")}
@@ -203,7 +198,6 @@ class Harness:
                 "permission_version": permission["version"],
                 "revocation_generation": permission["revocation_generation"]}
 
-    # Agent channel (needs the broker) ---------------------------------------------------------
     def request_id(self, prefix: str = "r") -> str:
         return f"{prefix}-{next(self._ids)}"
 

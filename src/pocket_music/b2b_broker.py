@@ -41,6 +41,7 @@ from .b2b_adapters import (
     Admission,
     Readback,
     Step,
+    Submission,
     validate_profile,
 )
 from .b2b_clock import suspend_gap_ns
@@ -131,6 +132,8 @@ _POLICY_CURRENT = ("Call b2b_observe and use the current permission_id, version 
                    "or ask for an invitation.")
 _NOTICE_FAILED = "Call b2b_observe; claim again later with a new request_id."
 _HOST_HEALTH = "Call b2b_observe; wait for the person to restart the host."
+_COME_BACK = ("Call b2b_observe; wait until the controller or master route returns, then claim again in the "
+              "new epoch.")
 _INVITE_AGAIN = "Call b2b_observe for outstanding invitations, or ask the person to hand the controls back."
 NEXT_ACTIONS = MappingProxyType({
     "authority_issuer_required": ("Ask the person to review proposal {proposal_id} on the b2b host page; "
@@ -138,7 +141,9 @@ NEXT_ACTIONS = MappingProxyType({
                                   "revocation_generation."),
     "permission_not_active": _POLICY_CURRENT, "permission_scope": _POLICY_CURRENT,
     "proactive_not_permitted": _POLICY_CURRENT,
-    "human_active": _RETRY_LATER, "gesture_in_progress": _RETRY_LATER,
+    "human_active": _RETRY_LATER,
+    "gesture_in_progress": ("The person is pressing a pad; observe until gestures read idle, then claim "
+                            "with a new request_id."),
     "resource_held_by_human": "Don't claim it; it stays held until the person releases it.",
     "classification_uncertain": "Retry after retry_not_before_monotonic_ns with a new request_id.",
     "claim_cooldown": "Retry after retry_not_before_monotonic_ns with a new request_id.",
@@ -155,8 +160,8 @@ NEXT_ACTIONS = MappingProxyType({
     "state_unknown": "Call b2b_observe; never toggle without a known state.",
     "evidence_stale": "Call b2b_observe; never toggle without a known state.",
     "expansion_not_permitted": "Ask the person for a wider permission or an invitation.",
-    "journal_unavailable": _HOST_HEALTH, "adapter_unavailable": _HOST_HEALTH,
-    "resource_unavailable": _HOST_HEALTH,
+    "journal_unavailable": _HOST_HEALTH, "adapter_unavailable": _COME_BACK,
+    "resource_unavailable": _COME_BACK,
     "partially_dispatched": "Call b2b_observe before anything else; the last steps may still land.",
     "outcome_unknown": "Call b2b_request_status, then b2b_observe; never resend under a new request_id.",
     "resource_owned_by_agent": "Call b2b_observe; one of your grants already holds it.",
@@ -196,8 +201,6 @@ _CHANNEL_HINT = "Only the b2b host page can make this call; reopen the page link
 _REVOKE_POLICY_NEXT = ("Ask the person to press Revoke or Stop agent control on the b2b host page; you can "
                        "drop your own grants with all_own_authority.")
 
-
-# Validation helpers (shape errors are invalid_arguments; nothing is recorded) -----------------
 
 def _bad(message: str, hint: str | None = None) -> PocketError:
     return PocketError(message, code="invalid_arguments", hint=hint)
@@ -297,7 +300,11 @@ def _duration_text(ms: int) -> str:
 
 
 def render_preview(draft: dict, profile) -> list[str]:
-    """The lines a person reads before issuing a permission. Time-independent, so its SHA is stable."""
+    """The lines a person reads before issuing a permission. Time-independent, so its SHA is stable.
+
+    A permission governs idle claims only: an invited claim is bounded by each control's own
+    range and the host's lease limit, so the lines never suggest the permission limits those.
+    """
     limits = {item["resource"]: item for item in draft.get("limits", [])}
     named = []
     for rid in draft["resources"]:
@@ -309,25 +316,30 @@ def render_preview(draft: dict, profile) -> list[str]:
         else:
             named.append(d["label"])
     proactive = draft["proactive_claims"]
+    labels = ", ".join(profile.resources[rid]["label"] for rid in draft["resources"])
     if proactive["allowed"]:
         idle = _seconds(proactive["idle_interval_ms"])
-        first = f"May claim these controls once each has been idle for {idle}: {', '.join(named)}."
-        cooldown = (f"After a refused or denied claim, it waits {_seconds(proactive['cooldown_ms'])} before "
-                    "trying that control again." if proactive["cooldown_ms"] else
-                    "After a refused or denied claim, it may try that control again at once.")
+        lines = [f"May claim these controls once each has been idle for {idle}: {', '.join(named)}.",
+                 (f"Moves allowed on those claims: {', '.join(draft['action_kinds'])}. Each one lasts at "
+                  f"most {_seconds(draft['max_lease_ms'])}."),
+                 ("Controls you invite aren't bound by this permission: an invited claim follows each "
+                  "control's own range and the host's lease limit.")]
     else:
-        first = f"May use these controls only when you invite it: {', '.join(named)}."
-        cooldown = None
-    lines = [first,
-             (f"Moves allowed: {', '.join(draft['action_kinds'])}. Each claim lasts at most "
-              f"{_seconds(draft['max_lease_ms'])}."),
-             ("Every claim is announced on this page before its first move. If this page can't show it in "
-              "time, nothing is sent.")]
-    if cooldown:
-        lines.append(cooldown)
+        lines = [(f"Allows no idle claims on {labels}. The agent uses them only when you invite it, and an "
+                  "invited claim follows each control's own range and the host's lease limit, not this "
+                  "permission.")]
+    lines.append("Every claim is announced on this page before its first move. If this page can't show it in "
+                 "time, nothing is sent.")
+    if proactive["allowed"]:
+        lines.append(f"If a claim is refused because you were using that control, or you deny it or take it "
+                     f"back, the agent waits {_seconds(proactive['cooldown_ms'])} before trying that control "
+                     "again." if proactive["cooldown_ms"] else
+                     "If a claim is refused because you were using that control, or you deny it or take it "
+                     "back, the agent may try that control again at once.")
     lines += [(f"Lasts {_duration_text(draft['duration_ms'])} from when you press Issue. Stop agent control "
                "or Revoke ends it at once."),
-              "Ends if the controller reconnects or the host restarts.",
+              ("Ends if the controller or the master route drops or returns, the writer restarts, the "
+               "computer sleeps or the host restarts."),
               "If a fader and the software disagree, the agent waits until you settle it.",
               f"The agent's note: {draft['statement']}"]
     return lines
@@ -347,8 +359,6 @@ def _plain(value):
     """A deep JSON copy, so callers can never mutate retained state."""
     return json.loads(canonical_bytes(value))
 
-
-# Authority records (frozen; a transition replaces a record wholesale) ------------------------
 
 _OWNER_FIELDS = {"unowned": (), "human": ("hold", "gesture_id", "since_monotonic_ns"),
                  "agent": ("grant_id", "expires_monotonic_ns"),
@@ -676,6 +686,15 @@ def _round_div(numerator: int, denominator: int) -> int:
     return rounded if numerator >= 0 else -rounded
 
 
+def _valid_submission(submission) -> bool:
+    """What submit must return: a Submission whose fields the broker can read without raising."""
+    return (isinstance(submission, Submission) and isinstance(submission.submission_id, str)
+            and submission.ack in ("ok", "failed", "pending")
+            and type(submission.submitted_monotonic_ns) is int
+            and (submission.readback is None or (isinstance(submission.readback, Readback)
+                                                 and type(submission.readback.observed_monotonic_ns) is int)))
+
+
 class TrustedChannel:
     """The trusted page's identity inside the host process.
 
@@ -723,7 +742,9 @@ class Broker:
         self._gestures = {gid: self._idle_gesture() for gid in self._profile.gesture_by_id}
         self._page = {"ui_epoch": None, "visible": False, "last_seen_ns": None, "polls": 0, "reported": False}
         self._last_unknown_ns = None
-        self._requests = {"agent": {}, "page": {}}
+        # Request tables per channel. "public" holds the reduce-only page routes, which any local process can
+        # reach with the served CSRF token, so flooding them can never crowd out the issuer page's requests.
+        self._requests = {"agent": {}, "page": {}, "public": {}}
         self._receipts = OrderedDict()  # (channel, request_id) -> receipt, most recent last
         self._events = deque()
         self._event_bytes = 0
@@ -732,6 +753,8 @@ class Broker:
         self._seq = itertools.count(1)
         self._proposal_seq = itertools.count(1)
         self._journal_degraded = False
+        self._secrets = ()  # host secrets no input may carry: they would otherwise reach the journal
+        self._stopped = False  # set by shutdown: nothing more is granted, invited, issued or dispatched
         self._sink_violations = 0  # the action half reads it: a step in flight then has an unknown outcome
         self._counters = {"feedback": 0, "ignored_events": 0, "gesture_bounces": 0, "gesture_duplicates": 0,
                           "ignored_releases": 0, "lost_journal_entries": 0}
@@ -750,7 +773,6 @@ class Broker:
                                        else self._profile.resources[rid]["states"][0])
         self._sha = digest(self._authority_state())
 
-    # Identity -------------------------------------------------------------------------------
     @property
     def session_epoch(self) -> str:
         return f"{self.host_epoch}.{self._adapter_epoch}"
@@ -776,7 +798,6 @@ class Broker:
             self._trusted_taken = True
             return self._trusted
 
-    # Entry, advance, commit ------------------------------------------------------------------
     @contextmanager
     def _entry(self):
         with self._lock:
@@ -884,7 +905,6 @@ class Broker:
             for stale in [k for k, w in self._windows.items() if w[1] <= now]:
                 del self._windows[stale]
 
-    # Timers ---------------------------------------------------------------------------------
     def _run_timers(self, now: int) -> bool:
         due = []
         for i, p in enumerate(self._permissions):
@@ -960,7 +980,6 @@ class Broker:
         else:
             self._fire_action(kind, key, at, now)
 
-    # Owner helpers ------------------------------------------------------------------------------
     def _set_owner(self, rid: str, kind: str, cause: str, **fields) -> ResourceOwner:
         owner = ResourceOwner(kind, self._owners[rid].generation + 1, cause, **fields)
         self._owners[rid] = owner
@@ -1077,7 +1096,6 @@ class Broker:
             if self._cooldowns.get((permission_id, rid), 0) <= now:
                 self._cooldowns[(permission_id, rid)] = now + cooldown
 
-    # Permissions, invitations, epochs --------------------------------------------------------
     def _end_permission(self, permission: StandingPermission, state: str, end_reason: str,
                         cancel_reason: str = "permission_ended") -> None:
         ended = replace(permission, state=state, end_reason=end_reason)
@@ -1200,7 +1218,6 @@ class Broker:
         self._revocations += 1
         self._emit("journal_degraded", state=self._journal.state)
 
-    # Notices ----------------------------------------------------------------------------------
     def _page_ready(self, at: int) -> bool:
         """A token-holding page attached and visible, seen within the page timeout or long-polling."""
         page = self._page
@@ -1232,9 +1249,28 @@ class Broker:
         for nid in ended[:max(0, len(self._notices) - MAX_NOTICES)]:
             del self._notices[nid]
 
-    # Requests: replay, recording and receipts -------------------------------------------------
+    def forbid_inputs(self, *secrets: str) -> None:
+        """Refuse, before anything is recorded, any request that carries one of these host secrets.
+
+        The agent can read the nonce and fetch the public CSRF token, so it could echo either
+        back as a request_id or a reason; the journal must never hold them.
+        """
+        if any(not isinstance(value, str) or len(value) < 16 for value in secrets):
+            raise ValueError("Forbid only secrets of at least 16 characters")
+        with self._lock:
+            self._secrets = (*self._secrets, *(value.encode() for value in secrets))
+
+    def _check_secrets(self, *values) -> None:
+        if self._secrets:
+            data = canonical_bytes(list(values))
+            if any(secret in data for secret in self._secrets):
+                raise _bad("This request carries a b2b host secret",
+                           "Never pass the agent nonce or a page token as a b2b value; use your own "
+                           "request_id and text.")
+
     def _lookup(self, channel: str, operation: str, session_id, request_id: str, inputs: dict):
         """Step 6: an identical retry gets the retained outcome and runs nothing."""
+        self._check_secrets(request_id, inputs)
         sha = digest({"operation": operation, "session_id": session_id, "inputs": inputs})
         entry = self._requests[channel].get(request_id)
         if entry is None:
@@ -1283,13 +1319,27 @@ class Broker:
                               code="stale_revision", hint=_STALE_HINT)
         return "exact", None
 
-    def _begin_request(self, channel: str, request_id: str, operation: str, sha: str) -> None:
+    def _make_room(self, channel: str, *, reduction: bool) -> None:
+        """Keep a request table bounded. A reduction (Stop above all) is never refused for lack of room:
+        it forgets the oldest finished request instead, whose replay then can't be guaranteed."""
         table = self._requests[channel]
-        if len(table) >= MAX_REQUESTS:
+        if len(table) < MAX_REQUESTS:
+            return
+        finished = (rid for rid, entry in table.items() if entry.state == "complete")
+        oldest = next(finished, None) if reduction else None
+        if oldest is None:
             raise PocketError("This b2b host has kept its maximum number of requests",
                               code="invalid_request",
                               hint="This b2b host has kept its maximum number of requests; stop it and "
                                    "start a new host.")
+        del table[oldest]
+        self._receipts.pop((channel, oldest), None)
+        self._counters["forgotten_requests"] = self._counters.get("forgotten_requests", 0) + 1
+
+    def _begin_request(self, channel: str, request_id: str, operation: str, sha: str, *,
+                       reduction: bool = False) -> None:
+        self._make_room(channel, reduction=reduction)
+        table = self._requests[channel]
         table[request_id] = _Request(operation, sha, "running")
         self._log("request_started", {"request_id": request_id, "channel": channel, "operation": operation,
                                       "input_sha256": sha})
@@ -1301,6 +1351,9 @@ class Broker:
         entry = self._requests[channel][request_id]
         self._requests[channel][request_id] = replace(entry, state="complete", receipt_sha256=sha,
                                                       journal_offset=None if ref is None else ref.offset)
+        self._retain_receipt(channel, request_id, result)
+
+    def _retain_receipt(self, channel: str, request_id: str, result: dict) -> None:
         self._receipts[(channel, request_id)] = result
         self._receipts.move_to_end((channel, request_id))
         while len(self._receipts) > RECEIPT_CACHE:
@@ -1347,12 +1400,14 @@ class Broker:
                 revision_check, current = self._check_triple(triple, mode)
                 if precheck is not None:
                     precheck(now)
+                if increase:
+                    self._check_running()
                 if increase and self._journal_degraded:
                     return self._unjournaled_refusal(channel, operation, request_id, sha, now, revision_check,
                                                      current)
-                self._begin_request(channel, request_id, operation, sha)
+                self._begin_request(channel, request_id, operation, sha, reduction=not increase)
                 degraded = self._journal_degraded
-                result = evaluate(now)
+                result = self._evaluate(channel, operation, request_id, now, evaluate)
                 self._commit(operation)
                 if (increase and not degraded and self._journal_degraded
                         and result["outcome"]["kind"] in ("granted", "invited", "issued", "amended")):
@@ -1366,13 +1421,38 @@ class Broker:
                 return hit
         return self._reread(hit)
 
+    def _evaluate(self, channel: str, operation: str, request_id: str, now: int, evaluate) -> dict:
+        """Run one request's domain evaluation. Nothing raised here may leave the request running."""
+        try:
+            return evaluate(now)
+        except PocketError:
+            # A validation error found while evaluating changed nothing: the request_id stays unused.
+            self._requests[channel].pop(request_id, None)
+            raise
+        except Exception:
+            # A host fault mid-transaction: state may be half-changed, so agent authority ends, the request
+            # is retained as outcome_unknown, and the fault still propagates to the host to be reported.
+            self._end_all_grants("outcome_unknown")
+            result = {"outcome": {"kind": "outcome_unknown", "request_id": request_id,
+                                  "automatic_retry": False},
+                      "warnings": ["The b2b host failed while handling this request; agent authority ended."]}
+            self._complete_request(channel, request_id, self._receipt(operation, request_id, result, now,
+                                                                      "not_required", None))
+            raise
+
+    def _check_running(self) -> None:
+        if self._stopped:
+            raise PocketError("This b2b host is stopping", code="io_error",
+                              hint="Start a new host and prepare a new session; nothing carries over.")
+
     def _unjournaled_refusal(self, channel, operation, request_id, sha, now, revision_check, current) -> dict:
         """Step 9: an increase while the journal is unavailable, retained in memory only."""
         result = {"outcome": {"kind": "refused", "code": "journal_unavailable",
                               "detail": f"The journal is {self._journal.state}"}}
         made = self._receipt(operation, request_id, result, now, revision_check, current)
+        self._make_room(channel, reduction=False)
         self._requests[channel][request_id] = _Request(operation, sha, "complete", digest(made))
-        self._receipts[(channel, request_id)] = made
+        self._retain_receipt(channel, request_id, made)
         return made
 
     def _refused(self, code: str, detail: str, **fields) -> dict:
@@ -1380,7 +1460,6 @@ class Broker:
             raise ValueError(f"Unknown b2b refusal code {code}")
         return {"outcome": {"kind": "refused", "code": code, "detail": detail}, "fields": fields}
 
-    # Shape validation against the profile --------------------------------------------------------
     def _resolve(self, names, what: str = "resources", *, whole_groups: bool = True, allow_empty: bool = False
                  ) -> tuple[str, ...]:
         resolved = self._profile.resolve(names)
@@ -1443,7 +1522,6 @@ class Broker:
             raise PocketError("Only the trusted b2b page can make this call", code="invalid_request",
                               hint=_CHANNEL_HINT)
 
-    # Session -------------------------------------------------------------------------------------
     def register(self, request: dict) -> dict:
         """b2b_prepare's host side: one session per host; idempotent for identical inputs."""
         _fields(request, ("output_dir_resolved",), ("settings", "human_reserved", "proposed_policy"),
@@ -1456,7 +1534,9 @@ class Broker:
         draft = None if policy is None else self._draft(policy, settings)
         sha = digest({"output_dir_resolved": output, "settings": settings, "human_reserved": list(reserved),
                       "proposed_policy": draft})
+        self._check_secrets(output, draft)
         with self._entry() as now:
+            self._check_running()
             if self._session is not None:
                 if self._session["output_dir_resolved"] == output and self._session["input_sha256"] == sha:
                     return {**_plain(self._session["result"]), "replayed": True}
@@ -1482,21 +1562,28 @@ class Broker:
                                        "state_sha256": self._sha, "monotonic_ns": now}
             return {**_plain(self._session["result"]), "replayed": False}
 
-    def _take_reserved(self, rid: str, gesture_id: str) -> None:
-        """A person's explicit hold. The agent channel can create this reduction but never undo it."""
+    def _take_reserved(self, rid: str, gesture_id: str) -> bool:
+        """A person's explicit hold. The agent channel can create this reduction but never undo it.
+
+        A control waiting for pickup stays that way: it already blocks every claim, and a hold
+        would hide the fader mismatch that releasing the hold would bring back. Returns whether
+        the control is held now.
+        """
         owner = self._owners[rid]
         if owner.kind == "agent":
             grant = self._grants[owner.grant_id]
             if grant.state == "active":
                 self._end_grant(grant, "held_by_human")
             owner = self._owners[rid]
+        if owner.kind == "pickup_pending":
+            return False
         if owner.kind == "unavailable":
             self._owners[rid] = replace(owner, hold="explicit", gesture_id=gesture_id)
         elif not owner.explicit:
             self._set_owner(rid, "human", "held_by_human", hold="explicit", gesture_id=gesture_id,
                             since_monotonic_ns=self._entry_now)
+        return True
 
-    # Proposals and policy ---------------------------------------------------------------------
     def _record_proposal(self, source: str, draft: dict, amend_of: tuple | None, now: int) -> Proposal | None:
         """Record a proposal for the person to review, coalescing an identical open one. Grants nothing."""
         sha = _proposal_sha(source, draft, amend_of)
@@ -1552,7 +1639,6 @@ class Broker:
         return self._mutate("agent", "authorize", session_id, request, inputs, triple, "exact", evaluate,
                             increase=True)
 
-    # Claims -------------------------------------------------------------------------------------
     def claim(self, session_id: str, request: dict) -> dict:
         """Atomically claim idle named resources under an invitation or the active standing permission."""
         _fields(request, ("request_id", "expected_session_epoch", "expected_control_revision",
@@ -1716,7 +1802,6 @@ class Broker:
         self._log("notice_created", {"notice": notice.to_json()})
         return grant, notice
 
-    # Agent reductions -----------------------------------------------------------------------------
     def release(self, session_id: str, request: dict) -> dict:
         """Give back some or all of an own grant; controls stay where they are (pickup rule)."""
         _fields(request, ("request_id", "expected_session_epoch", "expected_control_revision",
@@ -1807,7 +1892,6 @@ class Broker:
         return self._mutate("agent", "revoke", session_id, request, inputs, triple, "epoch", evaluate,
                             increase=False)
 
-    # Reads ----------------------------------------------------------------------------------------
     def observe(self, session_id: str) -> dict:
         """Owners, grants, notices, permissions and adapter evidence, each with its own age."""
         with self._entry() as now:
@@ -1818,7 +1902,7 @@ class Broker:
         state = self._authority_state()
         permission = self._active_permission()
         invitations = self._outstanding_invitations()
-        health = self._adapter.health()
+        health = self._health()  # None when the adapter's health can't be read as declared
         resources = []
         for rid in self._profile.order:
             d = self._profile.resources[rid]
@@ -1859,7 +1943,7 @@ class Broker:
         uncertainty_until = (None if self._last_unknown_ns is None
                              else self._last_unknown_ns + self._settings["uncertainty_ms"] * MS)
         notices = [n.to_json() for n in self._notices.values() if include_all_notices or n.state == "pending"]
-        heartbeat = health.get("heartbeat_monotonic_ns")
+        dependencies, heartbeat = ({}, None) if health is None else health
         observation = {
             "schema": OBSERVATION_SCHEMA,
             "session_id": None if self._session is None else self._session["session_id"],
@@ -1877,7 +1961,7 @@ class Broker:
             "evidence": {"resources": evidence,
                          "adapter": {"profile": self._profile.name, "mapping_sha256": self._profile.sha256,
                                      "adapter_epoch": self._adapter_epoch,
-                                     "dependencies": dict(health.get("dependencies", {})),
+                                     "dependencies": dict(dependencies),
                                      "heartbeat_monotonic_ns": heartbeat, "native": False},
                          "trusted_page": {"attached": page["ui_epoch"] is not None,
                                           "visible": page["visible"], "ready": self._page_ready(now),
@@ -1891,8 +1975,9 @@ class Broker:
                         else (now - page["last_seen_ns"]) // MS},
             "events_cursor": {"host_epoch": self.host_epoch, "sequence": self._event_seq},
             "coverage": dict(COVERAGE),
-            "warnings": [] if self._page_ready(now) else
-            ["No b2b page is attached and visible; a claim would be refused."]}
+            "warnings": ([] if self._page_ready(now) else
+                         ["No b2b page is attached and visible; a claim would be refused."])
+            + ([] if health is not None else ["The adapter's health could not be read; acts are refused."])}
         return _plain(observation)
 
     def events(self, session_id: str, request: dict | None = None) -> dict:
@@ -1961,7 +2046,6 @@ class Broker:
                 "receipt": retained, "receipt_unavailable": state == "complete" and retained is None,
                 "redispatched": False, "automatic_retry": False}
 
-    # Trusted page -------------------------------------------------------------------------------
     def trusted_attach(self, channel) -> str:
         """A new page epoch. An earlier page's epoch stops counting for presence and acks."""
         self._check_channel(channel)
@@ -2019,6 +2103,9 @@ class Broker:
                 # Issue cites this record exactly (expected_permission_*), or null when none was issued.
                 permission_head=self._permissions[-1].to_json() if self._permissions else None,
                 recent_events=_plain([event for event, _ in list(self._events)[-20:]]),
+                # Chosen by the agent at b2b_prepare; the page shows the person any that differ.
+                settings=dict(self._settings),
+                settings_defaults={name: default for name, (default, _, _) in SETTINGS.items()},
                 journal_degraded=self._journal_degraded)
             return page_json(observation)
 
@@ -2054,6 +2141,7 @@ class Broker:
         _fields(payload, names, where="ack")
         for name in names:
             _text(payload[name], name, 1, 64)
+        self._check_secrets(payload)  # an unknown notice_id is journaled as sent
         with self._entry() as now:
             notice = self._notices.get(payload["notice_id"])
             if notice is None:
@@ -2071,7 +2159,7 @@ class Broker:
                 self._notices[notice.notice_id] = replace(notice, late_acks=notice.late_acks + 1)
                 self._log("ack_late", {"notice_id": notice.notice_id, "state": notice.state})
                 return {"accepted": False, "outcome": notice.state, "notice_id": notice.notice_id}
-            if not matches or payload["ui_epoch"] not in notice.fetched_by:
+            if not matches or payload["ui_epoch"] not in notice.fetched_by or not self._page["visible"]:
                 self._notices[notice.notice_id] = replace(notice, rejected_acks=notice.rejected_acks + 1)
                 self._log("ack_rejected", {"notice_id": notice.notice_id, "why": "mismatch"})
                 return {"accepted": False, "outcome": "rejected", "notice_id": notice.notice_id}
@@ -2161,19 +2249,27 @@ class Broker:
         return self._mutate("page", "accept_pickup", None, payload, inputs, triple, "exact", evaluate,
                             increase=True)
 
-    def _amend_draft(self, permission: StandingPermission, change) -> dict:
+    @staticmethod
+    def _amend_change(change) -> dict:
+        """A narrowing change, checked before anything is recorded: one field, narrowing only."""
         if not isinstance(change, dict) or len(change) != 1:
             raise _bad("change is {proactive_allowed: false} or {expires_in_ms: N}")
-        draft = permission.draft
         if "proactive_allowed" in change:
             if change["proactive_allowed"] is not False:
                 raise _bad("An amendment can only turn proactive claims off",
                            "Pass change {proactive_allowed: false}, or issue a new permission.")
+            return {"proactive_allowed": False}
+        if "expires_in_ms" in change:
+            return {"expires_in_ms": _int(change["expires_in_ms"], "change.expires_in_ms", 1000, 14_400_000)}
+        raise _bad("change is {proactive_allowed: false} or {expires_in_ms: N}")
+
+    def _amend_draft(self, permission: StandingPermission, change) -> dict:
+        change = self._amend_change(change)
+        draft = permission.draft
+        if "proactive_allowed" in change:
             draft["proactive_claims"] = {**draft["proactive_claims"], "allowed": False}
-        elif "expires_in_ms" in change:
-            draft["duration_ms"] = _int(change["expires_in_ms"], "change.expires_in_ms", 1000, 14_400_000)
         else:
-            raise _bad("change is {proactive_allowed: false} or {expires_in_ms: N}")
+            draft["duration_ms"] = change["expires_in_ms"]
         return draft
 
     def _amend_preview(self, permission: StandingPermission, change) -> dict:
@@ -2194,6 +2290,12 @@ class Broker:
 
     def _proposal_preview(self, proposal: Proposal) -> dict:
         lines = render_preview(proposal.draft, self._profile)
+        if proposal.amend_of is not None:
+            # An agent-proposed amendment issues as a whole replacement, so the person reads it as one.
+            permission_id, version, _ = proposal.amend_of
+            lines = [(f"Replaces permission {permission_id} version {version}, which ends when you press "
+                      "Issue. These lines are the whole new permission, not a change to the old one."),
+                     *lines]
         return {"proposal_id": proposal.proposal_id, "proposal_sha256": proposal.sha256, "lines": lines,
                 "preview_sha256": digest({"proposal_id": proposal.proposal_id,
                                           "proposal_sha256": proposal.sha256, "lines": lines})}
@@ -2323,10 +2425,8 @@ class Broker:
         version = _int(payload["expected_permission_version"], "expected_permission_version", 1, 2**31)
         sha = _sha(payload["expected_permission_sha256"], "expected_permission_sha256")
         preview_sha = _sha(payload["preview_sha256"], "preview_sha256")
-        change = payload["change"]
-        if not isinstance(change, dict) or not set(change) <= {"proactive_allowed", "expires_in_ms"}:
-            raise _bad("change is {proactive_allowed: false} or {expires_in_ms: N}")
-        inputs = {"permission_id": permission_id, "version": version, "sha": sha, "change": _plain(change),
+        change = self._amend_change(payload["change"])
+        inputs = {"permission_id": permission_id, "version": version, "sha": sha, "change": change,
                   "preview_sha256": preview_sha}
 
         def evaluate(now):
@@ -2367,7 +2467,6 @@ class Broker:
         return self._mutate("page", "dismiss_proposal", None, payload, {"proposal_id": proposal_id}, None,
                             "record", evaluate, increase=False)
 
-    # Reduce-only page routes: they can only lower authority, so they never block on staleness -------
     def reduce_hold(self, payload) -> dict:
         self._page_inputs(payload, ("resources",))
         triple = _triple(payload, required=False)
@@ -2377,11 +2476,12 @@ class Broker:
         inputs = {"triple": None if triple is None else list(triple), "resources": list(resources)}
 
         def evaluate(now):
-            for rid in resources:
-                self._take_reserved(rid, f"page-hold-{next(self._seq)}")
-            return {"outcome": {"kind": "held", "resources": list(resources)}}
+            held = [rid for rid in resources if self._take_reserved(rid, f"page-hold-{next(self._seq)}")]
+            return {"outcome": {"kind": "held", "resources": held,
+                                "waiting_for_pickup": [rid for rid in resources if rid not in held]}}
 
-        return self._mutate("page", "hold", None, payload, inputs, triple, "record", evaluate, increase=False)
+        return self._mutate("public", "hold", None, payload, inputs, triple, "record", evaluate,
+                            increase=False)
 
     def reduce_deny(self, payload) -> dict:
         self._page_inputs(payload, ("notice_id", "grant_id"))
@@ -2404,7 +2504,8 @@ class Broker:
             self._end_grant(grant, "notice_denied")
             return {"outcome": {"kind": "denied", "grant_id": grant_id, "notice_id": notice_id}}
 
-        return self._mutate("page", "deny", None, payload, inputs, triple, "record", evaluate, increase=False)
+        return self._mutate("public", "deny", None, payload, inputs, triple, "record", evaluate,
+                            increase=False)
 
     def reduce_revoke_grant(self, payload) -> dict:
         self._page_inputs(payload, ("grant_id",))
@@ -2419,7 +2520,7 @@ class Broker:
             self._end_grant(grant, "revoked_by_human")
             return {"outcome": {"kind": "revoked", "grant_id": grant_id}}
 
-        return self._mutate("page", "revoke_grant", None, payload, inputs, triple, "record", evaluate,
+        return self._mutate("public", "revoke_grant", None, payload, inputs, triple, "record", evaluate,
                             increase=False)
 
     def reduce_revoke_permission(self, payload) -> dict:
@@ -2436,7 +2537,7 @@ class Broker:
             self._revocations += 1
             return {"outcome": {"kind": "revoked", "permission_id": permission_id}}
 
-        return self._mutate("page", "revoke_permission", None, payload, inputs, triple, "record", evaluate,
+        return self._mutate("public", "revoke_permission", None, payload, inputs, triple, "record", evaluate,
                             increase=False)
 
     def panic(self, payload) -> dict:
@@ -2462,10 +2563,9 @@ class Broker:
             self._log("panic", {"grants": ended, "expected": None if triple is None else list(triple)})
             return {"outcome": {"kind": "panic", "grants": ended, "permission_id": permission_id}}
 
-        return self._mutate("page", "panic", None, payload, inputs, triple, "record", evaluate,
+        return self._mutate("public", "panic", None, payload, inputs, triple, "record", evaluate,
                             increase=False)
 
-    # Adapter sink -------------------------------------------------------------------------------
     def adapter_event(self, event: dict) -> None:
         """Every adapter event enters here. A call from inside a broker section breaks the contract."""
         if self._lock_owner == threading.get_ident():
@@ -2634,7 +2734,6 @@ class Broker:
         reason = event.get("reason") if isinstance(event.get("reason"), str) else "restored"
         self._new_epoch(now, epoch, reason, dependencies)
 
-    # Timers and host --------------------------------------------------------------------------
     def tick(self) -> None:
         """The scheduler's entry (and tests'): due expiries first, then due steps."""
         with self._entry() as now:
@@ -2645,7 +2744,10 @@ class Broker:
     def shutdown(self, reason: str = "host_stopping") -> None:
         """End agent authority and pending moves; the person's controls and holds stay as they are."""
         with self._entry():
+            self._stopped = True
             self._end_all_grants("host_stopping")
+            for run in self._active_runs():  # a run still draining after its grant ended
+                self._stop_run(run, "host_stopping", self._entry_now)
             for invitation in self._outstanding_invitations():
                 self._end_invitation(invitation, "cancelled", "host_stopping")
             permission = self._active_permission()
@@ -2655,7 +2757,6 @@ class Broker:
             self._commit("host_stopping")
 
 
-    # Actions: one bounded move as short steps -------------------------------------------------------
     def _action(self, value) -> dict:
         """Shape (invalid_arguments) and profile (unsupported_profile) checks for one act's move."""
         _fields(value, ("kind", "resource"), ("value", "target", "duration_ms", "delta", "state"), "action")
@@ -2734,16 +2835,21 @@ class Broker:
                 if not_after > now + MAX_AHEAD_NS:
                     raise _bad("not_after_monotonic_ns is more than 60 s ahead of the host clock",
                                "Read monotonic_ns from b2b_observe and add at most 60000000000.")
+                self._check_running()
                 if self._journal_degraded:
                     refusal = self._unjournaled_refusal("agent", "act", request_id, sha, now, "exact", None)
                     return ActionRun(request_id, refusal)
                 self._begin_request("agent", request_id, "act", sha)
-                planned = self._plan(request_id, grant_id, action, not_after, max_age, now)
-                if isinstance(planned, _Run):
-                    self._start_run(planned, now)
-                else:
-                    made = self._receipt("act", request_id, planned, now, "exact", None)
-                    self._complete_request("agent", request_id, made)
+
+                def plan_and_start(now):
+                    planned = self._plan(request_id, grant_id, action, not_after, max_age, now)
+                    if isinstance(planned, _Run):
+                        self._start_run(planned, now)
+                    else:
+                        self._complete_request("agent", request_id,
+                                               self._receipt("act", request_id, planned, now, "exact", None))
+
+                self._evaluate("agent", "act", request_id, now, plan_and_start)
                 self._commit("act")
                 return ActionRun(request_id)
             if isinstance(hit, dict):
@@ -2820,17 +2926,22 @@ class Broker:
                 return self._refused("action_not_permitted",
                                      f"The permission does not allow {action['kind']} moves")
         d = self._profile.resources[rid]
+        health = self._health()
+        if health is None:
+            return self._refused("adapter_unavailable", "The adapter's health could not be read")
+        dependencies, heartbeat = health
         try:
-            health = self._adapter.health()
             readback = self._adapter.readback(rid) if d["readback"] in ("numeric", "state") else None
         except Exception as error:  # noqa: BLE001 - a broken adapter must never leave this request running
             return self._refused("adapter_unavailable",
                                  f"The adapter could not be read: {type(error).__name__}")
-        down = [n for n in d["depends_on"] if health.get("dependencies", {}).get(n) != "available"]
+        if readback is not None and (not isinstance(readback, Readback)
+                                     or type(readback.observed_monotonic_ns) is not int):
+            return self._refused("adapter_unavailable", "The adapter returned a malformed readback")
+        down = [n for n in d["depends_on"] if dependencies.get(n) != "available"]
         if down:
             return self._refused("adapter_unavailable", f"{down[0]} is unavailable")
-        heartbeat = health.get("heartbeat_monotonic_ns")
-        if type(heartbeat) is not int or now - heartbeat > max_age * MS:
+        if heartbeat is None or now - heartbeat > max_age * MS:
             return self._refused("evidence_stale", "The adapter heartbeat is older than max_evidence_age_ms")
         fresh = (readback if readback is not None and now - readback.observed_monotonic_ns <= max_age * MS
                  else None)
@@ -2894,21 +3005,22 @@ class Broker:
             self._runs[run.request_id] = replace(run, state="running", t0=now)
             self._advance_run(run.request_id, now)
 
-    def _trim_runs(self) -> None:
-        ended = [rid for rid, r in self._runs.items() if not r.active]
-        for rid in ended[:max(0, len(ended) - MAX_RUN_HISTORY)]:
+    def _trim_runs(self, keep: str) -> None:
+        """Bound finished-run history; the run that just finished stays, its caller still reads it."""
+        ended = [rid for rid, r in self._runs.items() if not r.active and rid != keep]
+        for rid in ended[:max(0, len(ended) + 1 - MAX_RUN_HISTORY)]:
             del self._runs[rid]
 
     def _advance_run(self, request_id: str, now: int) -> None:
         """Admit the run's due step, if any. Step windows never overlap, so a late tick cannot burst."""
-        run = self._runs[request_id]
+        run = self._runs.get(request_id)
         interval = self._profile.step_interval_ms * MS
-        while run.state == "running" and run.submitted < len(run.messages):
+        while run is not None and run.state == "running" and run.submitted < len(run.messages):
             if now < run.t0 + run.submitted * interval:
                 return
             if not self._admit_step(run, now):
                 return
-            run = self._runs[request_id]
+            run = self._runs.get(request_id)
 
     def _admit_step(self, run: _Run, now: int) -> bool:
         """The admission checklist, then submit, as one critical section. The only caller of submit."""
@@ -2918,8 +3030,10 @@ class Broker:
         rid = run.resource
         grant = self._grants.get(run.grant_id)
         owner = self._owners[rid]
-        reason = None
-        if (grant is None or run.session_epoch != self.session_epoch
+        reason = detail = None
+        if self._stopped:
+            reason = "host_stopping"
+        elif (grant is None or run.session_epoch != self.session_epoch
                 or grant.adapter_epoch != self._adapter_epoch):
             reason = "epoch_changed"
         elif grant.state != "active":
@@ -2951,12 +3065,10 @@ class Broker:
                 reason = "permission_ended"
         health = None
         if reason is None:
-            try:
-                health = self._adapter.health()
-            except Exception:  # noqa: BLE001 - no health, no evidence: stop rather than guess
-                health = {}
-            heartbeat = health.get("heartbeat_monotonic_ns")
-            if type(heartbeat) is not int or now - heartbeat > run.max_evidence_age_ms * MS:
+            health = self._health()
+            if health is None:
+                reason, detail = "evidence_stale", "The adapter's health could not be read"
+            elif health[1] is None or now - health[1] > run.max_evidence_age_ms * MS:
                 reason = "evidence_stale"
         if reason is None:
             if any(gs["state"] == "pressed" for gs in self._gestures.values()):
@@ -2964,11 +3076,11 @@ class Broker:
             elif self._last_unknown_ns is not None and self._last_unknown_ns >= grant.created_monotonic_ns:
                 reason = "unknown_input"
         if reason is None:
-            dependencies = health.get("dependencies", {})
+            dependencies = health[0]
             if any(dependencies.get(n) != "available" for n in self._profile.resources[rid]["depends_on"]):
                 reason = "resource_unavailable"
         if reason is not None:
-            self._stop_run(run, reason, now)
+            self._stop_run(run, reason, now, detail=detail)
             return False
         message = run.messages[index]
         deadline = min(latest, grant.lease_expires_monotonic_ns, grant.action_deadline_monotonic_ns,
@@ -2987,6 +3099,9 @@ class Broker:
         violations = self._sink_violations
         try:
             submission = self._adapter.submit(step, admission)
+            if not _valid_submission(submission):
+                # The step may already have gone out; never treat this as "not sent" or send it again.
+                raise AdapterContractError(f"submit returned {type(submission).__name__}, not a Submission")
         except AdapterBlocked as error:
             self._stop_run(run, "adapter_blocked", now, detail=str(error))
             return False
@@ -3017,13 +3132,23 @@ class Broker:
             self._unknown(run, now, "The journal failed after this step was submitted")
         elif submission.ack == "failed":
             self._unknown(run, now, f"The adapter reported a failed ack for step {index + 1}")
-        elif submission.ack not in ("ok", "pending"):
-            self._unknown(run, now, f"The adapter returned an unknown ack {submission.ack!r}")
         elif run.submitted == len(run.messages):
             run = replace(run, state="draining", drain_until_ns=ack_due)
             self._runs[run.request_id] = run
             self._conclude(run, now)
         return True
+
+    def _health(self) -> tuple[dict, int | None] | None:
+        """The adapter's dependencies and heartbeat, or None when health can't be read as declared."""
+        try:
+            health = self._adapter.health()
+        except Exception:  # noqa: BLE001 - an adapter fault reads as missing evidence, never as health
+            return None
+        dependencies = health.get("dependencies") if isinstance(health, dict) else None
+        if not isinstance(dependencies, dict):
+            return None
+        heartbeat = health.get("heartbeat_monotonic_ns")
+        return dependencies, heartbeat if type(heartbeat) is int else None
 
     def _readback_ref(self, run: _Run, readback: Readback) -> tuple:
         ref = self._log("readback", {"request_id": run.request_id, "resource": run.resource,
@@ -3059,6 +3184,10 @@ class Broker:
         awaiting_readback = run.readback_kind in ("numeric", "state") and run.final is not None
         if awaiting_readback and not run.verified and not expired:
             return
+        if self._journal.state != "ok":
+            # Steps went out but their record (or their evidence) may be incomplete: never claim an outcome.
+            self._unknown(run, now, "The journal became unavailable after a step was submitted")
+            return
         if run.verified:
             self._finish(run, {"kind": "verified", "evidence_refs": list(run.evidence_refs)}, now)
             return
@@ -3073,11 +3202,14 @@ class Broker:
         run = self._runs[run.request_id]
         if not run.active:
             return
-        if run.state == "draining":
-            self._conclude(run, now, force=True)
-            return
-        if reason == "journal_unavailable" and run.submitted:
+        if run.submitted and (reason == "journal_unavailable" or self._journal.state != "ok"):
             self._unknown(run, now, "The journal became unavailable after a step was submitted")
+            return
+        if run.state == "draining":
+            # Every step already went out, so its acks and readback still decide the outcome. Only the
+            # host giving up on the run concludes it now.
+            if reason in ("host_stopping", "host_wait_exceeded"):
+                self._conclude(run, now, force=True)
             return
         self._log("step_cancelled", {"request_id": run.request_id, "from_step": run.submitted + 1,
                                      "count": len(run.messages), "reason": reason, "detail": detail})
@@ -3117,12 +3249,11 @@ class Broker:
                    resource=run.resource, outcome=outcome["kind"], dispatched_steps=run.submitted,
                    planned_steps=len(run.messages))
         self._notify = True
-        self._trim_runs()
+        self._trim_runs(keep=run.request_id)
 
     def _active_runs(self) -> list[_Run]:
         return [self._runs[request_id] for request_id in self._live_runs]
 
-    # Action hooks the authority half calls, all with the broker lock held ---------------------------
     def _on_grant_lost(self, grant: Grant, resources, reason: str, now: int) -> None:
         """A grant lost these resources (narrowed or ended): its runs on them stop before the next step."""
         for run in self._active_runs():
@@ -3141,8 +3272,17 @@ class Broker:
     def _run_due(self, now: int) -> None:
         """From ``tick``, after every expiry due by ``now``: admit due steps."""
         for run in self._active_runs():
-            if run.state == "running":
+            if run.state != "running":
+                continue
+            try:
                 self._advance_run(run.request_id, now)
+            except Exception:
+                # A fault while admitting a step: it may have gone out. The run is outcome_unknown, and
+                # the fault propagates so the host stops agent control and says so.
+                current = self._runs.get(run.request_id)
+                if current is not None and current.active:
+                    self._unknown(current, now, "The b2b host failed while admitting a step")
+                raise
 
     def _on_adapter_ack(self, event: dict, now: int) -> None:
         sid, status = event.get("submission_id"), event.get("status")
