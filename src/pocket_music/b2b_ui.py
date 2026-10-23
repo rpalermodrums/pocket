@@ -44,7 +44,7 @@ _SYNTHETIC_POSTS = {"/api/synthetic/input": "synthetic_input", "/api/synthetic/f
 _FAULTS = {"disconnect": "disconnect_controller", "reconnect": "reconnect_controller",
            "lose_route": "lose_route", "restore_route": "restore_route", "restart_writer": "restart_writer"}
 _LOCKED = ("Locked: reopen the page link from the host terminal to acknowledge notices or issue permissions. "
-           "Stop, Hold and Deny still work.")
+           "Stop, Hold, Deny, Take it back, Withdraw and Revoke still work.")
 _ABSOLUTE_PATH = re.compile(r"(?<![\w.>-])/[^\s'\"]+")
 
 

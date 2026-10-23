@@ -429,6 +429,7 @@ def test_page_assets_use_text_content_const_and_strip_the_fragment():
     assert "owner.reason, blocked, proactive, isInvited, reason]" in script  # what a row shows
     assert "proposals.map(p => [p.proposal_id, p.sha256])" in script
     assert "return (app.current && app.snapshot) || app.publicView || app.snapshot;" in script
+    assert script.count("  redraw();\n") == 2 and "if (!app.current) return;  // an answer" in script
     assert "pad.control.noteReduction(path, fields)" in script
     assert "pad.control.press()" in script and "pad.control.release()" in script
 
@@ -751,3 +752,26 @@ def test_a_scheduler_failure_still_stops_agent_control_on_a_closed_terminal(host
     assert host.failed.is_set()
     events = b2b.b2b_events(session, max_events=256)["events"]
     assert any(e["type"] == "panic" for e in events)  # the panic ran though nothing could be printed
+
+
+def test_an_existing_output_dir_gets_the_hint_for_what_happened(tmp_path, socket_parent):
+    first = _host(tmp_path, socket_parent, name="run-1")
+    try:
+        session = prepare(first, tmp_path)
+        with pytest.raises(PocketError) as caught:  # this host's finished prepare: reuse it
+            b2b.b2b_prepare(str(first.runtime_dir), session)
+        assert caught.value.code == "io_error" and "use this folder as session_dir" in caught.value.hint
+        empty = tmp_path / "interrupted"
+        empty.mkdir()
+        with pytest.raises(PocketError) as caught:
+            b2b.b2b_prepare(str(first.runtime_dir), str(empty))
+        assert "Remove it, then retry with exactly the same arguments" in caught.value.hint
+    finally:
+        first.stop()
+    second = _host(tmp_path, socket_parent, name="run-2")
+    try:
+        with pytest.raises(PocketError) as caught:  # a restarted host never reuses the old session
+            b2b.b2b_prepare(str(second.runtime_dir), session)
+        assert "Pass a new output_dir" in caught.value.hint
+    finally:
+        second.stop()

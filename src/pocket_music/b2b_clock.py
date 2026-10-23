@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""The b2b clocks. This is the only b2b module that reads an operating-system clock or wall time.
+"""The b2b clocks. Every b2b decision reads time through them; only the host also reads real time,
+to bound how long it waits for an act to finish.
 
 Leases and deadlines use a deadline clock that keeps counting while the machine sleeps, so a
 grant can't survive a suspend. A second uptime clock pauses during sleep; the broker compares

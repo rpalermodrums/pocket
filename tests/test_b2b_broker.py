@@ -1590,7 +1590,7 @@ def test_a_cancel_from_a_lost_route_lasts_until_the_route_comes_back(tmp_path):
     assert events(h, "gesture_released")[-1]["outcome"] == "voided"
     h.tick(100)
     h.press()
-    h.adapter.restore_route()  # cancels this press too, and starts a new epoch
+    h.adapter.restore_route()  # a new epoch
     h.tick(100)
     h.press()  # repeated in the new epoch: starts fresh
     h.tick(700)

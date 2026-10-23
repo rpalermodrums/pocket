@@ -184,6 +184,21 @@ def _triple(expected_session_epoch, expected_control_revision, expected_state_sh
             "expected_state_sha256": expected_state_sha256}
 
 
+def _existing_output_hint(output: Path, runtime: Path) -> str:
+    """What to do with an output_dir that exists: reuse it only when it is this running host's session."""
+    if output.is_dir() and not output.is_symlink() and not any(output.iterdir()):
+        return ("This folder is empty, so an earlier b2b_prepare was interrupted. Remove it, then retry with "
+                "exactly the same arguments.")
+    try:
+        session, connection = _session(str(output)), _connection(str(runtime))
+    except PocketError:
+        session = connection = None
+    if (session is not None and session["runtime_dir"] == str(runtime)
+            and session["host_epoch"] == connection["host_epoch"]):
+        return "An earlier b2b_prepare for this host finished here: use this folder as session_dir."
+    return "Pass a new output_dir; b2b_prepare never writes into an existing folder."
+
+
 def b2b_prepare(runtime_dir: str, output_dir: str, settings: B2bSettings | None = None,
                 human_reserved: list[str] | None = None,
                 proposed_policy: PermissionDraft | None = None) -> dict:
@@ -191,11 +206,8 @@ def b2b_prepare(runtime_dir: str, output_dir: str, settings: B2bSettings | None 
     runtime = Path(_text(runtime_dir, "runtime_dir")).expanduser().resolve()
     output = Path(_text(output_dir, "output_dir")).expanduser().resolve()
     if output.exists() or output.is_symlink():
-        finished = (output / "b2b.json").is_file()
         raise PocketError("output_dir already exists", code="io_error",
-                          hint=("An earlier b2b_prepare finished here: use this folder as session_dir."
-                                if finished else
-                                "Pass a new output_dir; b2b_prepare never writes into an existing folder."))
+                          hint=_existing_output_hint(output, runtime))
     request = {"output_dir_resolved": str(output)}
     for name, value in (("settings", settings), ("human_reserved", human_reserved),
                         ("proposed_policy", proposed_policy)):

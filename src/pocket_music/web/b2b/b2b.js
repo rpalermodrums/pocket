@@ -131,6 +131,7 @@ async function refresh() {
 }
 
 function adopt(snapshot) {
+  if (!app.current) return;  // an answer that lands after another page took over: the public view rules
   app.snapshot = snapshot;
   app.receivedAt = performance.now();
   if (snapshot.current === false && app.current) {
