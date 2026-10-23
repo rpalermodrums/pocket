@@ -1541,7 +1541,7 @@ def test_a_row_only_the_permission_covers_reports_the_permissions_retry(tmp_path
     issued(h)  # idle claims need 4 s of stillness
     moved = h.now
     h.move(TRIM_2, 90)
-    h.tick(2100)  # the activity hold has ended; the idle interval hasn't
+    h.tick(1000)  # inside the 2 s activity hold, where both bases are blocked
     row = next(r for r in h.observe()["resources"] if r["resource_id"] == GAIN)
-    assert (row["owner"]["kind"], row["blocked_by"]) == ("unowned", "human_active")
-    assert row["retry_not_before_monotonic_ns"] == moved + 4000 * MS  # not the invitation's settle time
+    assert (row["owner"]["kind"], row["blocked_by"]) == ("human", "human_active")
+    assert row["retry_not_before_monotonic_ns"] == moved + 4000 * MS  # not the invitation basis's 2 s

@@ -96,8 +96,13 @@ async function perform(path, body, key = "issuer") {
   }
 }
 
+// The synthetic hand-back pad, while it is down on this page. A Hold or Stop pressed meanwhile
+// cancels the press here too, since its request may reach the host before the press does.
+const pad = {down: false, at: 0, cancelled: false, queue: Promise.resolve()};
+
 // Reductions need only the public CSRF token; fetch it again if the page doesn't have it yet.
 async function reduce(path, fields) {
+  if (pad.down && (path === "/api/panic" || path === "/api/holds")) pad.cancelled = true;
   if (!app.csrf) {
     try {
       app.csrf = (await api("/api/public", {key: "public"})).csrf_token;
@@ -516,24 +521,26 @@ function buildPanel(panel) {
   }
   controls.append(button("Send unknown message", () => send([0xb3, 99, 1]), {class: "quiet"}));
   const gesture = panel.gestures[0];
-  const pad = $("handback");
-  // The release carries how long this page saw the pad held. The host takes the shorter of that and
-  // its own measure, so a slow request can't turn a tap into a hand-back.
-  const pressed = {at: 0};
+  const padButton = $("handback");
+  // Press and release go in order, so a late release never ends the next press. The release carries
+  // how long this page saw the pad held (none if a Hold or Stop cancelled it), and the host takes the
+  // shorter of that and its own measure, so waiting in line never turns a tap into a hand-back.
+  const inOrder = (message, extra) => (pad.queue = pad.queue.then(() => send(message, extra)));
   const down = () => {
-    pad.setAttribute("aria-pressed", "true");
-    pressed.at = performance.now();
-    send(rawMessage(gesture.message, gesture.press_value));
+    padButton.setAttribute("aria-pressed", "true");
+    Object.assign(pad, {down: true, at: performance.now(), cancelled: false});
+    inOrder(rawMessage(gesture.message, gesture.press_value));
   };
   const up = () => {
-    if (pad.getAttribute("aria-pressed") !== "true") return;
-    pad.setAttribute("aria-pressed", "false");
-    send(rawMessage(gesture.message, gesture.release_value),
-         {held_ms: Math.max(0, Math.round(performance.now() - pressed.at))});
+    if (!pad.down) return;
+    padButton.setAttribute("aria-pressed", "false");
+    const held = pad.cancelled ? 0 : Math.min(600000, Math.max(0, Math.round(performance.now() - pad.at)));
+    pad.down = false;
+    inOrder(rawMessage(gesture.message, gesture.release_value), {held_ms: held});
   };
-  pad.textContent = `${gesture.label} (hold at least ${gesture.long_press_ms / 1000} s)`;
-  pad.addEventListener("pointerdown", down);
-  for (const name of ["pointerup", "pointercancel", "pointerleave"]) pad.addEventListener(name, up);
+  padButton.textContent = `${gesture.label} (hold at least ${gesture.long_press_ms / 1000} s)`;
+  padButton.addEventListener("pointerdown", down);
+  for (const name of ["pointerup", "pointercancel", "pointerleave"]) padButton.addEventListener(name, up);
   const faults = [["Disconnect controller", "disconnect"], ["Reconnect controller", "reconnect"],
                   ["Lose master route", "lose_route"], ["Restore master route", "restore_route"],
                   ["Restart writer", "restart_writer"]];

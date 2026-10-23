@@ -2911,7 +2911,8 @@ class Broker:
                 self._gestures[gid] = {**gesture, "voided": True}
 
     def _gesture(self, event, now: int) -> None:
-        """Press/release timing is the broker's. Bounces, duplicates and lost releases never invite."""
+        """Press/release timing is the broker's; a sender's own hold time can only shorten it.
+        Bounces, duplicates and lost releases never invite."""
         gid, phase = event.get("gesture_id"), event.get("phase")
         binding = self._profile.gesture_by_id.get(gid)
         if binding is None or phase not in ("press", "release"):
@@ -2944,7 +2945,8 @@ class Broker:
             held = min(held, reported * MS)  # the sender's own timing may shorten a press, never lengthen it
         self._gestures[gid] = {"state": "idle", "t0": None, "last_transition_ns": now}
         if state.get("voided"):
-            outcome, invitation = "voided", None  # a Hold, Stop or new epoch cancelled this press
+            # A Hold, Stop, new epoch, lost controller or route, or host fault cancelled this press.
+            outcome, invitation = "voided", None
         elif held < binding["long_press_ms"] * MS:
             outcome, invitation = "short_press_ignored", None
         else:

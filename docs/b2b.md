@@ -124,10 +124,11 @@ use **Take it back**.
 **Invite** never drops a hold. Linked controls, like an FX unit's depth and route,
 are handed back together, so release any hold in that pair first. The hand-back
 pad is different: a long press hands back its controls, held or not. While the pad
-is down, a Hold on one of its controls, or Stop, cancels that press; so does an epoch
-change, a lost controller or route, or a host fault. A press the host sees while the
-pad still reads pressed starts the timing again, and the page sends how long it saw
-the pad held, so a slow request can only make a press shorter, never longer.
+is down, a Hold on one of its controls, or Stop, cancels that press; so does a
+controller reconnect, a lost or restored route, a writer restart, sleep, or a host
+fault. A second press before a release counts from the second press. The page sends
+how long it saw the pad held, so a slow request can only make a press shorter, never
+longer.
 
 The agent then:
 

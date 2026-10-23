@@ -165,7 +165,7 @@ class TrustedPage:
         message, origin = body.get("message"), body.get("origin", "controller")
         held_ms = body.get("held_ms")
         if held_ms is not None and (type(held_ms) is not int or not 0 <= held_ms <= 600_000):
-            raise _bad("held_ms is a whole number of milliseconds",
+            raise _bad("held_ms is a whole number of milliseconds from 0 to 600000",
                        "Send how long the pad was held, or leave it out.")
         if (not isinstance(message, list) or not 1 <= len(message) <= 3
                 or any(type(b) is not int or not 0 <= b <= 255 for b in message)):

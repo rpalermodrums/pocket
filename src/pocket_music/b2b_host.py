@@ -214,9 +214,12 @@ class B2bHost:
                 self.tick()
                 self._print_faults()
         except Exception:  # noqa: BLE001 - fail closed: agent control stops and the host exits
-            traceback.print_exc(file=sys.stderr)
-            print("b2b host: the scheduler failed, so agent control stopped and this host is exiting. Your "
-                  "controls work as before.", file=sys.stderr, flush=True)
+            try:
+                traceback.print_exc(file=sys.stderr)
+                print("b2b host: the scheduler failed, so agent control stopped and this host is exiting. "
+                      "Your controls work as before.", file=sys.stderr, flush=True)
+            except (OSError, ValueError):  # a closed terminal must not skip the panic below
+                pass
             try:
                 # A fresh id: a fixed one could be posted first and turn this into a harmless replay.
                 self.broker.panic({"request_id": f"host-scheduler-failed-{secrets.token_hex(12)}"})
