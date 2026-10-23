@@ -73,6 +73,7 @@ SETTINGS = MappingProxyType({
 MAX_GRANTS, MAX_INVITATIONS, MAX_PROPOSALS, MAX_PERMISSION_HISTORY = 8, 8, 16, 32
 MAX_NOTICES, MAX_CLAIM_RESOURCES, MAX_REQUESTS, RECEIPT_CACHE = 256, 16, 16_384, 1024
 MAX_EVENTS, MAX_EVENT_BYTES, MAX_RECEIPT_BYTES = 4096, 4 * 1024 * 1024, 64 * 1024
+MAX_EVENTS_PAGE_BYTES = 192 * 1024  # below the 256 KiB response line, with room for the envelope
 MAX_GRANT_HISTORY, MAX_ENDED_RECORDS, MAX_RUN_HISTORY = 256, 64, 256
 COALESCE_NS = 250 * MS  # human-input and refusal events coalesce within this window
 MAX_AHEAD_NS = 60_000 * MS  # a claim or act deadline is at most 60 s ahead
@@ -156,7 +157,7 @@ NEXT_ACTIONS = MappingProxyType({
     "deadline_passed": _OBSERVE_AGAIN, "epoch_changed": _OBSERVE_AGAIN,
     "action_not_permitted": "Stay within the limits b2b_observe shows.",
     "outside_limits": "Stay within the limits b2b_observe shows.",
-    "baseline_unknown": "Call b2b_observe; never toggle without a known state.",
+    "baseline_unknown": "Call b2b_observe; set the control before ramping it.",
     "state_unknown": "Call b2b_observe; never toggle without a known state.",
     "evidence_stale": "Call b2b_observe; never toggle without a known state.",
     "expansion_not_permitted": "Ask the person for a wider permission or an invitation.",
@@ -686,11 +687,21 @@ def _round_div(numerator: int, denominator: int) -> int:
     return rounded if numerator >= 0 else -rounded
 
 
-def _valid_readback(readback) -> bool:
-    """A control readback the broker can compare and journal: an int or a state name, a time, its scope."""
-    return (isinstance(readback, Readback) and type(readback.observed_monotonic_ns) is int
+def _valid_readback(readback, descriptor=None) -> bool:
+    """A control readback the broker can compare and journal: an int or a state name, a time, its scope.
+
+    With the control's descriptor, the value must also be the kind it declares: an int for a numeric
+    readback, one of its states for a state readback.
+    """
+    if not (isinstance(readback, Readback) and type(readback.observed_monotonic_ns) is int
             and readback.scope == "control_readback"
-            and (type(readback.value) is int or isinstance(readback.value, str)))
+            and (type(readback.value) is int or isinstance(readback.value, str))):
+        return False
+    if descriptor is None:
+        return True
+    if descriptor["readback"] == "numeric":
+        return type(readback.value) is int
+    return descriptor["readback"] == "state" and readback.value in (descriptor.get("states") or ())
 
 
 def _valid_submission(submission) -> bool:
@@ -820,7 +831,18 @@ class Broker:
                 self._lock_owner = None
 
     def _advance(self, now: int) -> None:
-        """Run everything due by ``now`` in a fixed order, before the caller's own work."""
+        """Run everything due by ``now`` in a fixed order, before the caller's own work.
+
+        A fault here (a timer, an epoch renewal) fails closed before it propagates, so the same due
+        item can't wedge every later entry, Stop included.
+        """
+        try:
+            self._advance_due(now)
+        except Exception as fault:
+            self._after_fault(fault, self._fail_closed)
+            raise
+
+    def _advance_due(self, now: int) -> None:
         fired = False
         uptime = self._clock.uptime_ns()
         gap = suspend_gap_ns(self._last_pair, (now, uptime))
@@ -885,7 +907,7 @@ class Broker:
         event = {"sequence": self._event_seq, "monotonic_ns": self._entry_now,
                  "session_epoch": self.session_epoch, "control_revision": self._revision, "type": event_type,
                  **fields}
-        size = len(canonical_bytes(event))
+        size = len(json.dumps(event, ensure_ascii=True, allow_nan=False, separators=(",", ":")))  # wire bytes
         self._events.append([event, size])
         self._event_bytes += size
         while len(self._events) > MAX_EVENTS or self._event_bytes > MAX_EVENT_BYTES:
@@ -1071,8 +1093,12 @@ class Broker:
         for grant in self._active_grants():
             self._end_grant(grant, reason)
 
-    def _take_back(self, resources, cause: str, now: int) -> None:
-        """Human priority: the touched controls become the person's before the agent's next step."""
+    def _take_back(self, resources, cause: str, now: int, settles=()) -> None:
+        """Human priority: the touched controls become the person's before the agent's next step.
+
+        Only a touch on the control itself settles its pickup (``settles``). Input anywhere else leaves
+        the pickup waiting, so a fader that disagrees with the software never becomes claimable unseen.
+        """
         by_grant = {}
         for rid in resources:
             owner = self._owners[rid]
@@ -1082,6 +1108,8 @@ class Broker:
             self._lose(self._grants[gid], rids, cause, release_owners=False, takeover=True)
         for rid in resources:
             owner = self._owners[rid]
+            if owner.kind == "pickup_pending" and rid not in settles:
+                continue
             if owner.kind == "pickup_pending" and owner.explicit:
                 # The touch settles the pickup; the person's hold on it stays.
                 self._set_owner(rid, "human", cause, hold="explicit", gesture_id=owner.gesture_id,
@@ -1335,8 +1363,9 @@ class Broker:
         return "exact", None
 
     def _make_room(self, channel: str, *, reduction: bool) -> None:
-        """Keep a request table bounded. A reduction (Stop above all) is never refused for lack of room:
-        it forgets the oldest finished request instead, whose replay then can't be guaranteed."""
+        """Keep a request table bounded. On the public table, a reduction (Stop above all) is never
+        refused for lack of room: it forgets the oldest finished request, whose replay then can't be
+        guaranteed. A full agent or page table refuses instead."""
         table = self._requests[channel]
         if len(table) < MAX_REQUESTS:
             return
@@ -1347,8 +1376,8 @@ class Broker:
         if oldest is None:
             raise PocketError("This b2b host has kept its maximum number of requests",
                               code="invalid_request",
-                              hint="This b2b host has kept its maximum number of requests; stop it and "
-                                   "start a new host.")
+                              hint="This b2b host has kept its maximum number of requests; ask the person "
+                                   "to stop it and start a new host. Stop agent control still works.")
         del table[oldest]
         self._receipts.pop((channel, oldest), None)
         self._counters["forgotten_requests"] = self._counters.get("forgotten_requests", 0) + 1
@@ -1451,6 +1480,9 @@ class Broker:
         except Exception as fault:
             def record():
                 self._fail_closed()
+                entry = self._requests[channel].get(request_id)
+                if entry is not None and entry.state == "complete":
+                    return  # the request's own receipt was recorded before the fault
                 lost = "The b2b host failed while handling this request; agent authority ended."
                 result = {"outcome": {"kind": "outcome_unknown", "request_id": request_id,
                                       "automatic_retry": False}, "warnings": [lost]}
@@ -1469,11 +1501,37 @@ class Broker:
             fault.add_note(f"Failing closed after this fault also raised {type(also).__name__}: {also}")
 
     def _fail_closed(self) -> None:
-        """After a host fault: end every agent grant and commit, so the revision matches the state."""
-        for run in self._active_runs():  # first, so no run reads as merely cancelled or partial
-            self._unknown(run, self._entry_now, "The b2b host failed while this act was running")
-        self._end_all_grants("outcome_unknown")
-        self._commit("host_fault")
+        """After a host fault, all agent authority ends, as when the journal degrades, and the state commits.
+
+        Runs go first, so none reads as merely cancelled or partial. A run whose own record fails is
+        forced terminal, and the grants, invitations and permission end whatever happened before.
+        """
+        try:
+            for run in self._active_runs():
+                try:
+                    self._unknown(run, self._entry_now, "The b2b host failed while this act was running")
+                except Exception:  # noqa: BLE001 - the fault that brought us here is the one reported
+                    self._force_unknown(run)
+        finally:
+            self._clear_authority("outcome_unknown", "invalidated")
+            self._commit("host_fault")
+
+    def _force_unknown(self, run: _Run) -> None:
+        """Recording this run failed while failing closed: terminal, with the smallest honest receipt."""
+        self._live_runs.pop(run.request_id, None)  # first, so ending its grant can't touch it again
+        entry = self._requests["agent"].get(run.request_id)
+        if entry is not None and entry.state == "complete":
+            return  # its receipt was recorded before the fault
+        outcome = {"kind": "outcome_unknown", "request_id": run.request_id, "automatic_retry": False}
+        lost = ["The b2b host failed while this act was running; its full record could not be kept."]
+        try:
+            made = self._receipt("act", run.request_id, {"outcome": outcome, "warnings": lost},
+                                 self._entry_now, "exact", None)
+        except Exception:  # noqa: BLE001 - a plain record still says what is known
+            made = {"request_id": run.request_id, "status": "outcome_unknown", "outcome": outcome,
+                    "warnings": lost}
+        self._runs[run.request_id] = replace(run, state="terminal", receipt=made)
+        self._complete_request("agent", run.request_id, made)
 
     def _check_running(self) -> None:
         if self._stopped:
@@ -2025,7 +2083,7 @@ class Broker:
             _text(after["host_epoch"], "after.host_epoch", 1, 32)
             _int(after["sequence"], "after.sequence", 0, 2**63 - 1)
         max_events = _int(request.get("max_events", 64), "max_events", 1, 256)
-        max_bytes = _int(request.get("max_bytes", 65536), "max_bytes", 1024, 262_144)
+        max_bytes = _int(request.get("max_bytes", 65536), "max_bytes", 1024, MAX_EVENTS_PAGE_BYTES)
         with self._entry():
             self._check_session(session_id)
             earliest = self._events[0][0]["sequence"] if self._events else self._event_seq + 1
@@ -2235,6 +2293,11 @@ class Broker:
         inputs = {"triple": list(triple), "resources": list(resources)}
 
         def evaluate(now):
+            held = [rid for rid in resources if self._owners[rid].explicit]
+            if held:  # a conflict group is invited whole, so one row's Invite could reach another's hold
+                return self._refused("resource_held_by_human",
+                                     f"Release your hold on {', '.join(held)} first; an invitation never "
+                                     "drops a hold")
             if len(self._outstanding_invitations()) >= MAX_INVITATIONS:
                 return self._refused("invitation_limit_reached",
                                      f"At most {MAX_INVITATIONS} invitations are outstanding at once")
@@ -2584,6 +2647,14 @@ class Broker:
 
         def evaluate(now):
             invitation = self._invitations.get(invitation_id)
+            if invitation is not None and invitation.state == "consumed":
+                # The agent claimed it first: withdrawing still means no, so that grant ends too.
+                claimed = [g for g in self._active_grants() if g.basis.invitation_id == invitation_id]
+                for grant in claimed:
+                    self._end_grant(grant, "revoked_by_human")
+                if claimed:
+                    return {"outcome": {"kind": "revoked", "invitation_id": invitation_id,
+                                        "grant_id": claimed[0].grant_id}}
             if invitation is None or invitation.state != "outstanding":
                 return self._refused("invitation_not_found", "That invitation already ended")
             self._end_invitation(invitation, "cancelled", "withdrawn_by_human")
@@ -2624,6 +2695,8 @@ class Broker:
             self._end_all_grants("panic")
             for invitation in self._outstanding_invitations():
                 self._end_invitation(invitation, "cancelled", "panic")
+            # A pad held down through Stop hands nothing back when it is lifted.
+            self._gestures = {gid: self._idle_gesture() for gid in self._gestures}
             if permission is not None:
                 self._end_permission(permission, "revoked", "panic", "panic")
             self._revocations += 1
@@ -2643,7 +2716,11 @@ class Broker:
             self._sink_violations += 1
             raise AdapterContractError("The adapter called the broker from inside a broker section")
         with self._entry() as now:
-            self._on_event(event, now)
+            try:
+                self._on_event(event, now)
+            except Exception as fault:  # a host fault mid-event may leave authority half-changed
+                self._after_fault(fault, self._fail_closed)
+                raise
             self._commit(f"adapter:{event.get('type') if isinstance(event, dict) else 'invalid'}")
 
     def _on_event(self, event, now: int) -> None:
@@ -2661,10 +2738,6 @@ class Broker:
         elif kind == "heartbeat":
             self._heartbeat_ns = now
         elif kind == "readback":
-            rid = event.get("resource")
-            if rid in self._evidence:
-                self._evidence[rid]["readback"] = {k: event.get(k) for k in ("value", "scope",
-                                                                              "observed_monotonic_ns")}
             self._on_adapter_readback(event, now)
         elif kind == "ack":
             self._on_adapter_ack(event, now)
@@ -2686,7 +2759,7 @@ class Broker:
         touched = tuple(dict.fromkeys(touched))
         closure = self._profile.yield_closure(touched)
         settled = [rid for rid in touched if self._owners[rid].kind == "pickup_pending"]
-        self._take_back(closure, "human_input", now)
+        self._take_back(closure, "human_input", now, settles=settled)
         for rid in closure:
             self._evidence[rid]["last_input_ns"] = now
         for rid in touched:
@@ -3006,7 +3079,7 @@ class Broker:
         except Exception as error:  # noqa: BLE001 - a broken adapter must never leave this request running
             return self._refused("adapter_unavailable",
                                  f"The adapter could not be read: {type(error).__name__}")
-        if readback is not None and not _valid_readback(readback):
+        if readback is not None and not _valid_readback(readback, d):
             return self._refused("adapter_unavailable", "The adapter returned a malformed readback")
         down = [n for n in d["depends_on"] if dependencies.get(n) != "available"]
         if down:
@@ -3176,7 +3249,8 @@ class Broker:
             self._stop_run(run, "adapter_blocked", now, detail=str(error))
             return False
         except AdapterRefused as error:
-            self._stop_run(run, "adapter_refused", now, detail=str(error))
+            late = self._clock.now_ns() >= deadline  # it reached the adapter after its window closed
+            self._stop_run(run, "step_late" if late else "adapter_refused", now, detail=str(error))
             return False
         except Exception as error:  # noqa: BLE001 - a contract break mid-submit: this step may have gone out
             self._runs[run.request_id] = run = replace(run, uncertain_step=index + 1)
@@ -3214,7 +3288,7 @@ class Broker:
             readback = self._adapter.readback(rid)
         except Exception:  # noqa: BLE001 - an adapter fault reads as no readback, never as a value
             return None
-        return readback if _valid_readback(readback) else None
+        return readback if _valid_readback(readback, self._profile.resources[rid]) else None
 
     def _health(self) -> tuple[dict, int | None] | None:
         """The adapter's dependencies and heartbeat, or None when health can't be read as declared."""
@@ -3379,12 +3453,15 @@ class Broker:
         self._counters["late_adapter_acks"] = self._counters.get("late_adapter_acks", 0) + 1
 
     def _on_adapter_readback(self, event: dict, now: int) -> None:
+        rid = event.get("resource")
         readback = Readback(event.get("value"), event.get("scope"), event.get("observed_monotonic_ns"))
-        if not _valid_readback(readback):
-            self._counters["ignored_events"] += 1
+        if rid not in self._evidence or not _valid_readback(readback, self._profile.resources[rid]):
+            self._counters["ignored_events"] += 1  # malformed or not this control's kind: never a value
             return
+        self._evidence[rid]["readback"] = {"value": readback.value, "scope": readback.scope,
+                                           "observed_monotonic_ns": readback.observed_monotonic_ns}
         for run in self._active_runs():
-            if run.resource == event.get("resource") and run.state == "draining":
+            if run.resource == rid and run.state == "draining":
                 self._conclude(self._note_readback(run, readback), now)
 
     def _record_commanded(self, rid: str, grant_id: str, value) -> None:

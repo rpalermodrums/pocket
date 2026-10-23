@@ -209,7 +209,7 @@ def test_page_token_appears_in_no_file_receipt_event_or_journal(host, tmp_path):
                                 action={"kind": "set", "resource": GAIN, "value": 80},
                                 not_after_monotonic_ns=claim["monotonic_ns"] + 4000 * MS))
     assert receipts[-1]["outcome"]["kind"] == "verified"
-    receipts += [b2b.b2b_events(session, max_events=256, max_bytes=262_144), b2b.b2b_observe(session),
+    receipts += [b2b.b2b_events(session, max_events=256, max_bytes=196_608), b2b.b2b_observe(session),
                  b2b.b2b_request_status(session, "act-1")]
     secrets = (host.page.issuer_token, host.page.public_csrf)
     blob = json.dumps(receipts)
@@ -550,7 +550,7 @@ def test_end_to_end_handback_proactive_and_stop_over_socket_and_page(host, tmp_p
     assert observed["grants"] == observed["permissions"] == []
     assert host.adapter.value("synthetic/right/transport") == "playing"
     # 7. Events page in order, and request_status replays without redispatch.
-    types = [e["type"] for e in b2b.b2b_events(session, max_events=256, max_bytes=262_144)["events"]]
+    types = [e["type"] for e in b2b.b2b_events(session, max_events=256, max_bytes=196_608)["events"]]
     assert types.index("invitation_created") < types.index("grant_created") < types.index("panic")
     status = b2b.b2b_request_status(session, "act-2")
     assert status["state"] == "complete" and status["receipt"]["outcome"]["kind"] == "verified"
@@ -592,6 +592,44 @@ def test_writes_fsync_outside_the_broker_lock_and_report_a_failed_sync(host, tmp
     observed = b2b.b2b_observe(session)
     late = b2b.b2b_revoke(session, "revoke-2", **triple(observed), target={"kind": "all_own_authority"})
     assert late["warnings"][-1].startswith("journal_sync_failed")
+    monkeypatch.setattr(host.page, "_sync", lambda: "failed")  # the page holds its own handle on sync
+    held_late = public(host, "/api/holds", {"request_id": "page-hold-2", "resources": [GAIN]})
+    assert held_late["warnings"][-1].startswith("journal_sync_failed")  # the page says so too
+    monkeypatch.setattr(host.page, "_sync", lambda: "full")
+    full = public(host, "/api/holds", {"request_id": "page-hold-3", "resources": [GAIN]})
+    assert full["warnings"][-1].startswith("journal_full")
+
+
+def test_stop_ends_agent_authority_before_the_scheduler_stops(host, monkeypatch):
+    seen = []
+    shutdown = host.broker.shutdown
+
+    def spy(reason):
+        seen.append(host._stop.is_set())  # the scheduler is still running here
+        return shutdown(reason)
+
+    monkeypatch.setattr(host.broker, "shutdown", spy)
+    host.stop()
+    assert seen == [False] and host._stop.is_set()
+
+
+def test_a_full_events_page_fits_the_response_line_even_in_escaped_text(host, tmp_path):
+    attach(host)
+    session = prepare(host, tmp_path)
+    reason = "\U0001f3b5" * 200  # each one is 4 bytes of UTF-8 but 12 escaped on the wire
+    for n in range(120):
+        observed = b2b.b2b_observe(session)
+        invited = issuer(host, "POST", "/api/invitations", {"request_id": f"page-i{n}", **triple(observed),
+                                                            "resources": [GAIN]})
+        observed = b2b.b2b_observe(session)
+        claim = b2b.b2b_claim(session, f"claim-{n}", **triple(observed), resources=[GAIN], reason=reason,
+                              basis={"kind": "invitation",
+                                     "invitation_id": invited["outcome"]["invitation"]["invitation_id"]},
+                              lease_ms=3000, not_after_monotonic_ns=observed["monotonic_ns"] + 5000 * MS)
+        observed = b2b.b2b_observe(session)
+        b2b.b2b_release(session, f"release-{n}", **triple(observed), grant_id=claim["grant"]["grant_id"])
+    page = b2b.b2b_events(session, max_events=256, max_bytes=196_608)
+    assert page["truncated_by_bytes"] is True and len(page["events"]) > 1  # delivered, never a lost line
 
 
 def test_a_stopping_host_still_answers_reads_but_refuses_changes(host, tmp_path):

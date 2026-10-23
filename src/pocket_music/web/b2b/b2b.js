@@ -264,8 +264,8 @@ function renderResources(snapshot) {
     const only = [resource.resource_id];
     if (!held) actions.append(button("Hold", () => reduce("/api/holds", {resources: only})));
     if (held) actions.append(button("Release", () => increase("/api/holds/release", {resources: only})));
-    if (!["agent", "unavailable", "pickup_pending"].includes(owner.kind)) {
-      const group = groupOf(snapshot, resource);  // a conflict group is handed back whole
+    if (!held && !["agent", "unavailable", "pickup_pending"].includes(owner.kind)) {
+      const group = groupOf(snapshot, resource);  // a conflict group is handed back whole; holds stay
       actions.append(button("Invite", () => increase("/api/invitations", {resources: group})));
     }
     if (owner.kind === "agent") {

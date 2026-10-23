@@ -927,3 +927,156 @@ def test_a_malformed_readback_after_a_submit_is_outcome_unknown(tmp_path):
     result = h.act(_granted(h), {"kind": "set", "resource": GAIN, "value": 70})
     assert result["outcome"]["kind"] == "outcome_unknown" and adapter.sent_count == 1
     assert h.broker.request_status(h.session_id, result["request_id"])["state"] == "complete"
+
+
+def _fault(*_args, **_kwargs):
+    raise RuntimeError("a host bug")
+
+
+def test_failing_closed_ends_every_agent_authority_even_when_a_run_cannot_be_recorded(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    gid, permission = _proactive(h)
+    h.invite([TRANSPORT])
+    run = h.act_begin(gid, RAMP)
+    _after_steps(h, run, 2)
+    monkeypatch.setattr(h.broker, "_advance_run", _fault)
+    monkeypatch.setattr(h.broker, "_finish", _fault)  # recording the run fails too
+    with pytest.raises(RuntimeError):
+        h.tick(50)
+    monkeypatch.undo()
+    observed = h.observe()
+    assert observed["grants"] == [] and observed["invitations"] == []
+    assert observed["authority_state"]["permissions"] == []
+    status = h.broker.request_status(h.session_id, run.request_id)
+    assert status["state"] == "complete" and status["receipt"]["outcome"]["kind"] == "outcome_unknown"
+    sent = h.adapter.sent_count
+    h.tick(500)
+    assert h.adapter.sent_count == sent  # nothing more went out
+    assert h.claim([GAIN], h.permission_basis(permission))["outcome"]["code"] == "permission_not_active"
+
+
+def test_a_fault_in_a_timer_fails_closed_once_and_stop_still_works(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    h.issue()
+    h.invite([TRANSPORT])
+    fire = h.broker._fire
+
+    def failing(kind, key, at, now):
+        if kind == "invitation":
+            raise RuntimeError("a host bug")
+        return fire(kind, key, at, now)
+
+    monkeypatch.setattr(h.broker, "_fire", failing)
+    with pytest.raises(RuntimeError):
+        h.tick(h.broker._settings["invitation_ttl_ms"] + 10)
+    assert h.broker.panic({})["outcome"]["kind"] == "panic"  # the due item no longer wedges every entry
+    observed = h.observe()
+    assert observed["invitations"] == [] and observed["authority_state"]["permissions"] == []
+
+
+def test_a_fault_after_an_act_finished_keeps_its_own_receipt(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    gid = _granted(h)
+    monkeypatch.setattr(h.broker, "_trim_runs", _fault)
+    request_id = h.request_id()
+    with pytest.raises(RuntimeError):
+        h.act(gid, {"kind": "set", "resource": GAIN, "value": 70}, request_id=request_id)
+    completed = [e for e in _journal(tmp_path) if e["kind"] == "request_completed"
+                 and e["data"]["request_id"] == request_id]
+    assert [e["data"]["receipt"]["outcome"]["kind"] for e in completed] == ["verified"]
+    assert h.broker.request_status(h.session_id, request_id)["receipt"]["outcome"]["kind"] == "verified"
+
+
+def test_a_step_that_reaches_the_adapter_after_its_window_is_late_not_a_host_fault(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    gid = _granted(h)
+    submit = h.adapter.submit
+
+    def slow(step, admission):
+        h.clock.advance(admission.deadline_monotonic_ns - h.clock.now_ns())  # it arrives as the window closes
+        return submit(step, admission)
+
+    monkeypatch.setattr(h.adapter, "submit", slow)
+    result = h.act(gid, {"kind": "set", "resource": GAIN, "value": 70})
+    assert result["outcome"] == {"kind": "cancelled_before_dispatch", "reason": "step_late"}
+    assert h.adapter.sent_count == 0
+
+
+class _WrongKindReadback(SyntheticAdapter):
+    """Reads a numeric control back as a word."""
+
+    def readback(self, resource):
+        readback = super().readback(resource)
+        return readback if readback is None or resource != GAIN else replace(readback, value="loud")
+
+
+def test_a_readback_of_the_wrong_kind_is_never_used_as_a_value(tmp_path):
+    h = Harness(tmp_path, broker=False)
+    adapter = _WrongKindReadback()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000c9")
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    refused = h.act(_granted(h), RAMP)
+    assert refused["outcome"] == {"kind": "refused", "code": "adapter_unavailable",
+                                  "detail": "The adapter returned a malformed readback"}
+    ignored = h.observe()["evidence"]["counters"]["ignored_events"]
+    broker.adapter_event({"type": "readback", "resource": GAIN, "value": "loud", "scope": "control_readback",
+                          "observed_monotonic_ns": h.now})
+    observed = h.observe()
+    assert observed["evidence"]["counters"]["ignored_events"] == ignored + 1
+    assert observed["evidence"]["resources"][GAIN]["readback"] is None
+
+
+def test_an_epoch_change_with_unreadable_health_makes_nothing_available(tmp_path):
+    h = Harness(tmp_path, broker=False)
+    adapter = _BrokenHealth()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000ca")
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    adapter.broken = True
+    h.clock.suspend(60_000 * MS)  # the next entry starts a new epoch and reads health
+    owners = {r["resource_id"]: r["owner"]["kind"] for r in h.observe()["resources"]}
+    assert set(owners.values()) == {"unavailable"}
+
+
+def test_a_fault_while_admitting_the_first_step_at_ack_time_fails_closed(tmp_path, monkeypatch):
+    h = _harness(tmp_path)
+    receipt = _claim(h)
+    run = h.act_begin(receipt["grant"]["grant_id"], RAMP)
+    monkeypatch.setattr(h.broker, "_advance_run", _fault)
+    with pytest.raises(RuntimeError):
+        h.ack(receipt["notice"])
+    monkeypatch.undo()
+    assert h.observe()["grants"] == [] and h.adapter.sent_count == 0
+    status = h.broker.request_status(h.session_id, run.request_id)
+    assert status["state"] == "complete" and status["receipt"]["outcome"]["kind"] == "outcome_unknown"
+
+
+class _FailingReadback(SyntheticAdapter):
+    failing = False
+
+    def readback(self, resource):
+        if self.failing:
+            raise RuntimeError("the readback port closed")
+        return super().readback(resource)
+
+
+def test_an_unreadable_readback_at_release_falls_back_to_the_commanded_value(tmp_path):
+    h = Harness(tmp_path, broker=False)
+    adapter = _FailingReadback()
+    broker = Broker(adapter, h.clock, h.journal, host_epoch="h00000000000000cb")
+    h.adapter, h.broker, h.sink = adapter, broker, None
+    h.register()
+    h.attach_page()
+    h.move(TRIM_2, 100)
+    h.tick(2100)
+    gid = _granted(h)
+    assert h.act(gid, {"kind": "set", "resource": GAIN, "value": 50})["outcome"]["kind"] == "verified"
+    adapter.failing = True
+    release = h.broker.release(h.session_id, {"request_id": h.request_id(), **h.triple(), "grant_id": gid})
+    assert release["outcome"]["kind"] == "released"
+    pending = next(r["owner"] for r in h.observe()["resources"] if r["resource_id"] == GAIN)
+    assert (pending["kind"], pending["target_value"], pending["physical_value"]) == ("pickup_pending", 50,
+                                                                                     100)

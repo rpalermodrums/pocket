@@ -153,7 +153,9 @@ const EVENT_TEXT = {
   gesture_released: e => ({invitation_created: "Hand-back pad released: controls handed to the agent",
                            coalesced: "Hand-back pad released: the earlier hand-back still stands",
                            short_press_ignored: "Hand-back pad released too soon: nothing handed back",
-                           invitation_limit_reached: "Hand-back pad released: too many open invitations"}
+                           invitation_limit_reached: "Hand-back pad released: too many open invitations",
+                           agent_control_stopped: "Hand-back pad released: agent control is stopped, nothing "
+                             + "handed back"}
                           [e.outcome] || "Hand-back pad released"),
   release_lost: () => "Hand-back pad held too long: nothing handed back",
   unknown_input: e => `Unrecognised controller message (${e.classification}); everything yields`,

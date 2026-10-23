@@ -5,7 +5,7 @@ Two tokens guard it. The issuer token lives only in host memory and in the page 
 prints to its own terminal (as the URL fragment); it gates everything that can increase agent
 authority, including notice acknowledgements. The public CSRF token is served by
 ``GET /api/public`` and gates only the reduce-only routes (Stop agent control, Hold, Deny,
-Take it back, Revoke), so those keep working after a reload.
+Take it back, Revoke, Withdraw), so those keep working after a reload.
 
 This is a local boundary only: any process that can reach the port can trigger the reductions,
 and an agent that starts the host itself sees the link. ``TrustedPage`` holds every operation

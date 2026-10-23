@@ -8,6 +8,7 @@ validation and the mapping hash (design tests 1 and 2) live in test_b2b_adapters
 from __future__ import annotations
 
 import itertools
+import json
 import random
 import re
 import threading
@@ -16,7 +17,7 @@ import pytest
 from b2b_harness import MS, Harness, default_draft
 
 from pocket_music.artifact_store import digest
-from pocket_music.b2b_adapters import AdapterContractError, SyntheticAdapter
+from pocket_music.b2b_adapters import SyntheticAdapter
 from pocket_music.b2b_broker import TrustedChannel
 from pocket_music.errors import PocketError
 
@@ -76,7 +77,7 @@ def release(h: Harness, grant_id: str, **extra) -> dict:
 
 
 def events(h: Harness, event_type: str) -> list[dict]:
-    return [e for e in h.broker.events(h.session_id, {"max_events": 256, "max_bytes": 262_144})["events"]
+    return [e for e in h.broker.events(h.session_id, {"max_events": 256, "max_bytes": 196_608})["events"]
             if e["type"] == event_type]
 
 
@@ -753,9 +754,9 @@ def test_explicit_hold_survives_inactivity_and_activity_ownership_becomes_unowne
                                                          "resources": [LEFT_GAIN]})
     assert released["outcome"]["resources"] == [LEFT_GAIN]
     assert owner(h, LEFT_GAIN)["kind"] == "unowned"
-    invitation = h.invite(["synthetic/left/transport"])  # inviting is the person letting go of a hold too
-    assert invitation["outcome"]["kind"] == "invited"
-    assert owner(h, "synthetic/left/transport")["kind"] == "unowned"
+    refused = h.invite(["synthetic/left/transport"])  # an invitation never drops a hold; Release does
+    assert (refused["outcome"]["kind"], refused["outcome"]["code"]) == ("refused", "resource_held_by_human")
+    assert owner(h, "synthetic/left/transport")["hold"] == "explicit"
 
 
 def test_takeover_restores_nothing_and_never_resumes(tmp_path):
@@ -1075,8 +1076,8 @@ class _ReentrantAdapter(SyntheticAdapter):
         return super().readback(resource)
 
 
-def test_sink_called_from_inside_submit_is_a_contract_violation_not_a_deadlock(tmp_path):
-    # The guard is the same at every broker entry; the action tests add the submit-side outcome_unknown.
+def test_sink_called_from_inside_a_readback_is_a_contract_violation_not_a_deadlock(tmp_path):
+    # The guard is the same at every broker entry; the action tests cover a re-entry from submit.
     h = Harness(tmp_path)
     adapter = _ReentrantAdapter()
     from pocket_music.b2b_broker import Broker
@@ -1087,13 +1088,7 @@ def test_sink_called_from_inside_submit_is_a_contract_violation_not_a_deadlock(t
     adapter.misbehave = True
     outcome = []
 
-    def observe():
-        try:
-            outcome.append(broker.observe(h.session_id))
-        except AdapterContractError:
-            outcome.append("contract_error")
-
-    thread = threading.Thread(target=observe, daemon=True)
+    thread = threading.Thread(target=lambda: outcome.append(broker.observe(h.session_id)), daemon=True)
     thread.start()
     thread.join(timeout=10)
     assert not thread.is_alive() and len(outcome) == 1  # refused inside, never a deadlock
@@ -1273,7 +1268,9 @@ def test_the_section_bounds_hold(tmp_path, monkeypatch, bound):
 
 def test_a_fault_inside_a_request_ends_agent_authority_and_keeps_the_sha_honest(tmp_path, monkeypatch):
     h = make(tmp_path)
+    permission = issued(h)
     invited_grant(h, [FILTER])
+    h.invite([TRANSPORT])
     before = h.observe()
 
     def fault(*_args):
@@ -1287,10 +1284,15 @@ def test_a_fault_inside_a_request_ends_agent_authority_and_keeps_the_sha_honest(
         h.broker.claim(h.session_id, request)
     after = h.observe()
     assert after["grants"] == [] and digest(after["authority_state"]) == after["state_sha256"]
+    # As when the journal fails: the permission and the invitations end with the grants.
+    assert after["authority_state"]["permissions"] == [] and after["invitations"] == []
     assert after["control_revision"] > before["control_revision"]
     replay = h.broker.claim(h.session_id, request)  # retained, never run again
     assert replay["replayed"] is True and replay["outcome"]["kind"] == "outcome_unknown"
     assert h.broker.request_status(h.session_id, "claim-fault")["state"] == "complete"
+    monkeypatch.undo()
+    h.tick(4000)
+    refused(h.claim([GAIN], h.permission_basis(permission)), "permission_not_active")
 
 
 def test_a_full_agent_table_refuses_reductions_rather_than_forget_a_request(tmp_path, monkeypatch):
@@ -1312,3 +1314,82 @@ def test_a_hand_back_after_shutdown_creates_no_invitation(tmp_path):
     assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
     released = events(h, "gesture_released")[-1]
     assert released["outcome"] == "agent_control_stopped" and released["invitation_id"] is None
+
+
+def test_input_on_other_controls_never_settles_a_pickup(tmp_path):
+    h = make(tmp_path)
+    _pickup(h, FILTER, FILTER_2, 40, fader=100)
+    h.move("controller/synthetic/headphone-level", 64)  # unqualified: everything yields, nothing is settled
+    h.tick(2100)
+    assert owner(h, FILTER)["kind"] == "pickup_pending" and events(h, "pickup_settled") == []
+    refused(h.claim([FILTER], h.invitation_basis(h.invite([FILTER]))), "pickup_unsettled")
+    h.move("controller/synthetic/fx-1/depth", 100)
+    h.tick(2100)
+    grant = invited_grant(h, [FX, ROUTE], ack=True)["grant"]
+    moved = h.act(grant["grant_id"], {"kind": "set", "resource": FX, "value": 30})
+    assert moved["outcome"]["kind"] == "verified"
+    release(h, grant["grant_id"])
+    assert owner(h, FX)["kind"] == "pickup_pending"  # the fader stayed at 100
+    h.move("controller/synthetic/fx-1/route", 127)  # the route button shares FX depth's conflict group
+    h.tick(2100)
+    assert owner(h, FX)["kind"] == "pickup_pending" and events(h, "pickup_settled") == []
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER]})
+    h.move("controller/synthetic/headphone-level", 30)
+    h.broker.trusted_release_hold(h.channel, {"request_id": "page-release", **h.triple(),
+                                              "resources": [FILTER]})
+    assert owner(h, FILTER)["kind"] == "pickup_pending" and owner(h, FILTER)["hold"] is None
+
+
+def test_a_hand_back_or_release_on_a_held_pickup_drops_the_hold_and_keeps_the_pickup(tmp_path):
+    h = make(tmp_path)
+    _pickup(h, FILTER, FILTER_2, 40, fader=100)
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [FILTER]})
+    refused(h.invite([FILTER]), "resource_held_by_human")  # a page invitation never drops a hold
+    h.long_press()  # the pad's scope is the right deck, this filter included
+    assert owner(h, FILTER)["kind"] == "pickup_pending" and owner(h, FILTER)["hold"] is None
+    h.broker.reduce_hold({"request_id": "page-hold-2", "resources": [FILTER]})
+    released = h.broker.trusted_release_hold(h.channel, {"request_id": "page-release", **h.triple(),
+                                                         "resources": [FILTER]})
+    assert released["outcome"]["resources"] == [FILTER]
+    assert owner(h, FILTER)["kind"] == "pickup_pending" and owner(h, FILTER)["hold"] is None
+
+
+def test_an_invite_never_drops_a_hold_on_another_control_in_its_group(tmp_path):
+    h = make(tmp_path)
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [FX]})
+    receipt = refused(h.invite([FX, ROUTE]), "resource_held_by_human")
+    assert FX in receipt["outcome"]["detail"]
+    assert owner(h, FX)["hold"] == "explicit" and h.observe()["invitations"] == []
+
+
+def test_stop_voids_a_hand_back_pad_held_through_it(tmp_path):
+    h = make(tmp_path)
+    h.broker.reduce_hold({"request_id": "page-hold", "resources": [GAIN]})
+    h.press()
+    h.broker.panic({})
+    h.tick(600)
+    h.release()
+    assert h.observe()["invitations"] == [] and owner(h, GAIN)["hold"] == "explicit"
+
+
+def test_withdraw_after_the_agent_claimed_the_invitation_ends_that_grant(tmp_path):
+    h = make(tmp_path)
+    invitation = h.invite([GAIN])["outcome"]["invitation"]
+    grant = h.claim([GAIN], {"kind": "invitation", "invitation_id": invitation["invitation_id"]})["grant"]
+    withdrawn = h.broker.reduce_withdraw_invitation({"request_id": "page-w",
+                                                     "invitation_id": invitation["invitation_id"]})
+    assert withdrawn["outcome"] == {"kind": "revoked", "invitation_id": invitation["invitation_id"],
+                                    "grant_id": grant["grant_id"]}
+    assert grants(h) == [] and owner(h, GAIN)["kind"] == "unowned"
+
+
+def test_events_are_sized_as_the_host_sends_them(tmp_path):
+    h = make(tmp_path)
+    reason = "\U0001f3b5" * 200  # 800 bytes of UTF-8, 2400 escaped
+    for _ in range(40):
+        grant = invited_grant(h, [GAIN], reason=reason)["grant"]
+        release(h, grant["grant_id"])
+    page = h.broker.events(h.session_id, {"max_events": 256, "max_bytes": 65_536})
+    wire = sum(len(json.dumps(e, ensure_ascii=True, separators=(",", ":"))) for e in page["events"])
+    assert page["truncated_by_bytes"] is True and wire <= 65_536
+    raises("invalid_arguments", h.broker.events, h.session_id, {"max_bytes": 262_144})

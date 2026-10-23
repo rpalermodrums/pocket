@@ -22,11 +22,14 @@ Every control has exactly one owner at a time. The host page shows it in words:
 |---|---|
 | Free, invite only | Nobody owns it. The agent may claim it only after you hand it back. |
 | Free, agent may claim it when idle | A permission you issued lets the agent claim it once it has been still long enough. |
+| Free, handed to the agent | You invited the agent to it, and it hasn't claimed it yet. Withdraw takes the invitation back. |
 | You (holding) | You held it on the page, or reserved it at the start. It stays yours until you release it. |
 | You (moving) | You touched it. It becomes free again two seconds after your last movement. |
 | Agent: *reason*, *time* left | The agent holds a short lease on it, for the reason it gave. |
 | Fader 98, software 40 | After the agent let go, the fader and the software disagree. See [pickup](#when-a-fader-doesnt-match-pickup). |
 | Unavailable | The controller or the master route is gone. Nothing can claim it. |
+
+A pickup or unavailable row ends in "(you hold it)" when you held that control, so it stays yours once it settles.
 
 Four ways to play fall out of these owners rather than being separate modes:
 invite only (everything free, nothing claimable until you hand it back),
@@ -114,6 +117,11 @@ seconds), or press **Invite** on a row of the page. That creates one invitation 
 those controls, which the agent can use once. A short press, a bounce or a press
 you never release creates nothing. Changed your mind? **Withdraw** on the page, or
 **Hold** on one of those controls, ends the invitation before the agent uses it.
+Withdraw after the agent claimed it ends that claim too.
+
+**Invite** never drops a hold. Linked controls, like an FX unit's depth and route,
+are handed back together, so release your hold on either one first. The hand-back
+pad is different: a long press hands back its controls, held or not.
 
 The agent then:
 

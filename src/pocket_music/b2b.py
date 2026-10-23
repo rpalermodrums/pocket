@@ -299,7 +299,7 @@ def b2b_revoke(session_dir: str, request_id: str, expected_session_epoch: str, e
 
 def b2b_events(session_dir: str, after: EventCursor | None = None, max_events: int = 64,
                max_bytes: int = 65536) -> dict:
-    """Up to 256 sequenced events (and 256 KiB) after a cursor; an expired cursor says so."""
+    """Up to 256 sequenced events (and 192 KiB) after a cursor; an expired cursor says so."""
     request = {"max_events": max_events, "max_bytes": max_bytes}
     if after is not None:
         request["after"] = after

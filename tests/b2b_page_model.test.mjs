@@ -14,6 +14,8 @@ test("owners read as words", () => {
   assert.equal(ownerLabel({kind: "unowned"}, {proactive: true, invited: true}), "Free, handed to the agent");
   assert.equal(eventLine({type: "gesture_released", outcome: "short_press_ignored"}),
                "Hand-back pad released too soon: nothing handed back");
+  assert.equal(eventLine({type: "gesture_released", outcome: "agent_control_stopped"}),
+               "Hand-back pad released: agent control is stopped, nothing handed back");
   assert.equal(ownerLabel({kind: "human", hold: "explicit"}), "You (holding)");
   assert.equal(ownerLabel({kind: "human", hold: "activity"}), "You (moving)");
   assert.equal(ownerLabel({kind: "agent", expires_monotonic_ns: "1002400000000"},
