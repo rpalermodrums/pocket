@@ -22,6 +22,10 @@
       "target": "docs/architecture.md"
     },
     {
+      "source": "docs/b2b.md",
+      "target": "docs/b2b.md"
+    },
+    {
       "source": "docs/baste.md",
       "target": "docs/baste.md"
     },
@@ -290,6 +294,13 @@
         },
         {
           "Local workspace": "docs/workspace.md"
+        }
+      ]
+    },
+    {
+      "Performing": [
+        {
+          "b2b: share the controls": "docs/b2b.md"
         }
       ]
     },
