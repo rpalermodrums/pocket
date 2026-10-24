@@ -214,7 +214,9 @@ def build_server(error_format=None):
         "revision-bound updates. Spotify execution creates a fresh private playlist only from a reviewed "
         "plan; credentials must remain in the process environment, never tool arguments. "
         "Acquisition requires a selected source plan; model retrieval uses prepared independent local "
-        "audio/user-text receipts, never Spotify content. No inference runs in the live suggestion path."
+        "audio/user-text receipts, never Spotify content. No inference runs in the live suggestion path. "
+        "Listen reports live audio evidence and capture health from declared inputs; it changes no device and "
+        "its events never grant control."
     ))
     server.add_tool(identify_audio, annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
@@ -302,11 +304,14 @@ def build_server(error_format=None):
     for name, module, _, _, read_only, description in PUBLIC_CAPABILITIES:
         function = getattr(import_module(f'.{module}', __package__), name)
         server.strict_providers[name] = function
+        # Shuttle's act and Listen's start and stop are idempotent through request-ID replay. Listen's
+        # devices isn't read-only (it can run the helper's listing) but repeating it changes nothing.
+        idempotent = (read_only or name in ('shuttle_act', 'listen_start', 'listen_stop', 'listen_devices')
+                      if module in ('shuttle', 'listen') else True)
         server.add_tool(_compact_response(function), name=name, description=description,
                         structured_output=False,
                         annotations=ToolAnnotations(readOnlyHint=read_only, destructiveHint=False,
-                                                    idempotentHint=(read_only or name == 'shuttle_act') if module == 'shuttle' else True,
-                                                    openWorldHint=False))
+                                                    idempotentHint=idempotent, openWorldHint=False))
     return server
 
 
