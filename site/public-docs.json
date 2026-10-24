@@ -46,6 +46,10 @@
       "target": "docs/getting-started.md"
     },
     {
+      "source": "docs/listen.md",
+      "target": "docs/listen.md"
+    },
+    {
       "source": "docs/midi-capabilities.md",
       "target": "docs/midi-capabilities.md"
     },
@@ -290,6 +294,13 @@
         },
         {
           "Local workspace": "docs/workspace.md"
+        }
+      ]
+    },
+    {
+      "Live performance": [
+        {
+          "Listen: watch live audio": "docs/listen.md"
         }
       ]
     },

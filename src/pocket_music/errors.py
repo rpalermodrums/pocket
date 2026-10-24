@@ -20,3 +20,10 @@ class PocketError(ValueError):
         super().__init__(message)
         self.code = code
         self.hint = hint
+
+
+def contained(call, *, on_error):
+    try:
+        return call()
+    except Exception as error:  # noqa: BLE001
+        return on_error(error)

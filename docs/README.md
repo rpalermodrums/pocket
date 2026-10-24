@@ -61,6 +61,15 @@ Tools for planning and playing sets of records. They propose; you decide.
 - [Local workspace](workspace.md): a small browser page for bags, routes and
   next-record choices.
 
+## Live performance
+
+Tools for watching what happens during a set. They report evidence; they don't
+control your decks.
+
+- [Listen](listen.md): watch levels, clocks and capture health on the audio
+  routes you declare, with sequenced events. A synthetic adapter runs on macOS
+  or Linux; the macOS helper is experimental.
+
 ## Optional connections
 
 Each of these needs its own setup and is never used unless you ask for it.

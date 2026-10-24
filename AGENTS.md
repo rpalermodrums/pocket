@@ -2,7 +2,7 @@
 
 Pocket is public and in early development. Do not change repository visibility without the maintainer's explicit instruction. Read [key ideas](docs/concepts.md) for the vocabulary used below.
 
-The current scope includes Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette. Selection has optional Spotify catalog/playlist, source-acquisition and local-embedding adapters plus a loopback browser workspace. Transcription models, a general audio editor and full-set bounce automation remain follow-up decisions, not implied dependencies.
+The current scope includes Peek, Thread, Stitch, Weave, Whisker, Baste, Pipette and Listen. Selection has optional Spotify catalog/playlist, source-acquisition and local-embedding adapters plus a loopback browser workspace. Transcription models, a general audio editor and full-set bounce automation remain follow-up decisions, not implied dependencies.
 
 Prefer the canonical tool names in new docs and calls. Baste is a fresh read-only Live observer; Pipette promotes explicit kept saved Stitch candidates into new projects. Preserve compatibility aliases and existing serialized identifiers; [name compatibility](docs/compatibility.md) distinguishes interface names from stable provider functions and data formats.
 
@@ -26,6 +26,16 @@ For Pipette, reverify every selected identity and signal disposition, require an
 attributed keep, preserve parent/trial bytes, and seal lineage before publishing
 the child. Only declared collected dependency hints may change from the candidate;
 all other saved XML and media must be preserved. Use normal Thread validation.
+
+For Listen, copy input only: never change a device, route or transport, write
+audio or take a device for exclusive use. Run only helper builds
+listen_build_helper recorded in this user's registry, and signal only the
+adapter's own child process, never a PID read from a file. Never meter, keep or
+report cue channels without a routing test. listen_observe and listen_events
+stay reads, every lost event shows as a missing range or an explicit refusal,
+and no new error code is added. Native capture stays unqualified
+(native_verified false) until separate native acceptance; the synthetic
+adapter and fake helper are not evidence of CoreAudio behavior.
 
 For selection work, preserve a deterministic annotated baseline alongside creative variants. Slot contours are planning intent, not measurements. Keep route/pair feedback scoped to exact bag and brief identities; keep live decisions in a revision-checked shared session. Do not interpret playlist order, heuristic score or embedding similarity as audition, phrase alignment or mix compatibility. Models operate on independently sourced local audio and user-authored intent, not imported Spotify content. Never run inference or network requests in the live suggestion loop.
 
