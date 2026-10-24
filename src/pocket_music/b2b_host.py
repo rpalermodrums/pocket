@@ -89,6 +89,9 @@ class _AgentHandler(socketserver.StreamRequestHandler):
             raw = self.rfile.readline(MAX_RPC_BYTES + 1)
             if len(raw) > MAX_RPC_BYTES:
                 raise PocketError("This b2b request is larger than 256 KiB", code="invalid_request")
+            if not raw.endswith(b"\n"):  # a frame cut short is never dispatched, whatever it parses to
+                raise PocketError("A b2b request is one line of JSON ending in a newline",
+                                  code="invalid_request")
             try:
                 message = json.loads(raw)
             except (ValueError, UnicodeError) as error:
@@ -164,8 +167,22 @@ class B2bHost:
                 "host_epoch": self.host_epoch, "pid": os.getpid(), "adapter_profile": profile.name,
                 "mapping_sha256": profile.sha256})
         except BaseException:
-            shutil.rmtree(self.socket_dir, ignore_errors=True)
+            self._abandon()
             raise
+
+    def _abandon(self) -> None:
+        """A host that never started leaves nothing behind, so the same --runtime-dir can be tried again:
+        its servers, adapter and journal close, and the folders it just made go."""
+        for name in ("_page_server", "_agent_server"):
+            server = getattr(self, name, None)
+            if server is not None:
+                server.server_close()
+        for name in ("adapter", "journal"):
+            part = getattr(self, name, None)
+            if part is not None:
+                part.close()
+        shutil.rmtree(self.socket_dir, ignore_errors=True)
+        shutil.rmtree(self.runtime_dir, ignore_errors=True)  # this constructor made it; no host ran in it
 
     @property
     def page_link(self) -> str:
@@ -341,11 +358,15 @@ def main(argv=None, *, open_tty=_open_tty, stdout=None, stderr=None, wait=None) 
     try:
         host = B2bHost(args.runtime_dir, adapter=args.adapter, port=args.port,
                        journal_max_bytes=args.journal_max_bytes)
-    except PocketError as error:
+    except (PocketError, OSError) as error:  # a busy --port, say: the host cleaned up after itself
         if tty is not None:
             tty.close()
-        print(json.dumps({"status": "error", "error": str(error), "code": error.code, "hint": error.hint}),
-              file=stderr, flush=True)
+        known = isinstance(error, PocketError)
+        hint = error.hint if known else ("Check that --port is free (0 picks one), then run the same command "
+                                         "again; a host that fails to start leaves nothing behind.")
+        message = str(error) if known else f"The b2b host could not start: {error}"
+        print(json.dumps({"status": "error", "error": message, "code": error.code if known else "io_error",
+                          "hint": hint}), file=stderr, flush=True)
         return 2
     host.start()
     status = {"status": "started", "runtime_dir": str(host.runtime_dir), "host_epoch": host.host_epoch,

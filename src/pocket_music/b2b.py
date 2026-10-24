@@ -145,8 +145,8 @@ def _send(connection: dict, op: str, fields: dict, *, mutation: bool, lost_hint:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
             stream.settimeout(RPC_TIMEOUT_S)
             stream.connect(connection["socket"])
+            sent = True  # from here the host may have the whole request, whatever sendall reports
             stream.sendall(payload)
-            sent = True
             raw = stream.makefile("rb").readline(MAX_RPC_BYTES + 1)
         response = json.loads(raw) if raw.endswith(b"\n") and len(raw) <= MAX_RPC_BYTES else None
     except (OSError, ValueError) as error:

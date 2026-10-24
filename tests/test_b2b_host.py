@@ -169,11 +169,10 @@ def test_page_link_goes_to_the_terminal_or_requires_the_piped_stdout_flag(tmp_pa
     assert not (tmp_path / "refused").exists() and out.getvalue() == ""
     assert "Start the b2b host from your own terminal" in err.getvalue()
     terminal, out, err = _Terminal(), io.StringIO(), io.StringIO()
-    try:
-        code = main(["--runtime-dir", str(tmp_path / "tty")], open_tty=lambda: terminal, stdout=out,
-                    stderr=err, wait=lambda host: None)
-    except OSError as error:
-        pytest.skip(f"Sockets are not available here: {error}")
+    code = main(["--runtime-dir", str(tmp_path / "tty")], open_tty=lambda: terminal, stdout=out,
+                stderr=err, wait=lambda host: None)
+    if code == 2 and "could not start" in err.getvalue():  # sandboxed runs may refuse the binds
+        pytest.skip(f"Sockets are not available here: {err.getvalue()}")
     assert code == 0 and "Open the b2b page: http://127.0.0.1:" in terminal.text and "/#k=" in terminal.text
     started = json.loads(out.getvalue())
     assert started["page_link"] == "printed_to_terminal" and "#k=" not in out.getvalue() + err.getvalue()
@@ -790,3 +789,73 @@ def test_an_existing_output_dir_gets_the_hint_for_what_happened(tmp_path, socket
         assert "Pass a new output_dir" in caught.value.hint
     finally:
         second.stop()
+
+
+def test_a_request_cut_short_is_refused_and_dispatches_nothing(host, tmp_path):
+    frame = json.dumps({"op": "register", "nonce": host.nonce,
+                        "request": {"output_dir_resolved": str(tmp_path / "never")}}).encode()
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
+        stream.connect(str(host.socket_path))
+        stream.sendall(frame)  # the whole JSON, but no closing newline
+        stream.shutdown(socket.SHUT_WR)
+        answer = json.loads(stream.makefile("rb").readline())
+    assert (answer["status"], answer["code"]) == ("error", "invalid_request")
+    assert prepare(host, tmp_path)  # so the host holds no session yet
+
+
+class _SendFails:
+    """A socket whose send fails after connecting, as a dropped connection mid-request would."""
+
+    def __init__(self, *_args):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def settimeout(self, _seconds):
+        pass
+
+    def connect(self, _path):
+        pass
+
+    def sendall(self, _payload):
+        raise BrokenPipeError("the host hung up after the request went out")
+
+
+def test_a_send_that_fails_counts_as_possibly_delivered(monkeypatch):
+    monkeypatch.setattr(b2b.socket, "socket", _SendFails)
+    connection = {"socket": "/unused", "nonce": "n" * 48}
+    with pytest.raises(PocketError) as caught:
+        b2b._send(connection, "claim", {"request": {}}, mutation=True)
+    assert caught.value.code == "request_not_complete"  # never "nothing was recorded"
+    assert "b2b_request_status" in caught.value.hint
+
+
+def test_a_host_that_cannot_start_leaves_nothing_and_can_be_retried(tmp_path, socket_parent):
+    busy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen(1)
+    except OSError as error:
+        busy.close()
+        pytest.skip(f"Sockets are not available here: {error}")
+    port = busy.getsockname()[1]
+    runtime = tmp_path / "runtime"
+    try:
+        with pytest.raises(OSError):
+            B2bHost(runtime, clock=TestClock(START_NS), port=port, scheduler=False,
+                    socket_parent=socket_parent)
+        assert not runtime.exists() and list(Path(socket_parent).iterdir()) == []
+        out, err = io.StringIO(), io.StringIO()
+        assert main(["--runtime-dir", str(runtime), "--port", str(port), "--allow-piped-stdout"],
+                    open_tty=_no_terminal, stdout=out, stderr=err, wait=lambda host: None) == 2
+        refused = json.loads(err.getvalue().splitlines()[-1])
+        assert refused["code"] == "io_error" and "could not start" in refused["error"]
+        assert not runtime.exists()
+    finally:
+        busy.close()
+    host = _host(tmp_path, socket_parent)  # the same --runtime-dir works once the port is free
+    host.stop()
