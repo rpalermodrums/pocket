@@ -73,6 +73,9 @@ _ROLE_WORD_HINT = ("Use a route_id with a word that starts with 'cue' or 'master
 _NAMESPACE_HINT = ("Synthetic devices use uids starting with 'synthetic:'; the CoreAudio adapter never "
                    "accepts them.")
 _DIRECTORY_HINT = "Choose a new output_dir; Listen never reuses or overwrites a directory."
+_WRITABLE_HINT = "Choose a new output_dir in a writable location."
+_OWNERSHIP_HINT = ("Choose an output_dir on a volume that enforces ownership; on one that ignores it, every "
+                   "account counts as the owner of every file.")
 _POSIX_HINT = "Listen's runtime runs on macOS or Linux; the synthetic adapter needs no other setup there."
 _MACOS_HINT = "The CoreAudio adapter runs on macOS 15 or later; use the synthetic adapter on this system."
 _SHA_HINT = ("Pass config_sha256 from this session's listen_prepare receipt unchanged; to change settings, "
@@ -588,6 +591,7 @@ def _memory(config, metered):
              "adapter_queue_max_bytes": (listen_native.ADAPTER_QUEUE_FRAMES * listen_native.MAX_BLOCK_FRAMES
                                          * channels * 4) if native else None,
              "descriptor_ring_bytes": DESCRIPTOR_CAPACITY * DESCRIPTOR_BYTES,
+             "measurement_scratch_bytes": config["measurement"]["window_frames"] * channels * 4,
              "broker_max_bytes": config["delivery"]["normal_retention_bytes"]
              + config["delivery"]["health_retention_bytes"]}
     return {**sizes, "total_declared_bytes": sum(v for v in sizes.values() if v is not None),
@@ -614,15 +618,29 @@ def _new_directory(output_dir):
         raise PocketError("output_dir must name a new local directory", hint=_DIRECTORY_HINT)
     named = Path(output_dir).expanduser()
     try:
-        named.mkdir(mode=0o700, parents=True, exist_ok=False)
-        os.chmod(named, 0o700)
-        listen_native.clear_acl(named)
-        return named.resolve(strict=True)
+        named.parent.mkdir(parents=True, exist_ok=True)
+        if listen_native.volume_ignores_ownership(str(named.parent)):
+            raise PocketError(f"{named.parent} is on a volume that ignores ownership", code="io_error",
+                              hint=_OWNERSHIP_HINT)
+        named.mkdir(mode=0o700, exist_ok=False)
+        descriptor = os.open(named, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except FileExistsError as error:
         raise PocketError(f"{named} already exists", code="io_error", hint=_DIRECTORY_HINT) from error
     except OSError as error:
-        raise PocketError(f"Can't create {named}: {error}", code="io_error",
-                          hint="Choose a new output_dir in a writable location.") from error
+        raise PocketError(f"Can't create {named}: {error}", code="io_error", hint=_WRITABLE_HINT) from error
+    try:
+        created = os.fstat(descriptor)
+        os.fchmod(descriptor, 0o700)
+        listen_native.clear_acl(descriptor)
+        resolved = named.resolve(strict=True)
+        found = os.stat(resolved)
+    except OSError as error:
+        raise PocketError(f"Can't create {named}: {error}", code="io_error", hint=_WRITABLE_HINT) from error
+    finally:
+        os.close(descriptor)
+    if (created.st_uid != os.getuid() or (found.st_dev, found.st_ino) != (created.st_dev, created.st_ino)):
+        raise PocketError(f"{named} changed while Listen created it", code="io_error", hint=_DIRECTORY_HINT)
+    return resolved
 
 
 def _terminal_summary(handle, record, *, include_handle=True):
@@ -744,7 +762,9 @@ def _device_notices(rows, authorization, unreadable=None):
 def listen_prepare(output_dir: str, config: ListenConfig) -> dict:
     """Seal one input by uid, its declared audio routes and bounded settings into a new session.
 
-    Validation fills in every default and echoes it, so nothing is implicit. Runs no subprocess,
+    Validation fills in every default and seals it in the session record. The receipt echoes the
+    resolved settings sections under session.settings; the record also holds the adapter's. Runs no
+    subprocess,
     opens no device and starts no capture; for CoreAudio it only reads the sealed helper build.
     """
     _require_posix()
@@ -896,13 +916,20 @@ def _running_receipt(root, session, request_id, runtime_dir, runtime, outcome, c
     frames = capture.get("frames_received", ping.get("frames_received"))
     stopping = (observed.get("state") or ping.get("runtime_state")) in ("stopping", "stopped")
     ended = state in ("ended", "failed")
-    start_outcome = ("stopped_during_start" if stopping else "capture_ended_during_start" if ended
+    if stopping:
+        try:
+            terminal = listen_host.read_terminal(root, runtime_dir)
+        except PocketError:
+            terminal = None
+        return _stopped_receipt(root, session, request_id, runtime_dir, runtime,
+                                {"terminal": terminal, "exit_code": None,
+                                 "ping": {"runtime_state": observed.get("state") or ping.get("runtime_state"),
+                                          "frames_received": frames}},
+                                {**common, "start_outcome": "stopped_during_start"})
+    start_outcome = ("capture_ended_during_start" if ended
                      else "capturing" if snapshot is not None and type(frames) is int and frames > 0
                      else outcome["outcome"])
-    if stopping:
-        status = "partial"
-        actions = [_STOPPING_STEP.format(cause=(observed.get("stop") or {}).get("cause") or "a stop request")]
-    elif ended:
+    if ended:
         status, actions = "partial", _ENDED_ACTIONS
     elif snapshot is None:
         status, actions = "partial", _NO_SNAPSHOT_ACTIONS
@@ -1113,8 +1140,10 @@ def listen_events(session_dir: str, after: ListenCursor, routes: list[str] | Non
                   on_expired: ListenOnExpired = "refuse") -> dict:
     """Read bounded events after a cursor: at most 256 events and 256 KiB, waiting at most 1 s.
 
-    Lost events always show: as missing ranges (status partial), cursor_expired or
-    snapshot_required. Health events are never filtered by kind, route or age.
+    Lost events show as missing ranges (status partial, or needs_input or conflict when the
+    cursor's runtime has stopped or another is running), cursor_expired or snapshot_required.
+    When the cursor's runtime left no terminal that verifies, missing can be empty and the next
+    step says loss isn't ruled out. Health events are never filtered by kind, route or age.
     """
     _require_posix()
     root, session = _session(session_dir)
@@ -1154,8 +1183,9 @@ _UNREAD_STEP = ("Sequences {from_sequence} to {through_sequence} of the cursor's
                 "the runtime directory keeps its health events")
 _UNREAD_INCOMPLETE_STEP = ("Sequences {from_sequence} to {through_sequence} of the cursor's runtime were "
                            "published after your cursor and can't be read now; its terminal summarizes them. "
-                           "Its journal didn't keep every line (cursor_runtime.journal says how), so some of "
-                           "their health events aren't on disk")
+                           "Its journal didn't keep every line (cursor_runtime.journal says how, and its "
+                           "terminal's broker.publish_hook_errors counts events whose journal hook failed), "
+                           "so some of their health events aren't on disk")
 _UNREAD_NO_TERMINAL_STEP = ("Sequences {from_sequence} to at least {through_sequence} of the cursor's runtime "
                             "were published after your cursor and can't be read now. It sealed no terminal "
                             "(cursor_runtime.terminal is missing), so later events, such as levels, may have "
@@ -1169,6 +1199,9 @@ _LOST_UNKNOWN_STEPS = {
                 "cursor and lost"),
     "integrity_mismatch": ("The cursor's runtime's terminal doesn't verify, so Listen can't say what it "
                            "published after your cursor; events after it may have been lost"),
+    "unknown": ("No runtime of this session has the cursor's runtime_epoch, so Listen can't say what it "
+                "published after your cursor; events after it may have been lost. Use a cursor from this "
+                "session's listen_start or listen_observe"),
 }
 
 
@@ -1331,16 +1364,20 @@ _DRAIN_STEP = ("Measurement didn't finish within the stop bound: terminal.worker
                "cover only its frames_measured")
 _JOURNAL_STEP = ("The runtime journal didn't keep every line (terminal.journal: state {state}, {dropped} "
                  "lines dropped, {unwritten} unwritten at close; terminal.broker.publish_hook_errors: {hooks} "
-                 "health events never reached it); the sealed terminal doesn't depend on it")
+                 "events never reached it); the sealed terminal doesn't depend on it")
 _FAILED_WORKER_STEP = ("Level measurement failed during this runtime (terminal.worker.error says why): "
                        "terminal.worker.unmeasured_after_failure_frames received frames have no levels, and "
                        "each route's totals cover only its frames_measured")
 _CLOSE_STEP = ("The input adapter didn't close cleanly (terminal.stop.adapter_close is {close}); "
-               "terminal.stop.adapter_exit says how its helper exited, and it may still be reading the input")
+               "terminal.stop.adapter_exit gives what Listen learned of how it exited, such as its exit code "
+               "or the error closing raised, and it may still be reading the input")
 _OVERRUN_STEP = ("Measurement fell behind during the runtime: {skipped} received frames it skipped "
-                 "(terminal.worker.unmeasured_frames beyond those after a failure or at stop) and {unaccounted} "
-                 "frames it lost track of (terminal.worker.unaccounted_frames) have no levels, and each route's "
-                 "totals cover only its frames_measured")
+                 "(terminal.worker.unmeasured_frames beyond those after a failure or at stop) have no "
+                 "levels, and each route's totals cover only its frames_measured")
+_UNACCOUNTED_STEP = ("Measurement lost track of {unaccounted} frames after its fact queue was full "
+                     "(terminal.worker.unaccounted_frames): it can't say whether they arrived. A "
+                     "frames_missing event covers those that didn't; any that did have no levels, and each "
+                     "route's totals cover only its frames_measured")
 _UNDELIVERED_STEP = ("The macOS helper ended with {blocks} blocks ({frames} frames) of audio it had captured "
                      "but not sent, such as when a device change ended capture; no event covers them, so "
                      "capture's frames end before them (terminal.stop.adapter_exit.counters)")
@@ -1378,6 +1415,7 @@ def _stop_caveats(record):
     steps = (_DRAIN_STEP if worker.get("drain") == "incomplete" else None,
              _FAILED_WORKER_STEP if worker.get("state") == "failed" else None,
              _overrun_step(worker),
+             _unaccounted_step(worker),
              None if close in _CLEAN_CLOSE else _CLOSE_STEP.format(close=close),
              _undelivered_step(stop),
              _tail_drops_step(stop),
@@ -1390,10 +1428,12 @@ def _overrun_step(worker):
     skipped_mid_run = max(0, (worker.get("unmeasured_frames") or 0)
                           - (worker.get("unmeasured_after_failure_frames") or 0)
                           - (worker.get("unmeasured_at_stop_frames") or 0))
+    return _OVERRUN_STEP.format(skipped=f"{skipped_mid_run:,}") if skipped_mid_run else None
+
+
+def _unaccounted_step(worker):
     unaccounted = worker.get("unaccounted_frames") or 0
-    if not skipped_mid_run and not unaccounted:
-        return None
-    return _OVERRUN_STEP.format(skipped=f"{skipped_mid_run:,}", unaccounted=f"{unaccounted:,}")
+    return _UNACCOUNTED_STEP.format(unaccounted=f"{unaccounted:,}") if unaccounted else None
 
 
 def _undelivered_step(stop):
@@ -1463,13 +1503,13 @@ def _stopped_or_not_running(root, source, request_id, epoch, row, *, lost_reply=
         terminal = None if row is None else listen_host.read_terminal(root, row[2])
     except PocketError:
         terminal, reason = None, "terminal_integrity_mismatch"
-    if terminal is not None and (lost_reply or terminal[1].get("state") in ("stopped", "failed")):
+    if terminal is not None and terminal[1].get("state") in ("stopped", "failed"):
         return _sealed_stop(request_id, source, terminal, _lease_after(root, epoch), epoch)
     previous = _runtime_record(root, row) if row is not None else _newest_record(root)
     common = {"stop_outcome": "not_running", "runtime_epoch": epoch, "runtime_known": row is not None,
               "previous_runtime": previous, "replayed": False, "notices": [notice("runtime_not_running")],
               "coverage": coverage(_no_audio_read(source), capture="not_running")}
-    if lost_reply:
+    if lost_reply and terminal is None:
         lease = _lease_after(root, epoch)
         return receipt(request_id, status="needs_input", reason=reason, **lease, **common,
                        next_actions=[(f"The stop got no reply, and runtime {epoch} then exited without a "
@@ -1484,7 +1524,8 @@ def listen_request_status(session_dir: str, request_id: str) -> dict:
     """Inspect a retained listen_start or listen_stop request without repeating it.
 
     Adds what the lease and the runtime directories say: whether a runtime is running, which
-    runtime this request launched, and the terminal it stopped. It never contacts the runtime.
+    runtime this request launched, and the terminal it stopped, among the session's newest 64
+    runtimes (runtimes_omitted counts older ones). It never contacts the runtime.
     """
     root, _, session = listen_host.load_session(session_dir)
     base = request_status(root, request_id)

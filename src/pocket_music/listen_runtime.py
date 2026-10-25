@@ -494,14 +494,14 @@ class StreamTracker:
                 facts.append(self._open_stream("capture_opened", sample_time, received, dropped))
             else:
                 gap = sample_time - self._expected
-                if gap > 0:
+                if dropped > gap:
+                    cause = "counter_reset" if 0 <= sample_time < self.sample_rate else "counter_backward"
+                    facts.append(self._open_stream(cause, sample_time, received, dropped))
+                elif gap > 0:
                     cause = ("helper_ring_overflow" if dropped == gap else
                              "processor_overload" if self._overload else "device_gap")
                     facts.append(self._missing_fact(received, cause, gap, dropped))
                     self._end += gap
-                elif gap < 0:
-                    cause = "counter_reset" if sample_time < self.sample_rate else "counter_backward"
-                    facts.append(self._open_stream(cause, sample_time, received, dropped))
             placement = Placement(self._ordinal, self._end, block.frames, sample_time, block.device_host_time_ns)
             self._end += block.frames
             self._expected = sample_time + block.frames
@@ -996,7 +996,7 @@ class MeterCoalescer:
     def flush(self, truncated_by):
         if not self._pending:
             return ()
-        windows, self._pending = self._pending, []
+        windows = self._pending
         count = len(self._route.channels)
         nonfinite = [sum(w.nonfinite[c] for w in windows) for c in range(count)]
         n_finite = [sum(w.n_finite[c] for w in windows) for c in range(count)]
@@ -1016,9 +1016,11 @@ class MeterCoalescer:
                     "clipped_count": [sum(w.clipped[c] for w in windows) for c in range(count)],
                     "clip_threshold_dbfs": self._threshold_dbfs, "finite": not any(nonfinite),
                     "true_peak": "not_measured", "loudness": "not_measured"}
-        return (self._factory.measurement(self._route, ordinal=first.stream_ordinal,
+        event = self._factory.measurement(self._route, ordinal=first.stream_ordinal,
                                           interval=(first.start_frame, frames), clocks=first.clocks,
-                                          received_ns=windows[-1].received_ns, evidence=evidence),)
+                                          received_ns=windows[-1].received_ns, evidence=evidence)
+        self._pending = []
+        return (event,)
 
 
 class NearSilenceTracker:
@@ -1120,7 +1122,8 @@ class MeasurementWorker:
         self._stopping = False
         self._inflight = None
         self._consumed = 0
-        self._closing = None
+        self._windowed_frames = 0
+        self._published_frames = {r.route_id: 0 for r in context.routes}
         self._cancel = threading.Event()
         self._sealed = threading.Event()
         self._lock = threading.Lock()
@@ -1177,7 +1180,23 @@ class MeasurementWorker:
                 self._latest[event["route_id"]] = {"evidence": evidence, "interval": event["interval"],
                                                    "received_monotonic_ns": event["received_monotonic_ns"],
                                                    "sequence": sequence}
+                self._published_frames[event["route_id"]] += evidence["frames_measured"]
         return sequence
+
+    def _read_without_a_level(self):
+        window = self._window
+        with self._lock:
+            behind = max(self._windowed_frames - published for published in self._published_frames.values())
+        return behind + (window.frames if window is not None else 0)
+
+    def account_held(self):
+        d = self._inflight
+        held = self._read_without_a_level()
+        held = max(0, held - (max(0, self._consumed - d.start_frame) if d is not None else 0))
+        with self._lock:
+            self._unmeasured_frames += held
+            self._stop_frames += held
+        return held
 
     def _emit_all(self, events):
         for event in events:
@@ -1189,16 +1208,13 @@ class MeasurementWorker:
                 return
             self._state = "failed"
             self._error = f"{type(error).__name__}: {error}"[:300]
-        window, closing, d = self._window, self._closing, self._inflight
-        self._window = self._closing = self._inflight = None
-        lost = (window.frames if window is not None else 0) + (closing.frames if closing is not None else 0)
+        window, d = self._window, self._inflight
+        self._window = self._inflight = None
+        lost = window.frames if window is not None else 0
         if d is not None:
             lost += max(0, d.start_frame + d.frames - self._consumed)
             self._cursor = max(self._cursor, d.start_frame + d.frames)
             self._ring_end = d.ring_pos + d.frames
-        with self._lock:
-            self._unmeasured_frames += lost
-            self._failed_frames += lost
         with suppress(Exception):
             self._close_unmeasured()
         now = self._clock.monotonic_ns()
@@ -1213,6 +1229,10 @@ class MeasurementWorker:
             self._silence[rid].interrupt_silently()
             with self._lock:
                 self._nonfinite[rid] = False
+        lost += self._read_without_a_level()
+        with self._lock:
+            self._unmeasured_frames += lost
+            self._failed_frames += lost
 
     def _guarded(self, function, *args):
         if self.state != "failed":
@@ -1257,9 +1277,14 @@ class MeasurementWorker:
         if run is not None:
             self._facts_dropped(run)
         if self.state == "failed":
+            start = self._cursor if item.stream_ordinal == self._stream else 0
+            skipped = max(0, item.start_frame - start)
+            unaccounted = skipped if self._gap_cause(item.ingest_index) == "facts_queue_full" else 0
             with self._lock:
-                self._unmeasured_frames += item.frames
-                self._failed_frames += item.frames
+                self._unmeasured_frames += item.frames + skipped - unaccounted
+                self._failed_frames += item.frames + skipped - unaccounted
+                self._unaccounted_frames += unaccounted
+            self._stream, self._cursor = item.stream_ordinal, max(start, item.start_frame + item.frames)
             self._ring_end = item.ring_pos + item.frames
         else:
             self._guarded(self._measure, item)
@@ -1275,6 +1300,8 @@ class MeasurementWorker:
     def _on_fact(self, fact):
         self._guarded(self._reach, fact)
         self._guarded(self._account, fact)
+        if self.state == "failed" and fact.type == "frames_missing" and fact.stream_ordinal == self._stream:
+            self._cursor = max(self._cursor, sum(fact.interval))
         if fact.type == "stream_started":
             self._stream, self._stream_open, self._cursor = fact.stream_ordinal, True, 0
 
@@ -1405,10 +1432,10 @@ class MeasurementWorker:
         if window is None or not window.frames:
             return False
         full = truncated_by is None and window.frames == self._window_frames
-        self._closing = window
+        with self._lock:
+            self._windowed_frames += window.frames
         for route in self._ctx.routes:
             self._route_window(window.route_window(route, full, truncated_by))
-            self._closing = None
         return True
 
     def _route_window(self, window):
@@ -1443,7 +1470,8 @@ class MeasurementWorker:
                                                cause)
             return
         self._close_unmeasured()
-        self._truncate("measurement_overrun", received_ns)
+        self._truncate("frames_unaccounted" if cause == "facts_queue_full" else "measurement_overrun",
+                       received_ns)
         self._unmeasured = _UnmeasuredSpan(self._stream, start, frames, received_ns, cause)
 
     def _close_unmeasured(self):
@@ -1881,6 +1909,8 @@ class ListenCore:
                 drain = "incomplete" if self.worker.account_rest() else "complete"
                 self.worker.flush("stop")
             self.worker.seal()
+            if not drained:
+                self.worker.account_held()
             snapshot = self.tracker.snapshot()
             with self._lock:
                 now = self._now(now_ns)
@@ -2269,7 +2299,8 @@ class ListenCore:
                          if signal and all(signal["evidence"]["digital_zero"]) else "")
                 measured = "" if behind_s is None else f" in audio measured {behind_s:.1f} s behind capture"
                 parts.append(f"{row['route_id']}: " + (f"nonfinite input{measured}" if row["health"] == "nonfinite"
-                                                       else "receiving" + level))
+                                                       else "receiving" + level
+                                                       + (f", finite{measured}" if measured else "")))
             elif row["health"] == "measurement_failed":
                 parts.append(f"{row['route_id']}: receiving, not measured (measurement stopped)")
             elif row["health"] == "stale":

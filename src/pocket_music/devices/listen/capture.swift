@@ -827,13 +827,15 @@ func capture(_ args: ArraySlice<String>) -> Int32 {
     }
 
     let lateAuthorization = microphoneAuthorization()
-    let late = refusals(readDevice(info.id), expectedRate: rate, authorization: lateAuthorization)
+    let change = deviceChange(info, expectedRate: rate)
+    let late = change?.0 == "device_property_unreadable" ? []
+        : refusals(readDevice(info.id), expectedRate: rate, authorization: lateAuthorization)
     if !late.isEmpty {
         removeListeners()
         _ = wire.json(frameExit, exitSchema, ["reason": "refused", "refusal": late,
                                               "microphone_authorization": lateAuthorization]); return 3
     }
-    if let (type, detail) = deviceChange(info, expectedRate: rate) {
+    if let (type, detail) = change {
         removeListeners()
         _ = wire.json(frameExit, exitSchema, ["reason": "device_changed_before_start", "type": type, "value": detail])
         return 4

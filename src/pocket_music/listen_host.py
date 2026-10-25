@@ -35,6 +35,7 @@ from .listen_native import (
     REGISTRY_ENV,
     START_REFUSALS,
     SYNTHETIC_PROFILE,
+    is_private,
     registry_dir,
     verify_build,
 )
@@ -390,7 +391,7 @@ def _read_line(sock, limit):
 def _check_private(path, kind):
     info = os.lstat(path)
     shape = {"dir": stat.S_ISDIR, "file": stat.S_ISREG, "socket": stat.S_ISSOCK}[kind]
-    if not shape(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+    if not is_private(info, shape, os.fspath(path)):
         raise PocketError(f"Listen's runtime {kind} {Path(path).name} isn't private to you",
                           code="evidence_mismatch", hint=_PRIVATE_HINT)
 
@@ -418,9 +419,12 @@ def read_connection(runtime_dir):
             or type(value["pid"]) is not int or not isinstance(value["runtime_epoch"], str)
             or not isinstance(value["nonce"], str) or not re.fullmatch(r"[0-9a-f]{48}", value["nonce"])):
         raise _mismatch("connection.json isn't a Listen connection record", _PRIVATE_HINT)
+    socket_path = Path(value["socket"])
+    if socket_path.name != SOCKET_NAME or not socket_path.parent.name.startswith("pocket-listen-"):
+        raise _mismatch("connection.json names a socket Listen didn't create", _PRIVATE_HINT)
     try:
-        _check_private(Path(value["socket"]).parent, "dir")
-        _check_private(value["socket"], "socket")
+        _check_private(socket_path.parent, "dir")
+        _check_private(socket_path, "socket")
     except FileNotFoundError as error:
         raise RuntimeUnreachable("socket_unreachable") from error
     return value
@@ -1391,7 +1395,7 @@ class ListenHost:
             self.lease_fd = -1
 
 
-_CLOSE_KEYS = ("exit_code", "exit_reason", "exit_stage", "exit_osstatus", "exit_event_type",
+_CLOSE_KEYS = ("error", "exit_code", "exit_reason", "exit_stage", "exit_osstatus", "exit_event_type",
                "exit_event_value", "microphone_authorization", "items_discarded_while_closing",
                "blocks_discarded_while_closing",
                "audio_frames_discarded_while_closing", "items_left_unread", "blocks_left_unread",

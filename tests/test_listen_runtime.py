@@ -346,6 +346,37 @@ def test_an_overload_report_explains_the_gap_after_blocks_captured_before_it():
     assert later.cause == "device_gap"
 
 
+@pytest.mark.parametrize("landing, cause", [
+    (0, "counter_reset"), (RATE - 1, "counter_reset"), (RATE, "counter_backward"), (-1, "counter_backward"),
+    (-480, "counter_backward"), (-RATE, "counter_backward"),
+])
+def test_only_a_backward_jump_landing_in_the_counters_first_second_is_a_counter_reset(landing, cause):
+    tracker = StreamTracker(RUNTIME, RATE)
+    pcm = np.zeros((480, 2), dtype=np.float32)
+    tracker.observe_block(AdapterBlock(480, pcm, 96000.0, None, 1, 0))
+    (started,) = tracker.observe_block(AdapterBlock(480, pcm, float(landing), None, 2, 0))[1]
+    assert started.type == "stream_started" and started.cause == cause
+
+
+@pytest.mark.parametrize("totals, sample_times, expected", [
+    ((0, 480), (0, 1440), ("frames_missing", "device_gap", (480, 960))),
+    ((0, 960), (0, 1440), ("frames_missing", "helper_ring_overflow", (480, 960))),
+    ((0, 960), (0, 1240), ("stream_started", "counter_reset", None)),
+    ((0, 960), (96000, 97240), ("stream_started", "counter_backward", None)),
+    ((0, 480), (0, 480), ("stream_started", "counter_reset", None)),
+])
+def test_helper_drops_beyond_the_missing_positions_show_the_counter_moved_back_inside_them(
+        totals, sample_times, expected):
+    tracker = StreamTracker(RUNTIME, RATE)
+    pcm = np.zeros((480, 2), dtype=np.float32)
+    tracker.observe_block(AdapterBlock(480, pcm, float(sample_times[0]), None, 1, totals[0]))
+    second = AdapterBlock(480, pcm, float(sample_times[1]), None, 2, totals[1])
+    placement, (fact,) = tracker.observe_block(second)
+    assert (fact.type, fact.cause, fact.interval) == expected
+    if fact.type == "stream_started":
+        assert fact.detail["adapter_dropped_frames"] == totals[1] and placement.start_frame == 0
+
+
 @pytest.mark.parametrize("segments, cause, previous_end", [
     ((stereo_tone(96000), {"kind": "counter_reset"}, stereo_tone(9600)), "counter_reset", 96000),
     ((stereo_tone(144000), {"kind": "counter_backward", "delta_frames": -48000}, stereo_tone(9600)),
@@ -926,6 +957,8 @@ def test_a_full_facts_queue_loses_measurement_accounting_never_health():
     r.worker.flush("stop")
     meters = r.events("signal_level")
     assert sum(evidence(e)["frames_measured"] for e in meters) == 20 * 480
+    cuts = {evidence(e)["truncated_by"] for e in meters}
+    assert "frames_unaccounted" in cuts and "measurement_overrun" not in cuts
     gaps = spans(published)
     assert not any(s < gs + gn and gs < s + n for s, n in spans(meters) for gs, gn in gaps)
 
@@ -1196,6 +1229,17 @@ def test_synthetic_script_bounds_are_refused_with_a_hint_naming_the_field(change
     with pytest.raises(PocketError) as raised:
         validate_synthetic_script({**script(silence(480)), **change})
     assert raised.value.code == "invalid_request" and raised.value.hint.startswith(field)
+
+
+def test_a_script_holds_four_hours_of_frames_at_its_lowest_listed_rate():
+    devices = [device(rate=44100), {**device(rate=96000), "uid": "synthetic:fast"}]
+    limit = 4 * 3600 * 44100
+    halves = [silence(limit // 2), silence(limit - limit // 2)]
+    assert validate_synthetic_script(script(*halves, devices=devices))["segments"][1]["frames"] == limit // 2
+    with pytest.raises(PocketError) as raised:
+        validate_synthetic_script(script(*halves, silence(1), devices=devices))
+    assert raised.value.hint == ("script.segments must total at most 4 hours of frames at the lowest sample_rate "
+                                 f"the script lists, {limit} frames.")
 
 
 def test_rate_mismatch_is_an_open_refusal_not_an_error():
@@ -1780,6 +1824,19 @@ def test_a_nonfinite_route_says_how_old_its_measured_state_is_while_measurement_
     assert "master: nonfinite input in audio measured 3.0 s behind capture" in lagging["summary"]
 
 
+def test_an_ok_route_says_how_old_its_measured_state_is_while_measurement_lags():
+    r = build_core(script(stereo_tone(5 * RATE)))
+    for _ in range(20):
+        r.core.ingest(r.adapter.read(50 * MS))
+        r.core.measure_pending()
+    assert "measured" not in r.observe()["summary"]
+    for _ in range(300):
+        r.core.ingest(r.adapter.read(50 * MS))
+    lagging = r.observe()
+    assert lagging["worker"]["lag_frames"] == 3 * RATE and lagging["routes"][0]["health"] == "ok"
+    assert "master: receiving, finite in audio measured 3.0 s behind capture" in lagging["summary"]
+
+
 def test_startup_before_io_begins_doesnt_count_toward_the_first_block_age():
     r = build_core(script(stereo_tone(48000)), begin=False)
     r.clock.advance(700 * MS)
@@ -2163,6 +2220,83 @@ def test_a_worker_failure_accounts_for_every_received_frame(monkeypatch, fails, 
     assert worker["unmeasured_frames"] == worker["unmeasured_after_failure_frames"] == 120000 - master[
         "frames_measured"]
     assert master["availability"] == "unavailable" and master["reason"] == "measurement_worker_failed"
+
+
+def _one_shot_fault(monkeypatch, target, name, *, route_id=None):
+    real, fired = getattr(target, name), []
+
+    def faulty(*args, **kwargs):
+        route = args[0].route.route_id if args and hasattr(args[0], "route") else None
+        if not fired and (route_id is None or route == route_id):
+            fired.append(True)
+            raise RuntimeError("injected measurement fault")
+        return real(*args, **kwargs)
+    monkeypatch.setattr(target, name, faulty)
+    return fired
+
+
+def _route_accounts(terminal, received):
+    worker = terminal["worker"]
+    unmeasured = worker["unmeasured_frames"] + worker["unaccounted_frames"]
+    return {row["route_id"]: row["frames_measured"] + unmeasured - received for row in terminal["routes"]}
+
+
+@pytest.mark.parametrize("target", ["factory", "publish"])
+def test_a_fault_while_a_coalesced_level_is_built_or_published_still_counts_its_windows(monkeypatch, target):
+    r = build_core(script(stereo_tone(120000)), coalesce=5)
+    r.drive(reads=30)
+    if target == "factory":
+        fired = _one_shot_fault(monkeypatch, r.core.worker._factory, "measurement")
+    else:
+        fired = _one_shot_fault(monkeypatch, r.core.worker, "_publish")
+    r.drive()
+    terminal = r.stop()
+    assert fired and terminal["worker"]["state"] == "failed"
+    assert _route_accounts(terminal, 120000) == {"master": 0}
+
+
+def test_a_fault_on_a_later_route_counts_that_routes_window_too(monkeypatch):
+    routes = MASTER + ({"route_id": "aux", "role": "unlabeled", "channels": [2]},)
+    r = build_core(script(stereo_tone(120000)), routes, coalesce=1)
+    r.drive(reads=30)
+    fired = _one_shot_fault(monkeypatch, r.core.worker, "_route_window", route_id="aux")
+    r.drive()
+    terminal = r.stop()
+    accounts = _route_accounts(terminal, 120000)
+    assert fired and terminal["worker"]["state"] == "failed"
+    assert accounts["aux"] == 0 and 0 <= accounts["master"] <= 4800
+
+
+def test_blocks_overwritten_while_a_failed_worker_wasnt_reading_are_counted(monkeypatch):
+    r = build_core(script(stereo_tone(120000)), window_frames=480, coalesce=1, descriptor_capacity=16)
+    r.drive(reads=10)
+    fired = _one_shot_fault(monkeypatch, r.core.worker, "_add")
+    r.core.ingest(r.adapter.read(50 * MS))
+    r.core.measure_pending()
+    for _ in range(60):
+        r.core.ingest(r.adapter.read(50 * MS))
+    r.drive()
+    terminal = r.stop()
+    assert fired and r.core.tracker.snapshot()["frames_received"] == 120000
+    assert _route_accounts(terminal, 120000) == {"master": 0}
+
+
+def test_a_stop_the_worker_never_lets_go_of_counts_the_window_it_had_open(monkeypatch):
+    r = build_core(script(stereo_tone(9600)), window_frames=4800, coalesce=1)
+    for _ in range(5):
+        r.core.ingest(r.adapter.read(50 * MS))
+    r.core.measure_pending()
+    for _ in range(15):
+        r.core.ingest(r.adapter.read(50 * MS))
+    worker, release = _held_worker(r, monkeypatch, release_on_cancel=False)
+    assert r.core.begin_stop("listen_stop", request_id="stop-1")
+    terminal = r.core.finish_stop(drain_ns=20 * MS)
+    release.set()
+    worker.join(5)
+    work, (master,) = terminal["worker"], terminal["routes"]
+    assert work["drain"] == "incomplete" and master["frames_measured"] == 0
+    assert work["unmeasured_at_stop_frames"] == 2400 and work["lag_frames"] == 7200
+    assert master["frames_measured"] + work["unmeasured_frames"] + work["lag_frames"] == 9600
 
 
 def test_nothing_publishes_after_runtime_stopped_whichever_thread_tries():

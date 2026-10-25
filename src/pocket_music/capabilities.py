@@ -122,7 +122,7 @@ _UNAVAILABLE = (
     ('candidate_apply', 'candidate', 'apply', 'Qualified individually callable native primitives'),
     ('audio_transcribe', 'audio', 'transcribe', 'General transcription and musician-owned E8 acceptance; narrow optional note hypotheses are separately callable'),
     ('performance_launch', 'performance', 'launch', 'E9 scheduling, takeover, panic and 30-minute soak'),
-    ('listen_calibrate', 'listen', 'calibrate', 'Listen calibration follow-up: a routing test (armed master-only and cue-only passages sealed to device instance and topology epochs; cue stays unavailable; headphone confirmation is a separate attributed observation) or a clock test (same-clock delay, uncertainty and drift against a declared reference); until one is measured, records say drift not_estimated and device_latency not_measured'),
+    ('listen_calibrate', 'listen', 'calibrate', 'Listen calibration follow-up: a routing test (armed master-only and cue-only passages sealed to device instance and topology epochs) that would establish which channels carry cue (until one is measured, cue stays unavailable, and headphone confirmation would be a separate attributed observation), or a clock test (same-clock delay, uncertainty and drift against a declared reference); until one is measured, records say drift not_estimated and device_latency not_measured'),
     ('listen_capture_window', 'listen', 'capture_window', 'Listen windows follow-up: seal an exact retained interval within one stream epoch or report window_unavailable'),
     ('listen_analyze', 'listen', 'analyze', 'Listen windows follow-up: hand a sealed window to existing audio_hypotheses and Peek providers outside capture'),
     ('listen_record_start', 'listen', 'record_start', 'Listen recorder follow-up: explicit new destination, duration and byte budgets, separate lifecycle, no hidden cutoff'),
@@ -328,14 +328,18 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                 'listen_devices': ('It runs without microphone access and reports the authorization state '
                                    'macOS gives, with the step that fits it'),
                 'listen_prepare': 'Also an input UID; microphone access is checked when listen_start runs',
-            }.get(name, ('Also an input UID and microphone access already granted to the app running Pocket. '
-                         'Listen never requests access, and an app that never asked has no switch in System '
-                         'Settings; permission onboarding is a follow-up'))
+                'listen_start': ('Also microphone access already granted to the app running Pocket. Listen '
+                                 'never requests access, and an app that never asked has no switch in System '
+                                 'Settings; permission onboarding is a follow-up'),
+            }.get(name, ('It reads or stops a runtime listen_start began and checks no microphone access '
+                         'itself'))
             prerequisites = ['Synthetic adapter: POSIX, no device or setup; labeled synthetic and never live evidence',
                              ('coreaudio-hal-input/v1: macOS 15+ and the build_id of a helper build '
                               "listen_build_helper compiled into Listen's own folder for this user "
                               '(~/.pocket/listen, or POCKET_LISTEN_DIR in the environment of the process that '
-                              f'runs Pocket), unchanged; a copied, moved or changed build is refused. {permission}')]
+                              "runs Pocket), recorded under that folder's private key and unchanged; a "
+                              'changed build, or one copied or moved without its record and that key, is '
+                              f'refused, and macOS 15 is checked when the build is made. {permission}')]
             if name == 'listen_request_status':
                 prerequisites = ['File reads only, on any system; it never contacts a runtime or a device']
             if name == 'listen_build_helper':
@@ -343,9 +347,10 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                 prerequisites = [('macOS 15+ with the Swift compiler (swiftc); compiles into a new folder in '
                                   '~/.pocket/listen (or POCKET_LISTEN_DIR) and returns its build_id; building '
                                   'opens no audio device and starts no capture')]
+                from .listen_native import swift_compiler
                 if sys.platform != 'darwin' or _macos_major() < 15:
                     status = 'unsupported'
-                elif not shutil.which('swiftc'):
+                elif not swift_compiler():
                     status = 'requires_optional_setup'
             elif name in ('listen_devices', 'listen_start', 'listen_observe', 'listen_events', 'listen_stop'):
                 status = 'unsupported' if os.name != 'posix' else 'requires_native_setup'
@@ -434,10 +439,11 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                          if name in ('audio_region_hypotheses', 'audio_region_submit') else
                          [('coreaudio adapter: macOS and the build_id of a helper build listen_build_helper '
                            "compiled into Listen's own folder for this user (~/.pocket/listen or "
-                           'POCKET_LISTEN_DIR), unchanged; '
+                           'POCKET_LISTEN_DIR), recorded under its private key and unchanged; '
                            + {'listen_devices': 'it reports microphone access rather than needing it',
-                              'listen_prepare': 'microphone access is checked when listen_start runs'}.get(
-                               name, 'microphone access already granted (Listen never requests it)')
+                              'listen_prepare': 'microphone access is checked when listen_start runs',
+                              'listen_start': 'microphone access already granted (Listen never requests it)'}.get(
+                               name, 'it checks no microphone access itself')
                            + '; native capture not yet qualified')]
                          if module == 'listen' and name not in ('listen_build_helper', 'listen_request_status')
                          else []),

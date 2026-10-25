@@ -14,6 +14,7 @@ import stat
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -297,6 +298,53 @@ def _raw(socket_path, payload):
         connection.connect(socket_path)
         connection.sendall(payload)
         return json.loads(connection.makefile("rb").readline())
+
+
+@pytest.fixture
+def connection(tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    folder = Path(tempfile.mkdtemp(prefix="pocket-listen-",
+                                   dir="/private/tmp" if sys.platform == "darwin" else None))
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        server.bind(str(folder / listen_host.SOCKET_NAME))
+        os.chmod(folder / listen_host.SOCKET_NAME, 0o600)
+
+        def write(socket_path):
+            path = runtime / listen_host.CONNECTION_NAME
+            path.unlink(missing_ok=True)
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(fd, "w") as stream:
+                json.dump({"schema": listen_host.CONNECTION_SCHEMA, "socket": str(socket_path),
+                           "nonce": "0" * 48, "pid": 1, "runtime_epoch": "rt-0", "session_id": "s"}, stream)
+            return runtime
+        yield write, folder / listen_host.SOCKET_NAME
+    finally:
+        server.close()
+        (folder / listen_host.SOCKET_NAME).unlink(missing_ok=True)
+        folder.rmdir()
+
+
+@pytest.mark.parametrize("change", ["acl", "volume", "socket_name", "socket_folder"])
+def test_a_connection_record_counts_as_private_only_when_no_access_list_or_volume_lets_others_in(
+        connection, monkeypatch, tmp_path, change):
+    write, sock = connection
+    runtime = write(sock)
+    assert read_connection(runtime)["socket"] == str(sock)
+    named = sock
+    if change == "acl":
+        record = os.fspath(runtime / listen_host.CONNECTION_NAME)
+        monkeypatch.setattr(listen_native, "acl_grants_access", lambda where: where == record)
+    elif change == "volume":
+        monkeypatch.setattr(listen_native, "volume_ignores_ownership", lambda where: where == os.fspath(sock))
+    elif change == "socket_name":
+        named = sock.parent / "other.sock"
+    else:
+        named = tmp_path / listen_host.SOCKET_NAME
+    with pytest.raises(PocketError) as raised:
+        read_connection(write(named))
+    assert raised.value.code == "evidence_mismatch"
 
 
 def test_runtime_dir_0700_socket_0600_and_nonce_required(tmp_path, daemons):
@@ -778,6 +826,7 @@ def test_an_adapter_close_that_raises_any_exception_reads_as_an_error_never_a_ti
     assert host.stop("listen_stop", request_id="stop-1")["terminal_sealed"]
     _, terminal = read_terminal(session_dir, host.runtime_dir)
     assert (terminal["state"], terminal["stop"]["adapter_close"]) == ("stopped", "error")
+    assert terminal["stop"]["adapter_exit"]["error"] == "adapter close exited"
 
 
 def test_a_stuck_close_and_a_lagging_worker_together_still_end_the_ladder_within_the_bound(tmp_path, hosts):

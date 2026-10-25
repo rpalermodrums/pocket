@@ -171,6 +171,15 @@ def test_swift_device_reads_never_guess_a_property_they_couldnt_read():
     assert "HogMode), pid_t(-1)) ?? " not in SWIFT.read_text()
 
 
+def test_the_late_pre_start_check_names_a_property_it_couldnt_read_instead_of_guessing_it():
+    capture = _function("capture")
+    change = capture.index("let change = deviceChange(info, expectedRate: rate)")
+    late = capture.index("refusals(readDevice(info.id)")
+    assert change < late
+    assert 'let late = change?.0 == "device_property_unreadable" ? []' in capture
+    assert "if let (type, detail) = change {" in capture
+
+
 def test_each_helper_drain_pass_is_bounded_so_its_control_checks_keep_running():
     drain = _function("drainOnce")
     assert "first &+ drainMaxBlocks" in drain and "drainBudgetMs" in drain
@@ -812,7 +821,7 @@ def test_heartbeats_update_the_stats_the_watchdog_reads(harness):
 def _fake_toolchain(monkeypatch, calls, *, returncode=0, stderr=""):
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(listen_native.platform, "mac_ver", lambda: ("15.4.1", ("", "", ""), "arm64"))
-    monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/tools/" + name)
 
     def fake_run(argv, **kwargs):
         calls.append((list(argv), kwargs))
@@ -865,6 +874,28 @@ def test_build_helper_runs_only_swiftc_and_seals_the_build_in_listens_own_folder
         [build_id, f"{build_id}.json", again["build_id"], f"{again['build_id']}.json"])
 
 
+def test_the_xcode_select_shim_counts_as_swiftc_only_with_a_toolchain_behind_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(listen_native.shutil, "which", lambda name: listen_native.SWIFTC_SHIM)
+    monkeypatch.delenv("DEVELOPER_DIR", raising=False)
+    monkeypatch.setattr(listen_native, "XCODE_SELECT_LINK", tmp_path / "no-link")
+    xcode, tools = tmp_path / "Xcode", tmp_path / "CommandLineTools"
+    monkeypatch.setattr(listen_native, "DEFAULT_DEVELOPER_DIRS", (xcode, tools))
+    assert listen_native.swift_compiler() is None
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(listen_native.platform, "mac_ver", lambda: ("15.4", ("", "", ""), ""))
+    monkeypatch.setattr(listen_native.subprocess, "run", lambda *a, **k: pytest.fail("nothing may run"))
+    with pytest.raises(PocketError) as raised:
+        listen_native.build_helper()
+    assert "Swift compiler" in raised.value.hint
+    (tools / "usr" / "bin").mkdir(parents=True)
+    (tools / "usr" / "bin" / "swiftc").write_text("")
+    assert listen_native.swift_compiler() == listen_native.SWIFTC_SHIM
+    monkeypatch.setenv("DEVELOPER_DIR", str(xcode))
+    assert listen_native.swift_compiler() is None
+    monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/opt/swift/bin/swiftc")
+    assert listen_native.swift_compiler() == "/opt/swift/bin/swiftc"
+
+
 @pytest.mark.parametrize("platform_name, mac, swiftc, hint", [
     ("linux", "", True, "Swift compiler"),
     ("darwin", "14.6", True, "macOS 15 or later"),
@@ -873,7 +904,7 @@ def test_build_helper_runs_only_swiftc_and_seals_the_build_in_listens_own_folder
 def test_build_helper_refuses_outside_its_profile(monkeypatch, platform_name, mac, swiftc, hint):
     monkeypatch.setattr(sys, "platform", platform_name)
     monkeypatch.setattr(listen_native.platform, "mac_ver", lambda: (mac, ("", "", ""), ""))
-    monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/usr/bin/swiftc" if swiftc else None)
+    monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/tools/swiftc" if swiftc else None)
     monkeypatch.setattr(listen_native.subprocess, "run", lambda *a, **k: pytest.fail("nothing may run"))
     with pytest.raises(PocketError) as raised:
         listen_native.build_helper()
@@ -1310,6 +1341,22 @@ def test_a_device_with_one_non_float_stream_fits_on_its_float_stream_channels():
     device.update(input_streams=[{**int_stream, "channels": 4}], stream_configuration=[4])
     row = listen_native._device_row(device)
     assert row["profile_fit"] == "unsupported:not_float32" and row["supported_channels"] == []
+    short = {**int_stream, "virtual_format": {**int_stream["virtual_format"], "bits_per_channel": 16}}
+    device.update(input_streams=[float_stream, {**short, "starting_channel": 2}], stream_configuration=[2, 2])
+    row = listen_native._device_row(device)
+    assert row["profile_fit"] == "unsupported:not_float32" and row["supported_channels"] == []
+
+
+def test_a_start_is_refused_when_another_stream_of_the_input_isnt_four_bytes_a_sample(harness):
+    adapter = harness.adapter()
+    assert adapter.open().refusal == ()
+    float_stream = listen_fake_helper._stream(2, 48000)
+    short = listen_fake_helper._stream(2, 48000, float32=False)
+    short["virtual_format"]["bits_per_channel"] = 16
+    adapter._hello["device"]["input_streams"] = [float_stream, {**short, "starting_channel": 2}]
+    refused = adapter.start((0, 1))
+    assert not refused.started and refused.refusal == ("format_not_float32",)
+    assert "fake helper received" not in (adapter.stderr_tail() or "")
 
 
 def test_probe_devices_validates_rows_flags_shared_names_and_profile_fit():

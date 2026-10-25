@@ -39,6 +39,7 @@ from .listen_native import (
     STARTED,
     SYNTHETIC_PROFILE,
     copy_helper,
+    has_four_byte_samples,
     is_float32,
     remove_helper_copy,
     verify_build,
@@ -316,7 +317,8 @@ def validate_synthetic_script(script):
                 _refuse(f"{name}.order", "must be a permutation of 0-based device channels, 2 to 16 long.")
         normalized.append(item)
     if total > limit_frames:
-        _refuse("script.segments", f"must total at most {_SCRIPT_HOURS} hours of frames.")
+        _refuse("script.segments", f"must total at most {_SCRIPT_HOURS} hours of frames at the lowest "
+                                   f"sample_rate the script lists, {limit_frames} frames.")
     return {"block_frames": block, "devices": normalized_devices, "segments": normalized, "host_drift_ppm": drift}
 
 
@@ -873,10 +875,12 @@ class CoreAudioHelperAdapter:
                 or not all(type(c) is int and 0 <= c < device["input_channels"] for c in selected)):
             self._stop_child()
             return StartResult(False, ("no_metered_channels_exposed",), selected, None, self._detail())
+        readable = all(has_four_byte_samples(s.get("virtual_format")) for s in device["input_streams"])
         for channel in selected:
             owners = [s for s in device["input_streams"] if s.get("starting_channel") is not None
                       and s["starting_channel"] <= channel < s["starting_channel"] + s["channels"]]
-            if len(owners) != 1 or not is_float32(owners[0].get("virtual_format"), self._rate):
+            if (not readable or len(owners) != 1
+                    or not is_float32(owners[0].get("virtual_format"), self._rate)):
                 self._stop_child()
                 return StartResult(False, ("format_not_float32",), selected, None, self._detail())
         try:

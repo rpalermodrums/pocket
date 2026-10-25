@@ -75,7 +75,7 @@ step.
 | [Weave](docs/weave.md) | Sketch several possible orders for a crate of records | A [record bag](docs/record-bag.md) |
 | [Whisker](docs/whisker.md) | Propose what could come next, in a session you share with an agent | A record bag |
 | [Shuttle](docs/shuttle.md) | Improvise from a crate with observed Serato controls and controller takeover | Experimental macOS / Serato / FLX4 profile |
-| [Listen](docs/listen.md) | Watch levels, clocks and capture health on declared audio routes, without changing anything | Synthetic adapter on macOS or Linux; experimental macOS helper |
+| [Listen](docs/listen.md) | Watch levels, clocks and capture health on declared audio routes, without changing anything | Synthetic adapter on macOS or Linux; experimental macOS helper on macOS 15 or later with the Swift compiler |
 
 The names come from the pocket itself: it's sewn with thread and stitches, and
 Pip, the field mouse who lives in it, peeks out and feels the way with

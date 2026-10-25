@@ -2,17 +2,22 @@
 
 > **In brief.** Listen copies live audio from the inputs you declare and reports
 > what it can measure: levels, clipped samples, near-silence and whether audio
-> is still arriving. Every level report carries its exact position in the
-> stream and its age, and every gap its exact start and length. Listen
+> is still arriving. Every level event carries its exact position in the
+> stream and when it was received, and every `frames_missing` event its exact
+> start and length. Listen
 > never changes a device, a route or a deck, saves no audio, and isn't in the
 > path to your speakers or headphones.
 >
 > **You need** macOS or Linux. The synthetic adapter needs no hardware. Reading
-> a real input uses an experimental macOS helper that isn't qualified yet.
+> a real input uses an experimental macOS helper that isn't qualified yet; it
+> needs macOS 15 or later and the Swift compiler.
 
-Listen is experimental. It runs one small local process per session, which you
-start and stop explicitly, and you read what it saw through bounded snapshots
-and pages of events.
+Listen is experimental. It runs one small local runtime process per session,
+plus a copy of the helper when it reads a real input. Only `listen_start`
+starts the runtime, and it stops when you stop it, at its time limit
+(`limits.max_runtime_seconds`, 4 hours by default), if it fails, or if its
+process is signalled to end. You read
+what it saw through bounded snapshots and pages of events.
 
 ## What Listen does and won't do
 
@@ -37,7 +42,7 @@ An [audio route](concepts.md#glossary) is a set of input channels with a role:
 |---|---|
 | `master` | Meters it. The label comes from your setup, so Listen reports it as `declared_unverified`. |
 | `cue` | Records whether the channels exist, and nothing else. In this version cue isn't monitored: no routing test has shown that those channels carry cue audio, so Listen never meters them, keeps them or reports their levels. |
-| `unlabeled` | Meters it, with no claim about what the channels carry (`no_semantic_claim`). |
+| `unlabeled` | Meters it, with no claim about what the channels carry (`no_semantic_claim`). If the input doesn't have those channels, the route reads `unavailable` with reason `channels_not_exposed`, and the other routes keep capturing. |
 
 To see levels on channels you'd call cue, declare them as an `unlabeled` route
 instead. Listen then reports their levels without calling them cue.
@@ -98,19 +103,25 @@ pocket listen prepare --spec prepare.json --output NEW_SESSION
                   "near_silence": {"level_dbfs": -60.0, "min_duration_ms": 2000}}}}
 ```
 
-Listen creates `output_dir` as a new directory that only you can open. A name
-that already exists, even as a symlink, is refused rather than followed, so a
-session never reuses or overwrites anything.
+Listen creates `output_dir` as a new directory that only you can open, and
+refuses one on a volume that ignores ownership. A name that already exists,
+even as a symlink, is refused rather than followed, so a session never reuses
+or overwrites anything.
 
 The clip threshold and the near-silence level and duration have no defaults:
-you say what counts. The receipt echoes every setting Pocket filled in under
-`session.settings` and the session's `config_sha256`. It also declares the
-session's sizes, which are configured, not measured. `memory` gives the byte
-size of each audio buffer and of event retention, with their total; queues
-bounded by a count are listed by count under `not_in_total`. `disk` gives the
-budgets of what one runtime writes in the session, its journal and stderr, as
-`per_runtime_total_declared_bytes`, and every `listen_start` adds a new runtime
-directory. The small sealed records each runtime also writes, such as its
+you say what counts. The receipt echoes the resolved `device`, `measurement`,
+`buffering`, `health`, `delivery` and `limits` settings under
+`session.settings`, with the session's `config_sha256`. The sealed session
+record, `artifacts.session`, holds the whole resolved config, including the
+adapter's defaults, such as a synthetic script's `host_drift_ppm` of 0. The
+receipt also declares the session's sizes, which are configured, not
+measured. `memory` gives the byte size of each audio buffer, including
+measurement's scratch window, and of event retention, with their total;
+queues bounded by a count are listed by count under `not_in_total`. `disk`
+gives the budgets of what one runtime writes in the session, its journal and
+stderr, as `per_runtime_total_declared_bytes`, and every start that launches a
+runtime adds a new runtime directory; a conflict or a replayed request adds
+none. The small sealed records each runtime also writes, such as its
 launch record and terminal, have no declared size and are named under
 `not_in_total`.
 
@@ -132,10 +143,12 @@ The receipt says `"start_outcome": "capturing"`, names the runtime in
 pocket listen observe --spec observe.json      # {"session_dir": "NEW_SESSION"}
 ```
 
-The observation opens with one line, such as `master: receiving, peak -12.0
-dBFS · cue: not monitored (no routing test) · stream 1, 0 missing frames · last
-block 4 ms ago`, and carries a fresh cursor. The last part is the age of the
-newest block, or `no block yet`. Read events after a cursor:
+The observation's `summary` is one line, such as `master: receiving, peak
+-12.0 dBFS · cue: not monitored (no routing test) · stream 1, 0 missing frames
+· last block 4 ms ago`, and the receipt carries a fresh cursor. The last part
+is the age of the newest block, or `no block yet`. On the command line the
+keys come in sorted order, so `summary` is near the end, and `·` prints as
+`\u00b7`. Read events after a cursor:
 
 ```sh
 pocket listen events --spec events.json
@@ -208,7 +221,7 @@ and is interrupted when the device goes, and `stream_ended` and
 | `nonfinite` | `frames`, `channels`, `offsets`, `value` (`nan`, `inf` or `-inf`) | Samples that aren't numbers |
 | `gap` | `frames`, `via` (`device_gap`, `helper_ring_overflow` or `processor_overload`) | Frames that never arrive |
 | `stall` | `ms` (50 to 30000), `counter` (`advances` or `pauses`) | No audio for a while |
-| `counter_reset` | `sample_time` (optional; 0 by default, below the counter and within its first second) | The device's sample counter starting again from a lower value |
+| `counter_reset` | `sample_time` (optional; 0 by default) | The device's sample counter starting again from a lower value |
 | `counter_backward` | `delta_frames` (negative) | The device's sample counter jumping back |
 | `clocks` | `sample_time_valid`, `host_time_valid` | Host time appearing or disappearing; with `sample_time_valid: false`, the next block ends the stream and capture with `device_sample_time_unavailable` |
 | `rate_change` | `sample_rate` | A sample-rate change, which ends the stream |
@@ -219,8 +232,16 @@ A segment that ends the stream comes last. A script lists 1 to 8 `devices`,
 each with a `uid` starting `synthetic:`, a display `name`, 1 to 16
 `input_channels` and a `sample_rate`. Give two of them the same name to see
 shared names flagged. `block_frames` is 32 to 8192, a script holds up to 256
-segments and four hours of frames, and an optional `host_drift_ppm` makes the
-device's clock run fast or slow.
+segments and four hours of frames at the lowest `sample_rate` it lists, and an
+optional `host_drift_ppm`, 0 by default, makes the device's clock run fast or
+slow.
+
+A `counter_reset` needs frames before it. Its `sample_time` must be below the
+scripted counter, which gap frames and stalls that advance it also move, and
+below one second of frames at the script's lowest `sample_rate`. It reads as
+a new stream only when it lands below where the delivered frames end: landing
+there exactly continues the stream, and landing past it reads as a
+`frames_missing`.
 
 ## From Python and MCP
 
@@ -254,37 +275,41 @@ register the tools.
 ## What each result tells you
 
 Every provider returns a [receipt](concepts.md#stores-artifacts-and-handles).
-Its `status` and one named outcome field say what happened.
+Its `status` says how the call went. `listen_start`, `listen_stop` and
+`listen_events` also name an outcome in `start_outcome`, `stop_outcome` and
+`events_status`, and the rows below name the other fields that qualify a
+result, such as `capture_snapshot` or `measurement_drain`.
 
 | Result | What it establishes | What it doesn't establish |
 |---|---|---|
 | `listen_devices`, `ok` | The inputs an adapter lists, by uid, with their channels, rates and formats | That any input is carrying audio |
 | `listen_devices`, `failed` (CoreAudio) | The macOS helper's device listing didn't complete; `probe.reason` says how (`nonzero_exit`, `invalid_output`, `output_too_large` or `timeout`) and `probe.stderr_tail` what it printed. No device or stream was opened | Which inputs exist |
 | `listen_prepare`, `ok` | A sealed session: one uid, its audio routes and every setting | That the input is connected or runs at that rate; start checks |
-| `listen_start`, `start_outcome: "capturing"` (`ok`) | Frames arrived from the input with that uid at the expected rate | That the `master` channels carry your master mix |
-| `listen_start`, `"started_no_audio_yet"` (`partial`) | The runtime is running and the input's IO started, but no frame had arrived when the receipt was written. `capture.state` says whether capture is already stale (`capture_no_frames`) | Why no audio arrived; check the source app and the device |
+| `listen_start`, `start_outcome: "capturing"` (`ok`, or `partial` when `capture_snapshot` is `unavailable`) | Frames arrived from the input with that uid, which reported the expected nominal rate when it opened | That the `master` channels carry your master mix, or the rate audio arrives at, which isn't measured |
+| `listen_start`, `"started_no_audio_yet"` (`partial`) | The runtime is running and the input's IO started, but no frame had arrived when the receipt was written. `capture.state` is `stale` when capture has already gone stale, and the `capture_no_frames` notice says so | Why no audio arrived; check the source app and the device |
 | `listen_start`, `"capture_ended_during_start"` (`partial`) | Capture ended or failed while the start waited, and `capture.ended_cause` says why, such as `device_lost`. It won't resume: stop this runtime, then start again | — |
-| `listen_start`, `"stopped_during_start"` (`partial`) | A stop began while the start waited, so the runtime isn't capturing, even if frames had arrived. `terminal` summarizes its sealed record; if the runtime was still stopping when the wait ran out, `stopped_runtime.terminal` is `null`; `listen_request_status` shows when it is sealed, and `listen_observe` then summarizes it | — |
+| `listen_start`, `"stopped_during_start"` (`partial`) | A stop began while the start waited, so the runtime isn't capturing, even if frames had arrived. `terminal` summarizes its sealed record; while the runtime is still stopping, or its terminal doesn't verify, `stopped_runtime.terminal` is `null`; `listen_request_status` shows when it is sealed, and `listen_observe` then summarizes it | — |
 | `listen_start`, `"capture_refused"` (`unsupported`, or `needs_input` when microphone access is the only reason and macOS reports it denied or gives no state) | Capture never started; `capture_refusal.reasons` says why, such as `sample_rate_mismatch`, `microphone_not_authorized` or `stale_after_below_block_period`, and `refused_at` says whether the device was refused when it opened, at route checks or when IO was about to start. A terminal record is sealed, and every route in it is `unavailable` | — |
 | `listen_start`, `"already_running"` (`conflict`) | Another runtime holds this session; nothing new started | — |
-| `listen_start`, `"start_unconfirmed"` (`outcome_unknown`) | The runtime holds the session's [lease](concepts.md#glossary), but it didn't answer within the start wait; `reason` says whether its connection record exists yet. It may still be starting: `listen_observe` shows whether it runs, and `listen_request_status` shows this request, which won't run again. Until it is stopped, a new start with a new `request_id` is refused as `already_running` | Whether capture started |
+| `listen_start`, `"start_unconfirmed"` (`outcome_unknown`) | The runtime holds the session's [lease](concepts.md#glossary), but it didn't answer within the start wait; `reason` says whether its connection record exists yet. It may still be starting: `listen_observe` shows whether it runs, and `listen_request_status` shows this request, which won't run again. While it holds the lease, until its process exits, a new start with a new `request_id` is refused as `already_running` | Whether capture started |
 | `listen_start`, `capture_snapshot: "unavailable"` (`partial`) | The runtime answered, but its snapshot didn't arrive, so the receipt carries no routes or device | Anything about the capture; call `listen_observe` |
 | `listen_observe`, `ok` | A fresh snapshot of capture, clocks, routes and delivery, with a cursor | That a level is current: check its `age_ms` and `fresh`, which count from the newest block in its interval |
 | `listen_events`, `ok` | Nothing after your cursor was lost | That the audio is fine; read the health events and `health_summary` |
-| `listen_events`, `events_status: "runtime_not_running"` (`needs_input`) | The cursor's runtime has stopped. `missing` names the sequences it published after your cursor, which can't be read any more. `cursor_runtime` says what Listen found for that runtime: an empty `missing` means nothing was lost only when its `terminal` is `sealed`, and the next step says so when it isn't | What those events said. A sealed terminal summarizes them. Without one, the range ends at the journal's last line and says `through_is_lower_bound: true`: later events, such as levels, may have been published and lost too. The journal keeps their health events only when the range says `health_in_range: "runtime_journal"`; `runtime_journal_incomplete` means the journal lost lines, and `cursor_runtime.journal` says how |
+| `listen_events`, `events_status: "runtime_not_running"` (`needs_input`) | The cursor's runtime has stopped. `missing` names the sequences it published after your cursor, which can't be read any more. `cursor_runtime` says what Listen found for that runtime: an empty `missing` means nothing was lost only when its `terminal` is `sealed`, and the next step says so when it isn't | What those events said. A sealed terminal summarizes them. When the runtime sealed none, the range ends at the journal's last line and says `through_is_lower_bound: true`: later events, such as levels, may have been published and lost too. When its terminal doesn't verify (`integrity_mismatch`) or Listen doesn't know the epoch (`unknown`), `missing` is empty. The journal keeps their health events only when the range says `health_in_range: "runtime_journal"`; `runtime_journal_incomplete` means the journal lost lines: `cursor_runtime.journal` shows how, or the terminal's `broker.publish_hook_errors` counts events whose journal hook failed |
 | `listen_stop`, `stop_outcome: "stopped"` (`ok`) | The named runtime stopped and its terminal record is sealed. `lease_released` is true when the session is free for a new start; if another runtime took it first, `superseded_by_runtime_epoch` names that runtime | — |
-| `listen_stop`, `stop_outcome: "already_stopped"` (`ok`) | Another stop, such as the runtime's own limit, had already sealed the named runtime's terminal, however long ago; `stopped_by` says which | — |
-| `listen_stop`, `stop_outcome: "not_running"` (`needs_input`) | Nothing named was running to stop: the epoch isn't one of this session's runtimes, the runtime was refused before capture ran, or it exited without a terminal record. That includes a stop that got no reply when the runtime then exited without one; `reason` then says so | Whether this stop reached the runtime; `previous_runtime` says what it left |
+| `listen_stop`, `stop_outcome: "already_stopped"` (`ok`, or `partial` with a caveat below, such as a runtime that failed) | Another stop, such as the runtime's own limit or a failure, had already sealed the named runtime's terminal, however long ago; `stopped_by` says which | — |
+| `listen_stop`, `stop_outcome: "not_running"` (`needs_input`) | Nothing named was running to stop: the epoch isn't one of this session's runtimes, the runtime was refused before capture ran, or it exited without a terminal record. That includes a stop that got no reply when the runtime then exited without one; `reason` then says so | Whether this stop reached the runtime. `runtime_known` says whether the epoch is one of this session's runtimes; `previous_runtime` is that runtime's record when it is, and the session's newest runtime's when it isn't |
 | `listen_stop`, `stop_outcome: "stop_unconfirmed"` (`outcome_unknown`) | The stop got no reply from the runtime, and the runtime still held the lease 5 seconds later, so Listen can't say whether the stop reached it. `listen_observe` shows whether it still runs; `listen_stop` with a new `request_id` is safe, since it stops only the named runtime epoch | Whether the runtime stopped |
 | `listen_stop`, `terminal_sealed: false` (`partial`) | The runtime stopped, but its terminal record wasn't sealed or doesn't verify; `reason` says which | — |
 | `listen_stop`, `measurement_drain: "incomplete"` (`partial`) | The runtime stopped and its terminal is sealed, but measurement didn't reach every block within the stop bound. Health doesn't wait for measurement, so every gap and stream change capture found was published before `runtime_stopped` | Levels for `terminal.worker.unmeasured_at_stop_frames` frames (and any `lag_frames`); each route's totals cover only its `frames_measured` |
-| `listen_stop`, a measurement overrun (`partial`) | The runtime stopped and its terminal is sealed, but measurement fell behind during the run: it skipped frames as a `measurement_overrun`, or lost track of frames after its fact queue was full (`frames_unaccounted`), then caught up | Levels for those frames (`terminal.worker.unmeasured_frames` beyond the frames after a failure or at stop, and `terminal.worker.unaccounted_frames`); each route's totals cover only its `frames_measured` |
+| `listen_stop`, a measurement overrun (`partial`) | The runtime stopped and its terminal is sealed, but measurement fell behind during the run: it skipped frames as a `measurement_overrun`, then caught up | Levels for those frames (`terminal.worker.unmeasured_frames` beyond the frames after a failure or at stop); each route's totals cover only its `frames_measured` |
+| `listen_stop`, frames measurement lost track of (`partial`) | The runtime stopped and its terminal is sealed, but measurement lost track of `terminal.worker.unaccounted_frames` frames after its fact queue was full (`frames_unaccounted`) | Whether those frames arrived: a `frames_missing` event covers any that didn't, and any that did have no levels |
 | `listen_stop`, `measurement_state: "failed"` (`partial`) | The runtime stopped and its terminal is sealed, but level measurement failed during it | Levels for `terminal.worker.unmeasured_after_failure_frames` frames; each route's totals cover only its `frames_measured` |
-| `listen_stop`, `adapter_close` other than `clean` (`partial`) | The runtime stopped and its terminal is sealed, but the input adapter timed out, raised or exited with an error while closing; `terminal.stop.adapter_exit` says how | That the macOS helper stopped reading the input |
+| `listen_stop`, `adapter_close` other than `clean` (`partial`) | The runtime stopped and its terminal is sealed, but the input adapter timed out, raised, exited with an error or had to be terminated or killed while closing. `terminal.stop.adapter_exit` gives what Listen learned: the helper's exit code and reason, or the `error` closing raised; after a timeout it learned nothing more | That the macOS helper stopped reading the input |
 | `listen_stop`, held-back helper audio (`partial`) | The runtime stopped and its terminal is sealed, but the macOS helper exited holding audio it had captured and never sent: after a device change it sends none of what its ring still holds, which can be up to about 3 seconds when the runtime was behind reading it (the ring is the smallest power of two of frames that holds 2 seconds: 131072 frames at 44.1 and 48 kHz, 262144 at 88.2 and 96 kHz). `terminal.stop.adapter_exit.counters` gives `undelivered_blocks` and `undelivered_frames` | That audio: no event or frame total covers it, so capture's frames end before it |
 | `listen_stop`, helper drops after the last block (`partial`) | The runtime stopped and its terminal is sealed, but the macOS helper counted frames it dropped after the last block capture took. `terminal.stop.helper_drops_after_last_block_frames` gives the count | Where they fell: no later block reached capture, so no `frames_missing` event covers them |
-| `listen_stop`, a journal caveat (`partial`) | The runtime stopped and its terminal is sealed, but its journal stopped writing, dropped lines or hadn't finished writing when the stop closed it, or some health events never reached it because their journal hook failed; `terminal.journal` gives `state`, `dropped_lines` and `lines_unwritten_at_close`, and `terminal.broker.publish_hook_errors` counts those events | That every health event is on disk |
-| `listen_start`, `"host_failed"` (`failed`) | The runtime exited during startup or failed while the start waited. `startup_failure` gives its stage and error. When capture was refused but its terminal record couldn't be sealed, such as on a full disk, the stage is `refused` and `startup_failure.refusal` gives the reasons. Its `record` is `unverified` when the runtime couldn't finish sealing its startup-failure record, such as on a full disk, and `missing` when it exited before writing one, such as when it couldn't start Python or was killed; then `exit_code` and `stderr_tail` are what remain | — |
+| `listen_stop`, a journal caveat (`partial`) | The runtime stopped and its terminal is sealed, but its journal stopped writing, dropped lines or hadn't finished writing when the stop closed it, or some events never reached it because their journal hook failed; `terminal.journal` gives `state`, `dropped_lines` and `lines_unwritten_at_close`, and `terminal.broker.publish_hook_errors` counts those events, health or near-silence | That every health event is on disk |
+| `listen_start`, `"host_failed"` (`failed`) | The runtime exited during startup or failed while the start waited. For a startup failure, `startup_failure` gives its stage and error. When capture was refused but its terminal record couldn't be sealed, such as on a full disk, the stage is `refused` and `startup_failure.refusal` gives the reasons. Its `record` is `unverified` when the runtime couldn't finish sealing its startup-failure record, such as on a full disk, and `missing` when it wrote none; then `stage` is `null`. A runtime that exited before writing one, such as when it couldn't start Python or was killed, leaves `exit_code` and `stderr_tail`. A runtime that failed after its capture began writes no startup-failure record but seals a terminal: `startup_failure.error` comes from it, and `terminal` summarizes it | — |
 | `listen_request_status` | What the request journal and runtime directories record | The runtime's current state; it never contacts the runtime |
 
 When no runtime is running, `listen_observe` and `listen_events` return
@@ -308,7 +333,7 @@ the device's sample counter places every frame (see
 | Clipped samples | How many samples reached your clip threshold | That anyone heard distortion |
 | Non-finite samples | Samples that aren't numbers (NaN or infinity); that channel's levels stay empty and a health event says why | Which app produced them |
 | Near-silence | Every complete window stayed below your level for at least your duration | A stopped deck, a dropout or an intended ending |
-| Stale capture | No audio has arrived for longer than `stale_after_ms`, counted from when capture started until the first block. `stale_after_ms` must be more than twice the input's block period, or blocks arriving normally would read as stalls | That playback stopped |
+| Stale capture | At least `stale_after_ms` has passed since capture started, before the first block, or since the newest block capture has taken was received. A block received before that decision but taken by capture after it ends the episode at once, and its `capture_resumed` says `detail.received_before_stale_decision: true`. `stale_after_ms` must be more than twice the input's block period, or blocks arriving normally would read as stalls | That playback stopped, or that no audio reached the runtime |
 
 A channel of exact zeros reports `null` dBFS with `digital_zero: true`, never a
 floor value. True peak and loudness aren't measured, and records say
@@ -319,7 +344,9 @@ reported, but each metered route turns `unavailable` with health
 `measurement_failed` and near-silence `unknown`, because no level describes the
 audio that keeps arriving. Every received frame the failure leaves without a
 level is counted in `worker.unmeasured_after_failure_frames`, and `worker.error`
-says what failed.
+says what failed. That count serves every route, so with more than one
+metered route it can also hold frames that some routes measured just before
+the failure, up to the audio of one level event.
 
 Measurement reads a bounded in-memory ring of recent audio and a bounded list
 of block records. If it falls so far behind that capture overwrites audio or
@@ -329,8 +356,9 @@ slow measurement catches up instead of reporting each lost block on its own.
 While measurement trails capture by more than `stale_after_ms` of audio, each
 route's near-silence reads `unknown`: the last window measured no longer
 describes the audio arriving now. A route's `nonfinite` or `ok` health also
-comes from the last window measured, so then the `nonfinite_input` notice and
-the summary say how far behind capture that audio is.
+comes from the last window measured, so then the summary says how far behind
+capture that audio is, and for a `nonfinite` route so does the
+`nonfinite_input` notice.
 
 ## Reading events
 
@@ -339,23 +367,32 @@ the summary say how far behind capture that audio is.
 
 - **`ok`**: nothing after your cursor was lost. A page with no events and zero
   `filtered` counts means nothing new was published during the wait. `filtered`
-  says how many level events your `routes`, `kinds` or `max_evidence_age_ms`
-  skipped, and while `more_available` is true, keep paging with `next_after`.
+  says how many level or near-silence events your `routes`, `kinds` or
+  `max_evidence_age_ms` skipped, and while `more_available` is true, keep
+  paging with `next_after`.
 - **`cursor_expired`** (status `conflict`): level or near-silence events after
   your cursor were dropped before you read them, so the page carries no
   events. Repeat with `"on_expired": "resume_from_earliest"` to page on: that
-  page delivers every health event still after your cursor, lists exactly
-  which sequences you missed under `missing`, and its status is `partial`. A
+  page delivers the health events still after your cursor, up to its
+  `max_events` and `max_bytes`, and its status is `partial`. Its `missing` is
+  one range, from your cursor to where the dropped events end, with
+  `health_in_range: "delivered"`: the health events in it are on the page, and
+  the rest of the range, other than events your filters skip, was lost. Keep
+  passing `resume_from_earliest` while `next_after` is still inside that
+  range, since each page from there finds dropped events again. A
   fresh cursor from `listen_observe` starts at the newest event, so it skips
   any health events in between. A poll with `"kinds": ["health"]` never gets
   `cursor_expired`: it asked for no level events, so the ones dropped are
   counted in `filtered.kind` like the ones it skips.
 - **`snapshot_required`** (status `conflict`): health events after your cursor
   were evicted before you read them. Call `listen_observe` and use its cursor.
-- **`runtime_epoch_mismatch`** (status `conflict`): the cursor belongs to an
-  earlier runtime, and a newer one is running. As with `runtime_not_running`,
-  `cursor_runtime` and `missing` say what the cursor's own runtime published
-  after your cursor before it stopped.
+- **`runtime_epoch_mismatch`** (status `conflict`): a runtime is running, and
+  the cursor names a different runtime epoch. When that epoch is an earlier
+  runtime of this session, `cursor_runtime` and `missing` say, as with
+  `runtime_not_running`, what it published after your cursor before it
+  stopped. When it isn't, such as a cursor from another session,
+  `cursor_runtime.terminal` is `unknown`, and the next step says Listen can't
+  rule out loss.
 - **`runtime_not_running`** (status `needs_input`): the cursor's runtime has
   stopped. `missing` lists the sequences it published after your cursor, which
   can't be read any more. When that runtime sealed its terminal, the range ends
@@ -366,8 +403,11 @@ the summary say how far behind capture that audio is.
   `missing` doesn't mean nothing was lost, and the next step says so.
   `health_in_range` is `runtime_journal` when that runtime's journal kept
   every line, so its health events are on disk, and
-  `runtime_journal_incomplete` when the journal stopped writing, dropped lines
-  or didn't finish; `cursor_runtime.journal` says which. The journal never holds its own `journal_failed` or
+  `runtime_journal_incomplete` when it didn't. `cursor_runtime.journal` shows
+  a journal that stopped writing, dropped lines or didn't finish; when events
+  never reached the journal because their journal hook failed, that runtime's
+  sealed terminal counts them in `broker.publish_hook_errors`, and the next
+  step points there. The journal never holds its own `journal_failed` or
   `journal_exhausted` events, or anything after them.
 
 Health events, such as stale capture, gaps and stream changes, are never
@@ -399,27 +439,38 @@ heartbeat, such as the synthetic one.
 track of a capture fact about them (its fact queue was full;
 `worker.facts_dropped` counts the facts), including whole streams it never saw.
 Capture keeps the end frame of each stream whose closing fact measurement lost,
-so these intervals are exact; past 4096 such streams, one says
-`extent: "unknown"` instead. Measurement can't say whether those frames
-arrived, but the health events can: a `frames_missing` event covers them if
-they didn't. They're never counted as Listen falling behind.
+until measurement reaches that stream, so these intervals are exact. It holds
+at most 4096 such ends at once; when more are waiting, the oldest are
+dropped, and each of those streams gets one `frames_unaccounted` with
+`extent: "unknown"` and no interval. Measurement can't say whether those
+frames arrived, but the health events can: a `frames_missing` event covers
+them if they didn't. They're never counted as Listen falling behind: the
+exact ones add to `worker.unaccounted_frames`, not to its overrun counts, and
+a level they cut short says `truncated_by: "frames_unaccounted"`.
 
 Level events are coalesced per route before they're published, and you can
 filter them by route or by age with `max_evidence_age_ms`. Ages come from
 `received_monotonic_ns` and the page's `now_monotonic_ns`, and a level event
 says how long it stays current in `valid_until_monotonic_ns`. A level event's
 age and its `valid_until_monotonic_ns` count from the newest block in its
-interval, and its `interval` shows how far back its first frame is. One event
-covers at most `stale_after_ms` of audio, so a current level's earliest audio
-is at most twice that old. An age counts from when the runtime received the
-block, not from when the device captured it: audio that waited in the macOS
-helper is older than its age says, and `capture.adapter_stats` reports that
-backlog as `backlog_blocks_lower_bound`. Audio the runtime has read but capture
-hasn't taken yet is `queued_audio_frames` there, held in `queued_items`
-protocol items (blocks and events).
+interval. Its `interval` gives the stream frames it covers, at most
+`stale_after_ms` of audio, but not when they were received: a stall whose
+counter pauses, or blocks that arrive late, can leave one level spanning
+audio received long before its newest block. `device_clock.host_time_ns` is
+the host time of the block that holds its first frame. An age counts from when
+the runtime received the block, not from when the device captured it: audio
+that waited before capture took it is older than its age says.
+`capture.adapter_stats` gives `backlog_blocks_lower_bound`, a lower bound on
+the blocks the macOS helper had written that capture hadn't taken yet,
+wherever they wait: in the helper, on the way to the runtime, or read but not
+yet taken. Of those, the audio the runtime has read but capture hasn't taken
+is `queued_audio_frames` there, held in `queued_items` protocol items (blocks
+and events).
 
-The same cursor returns the same events while they're retained, so keep track
-of `(runtime_epoch, sequence)` if you read a page twice.
+Without `max_evidence_age_ms`, the same cursor returns the same events while
+they're retained, so keep track of `(runtime_epoch, sequence)` if you read a
+page twice. With it, a later read of the same cursor skips the levels that
+have aged past it since, and counts them in `filtered.stale_measurements`.
 
 ## Clocks, epochs and gaps
 
@@ -431,11 +482,17 @@ apart. Each [epoch](concepts.md#glossary) starts a fresh count:
 - Within a runtime, a **stream epoch** covers one unbroken run of the device's
   sample counter. Positions are stream frames, counted from 0. A counter reset
   or backward jump starts a new stream epoch, and positions from an earlier one
-  don't carry over. Host time coming and going doesn't: it changes only the
-  `device_clock` fields. A counter that jumps forward shows a gap of exactly
-  that many frames. Listen calls a backward jump that lands within the
-  counter's first second a `counter_reset`, and any other a `counter_backward`.
-- The device's sample time and host time are reported beside each interval.
+  don't carry over. Host time coming and going doesn't start one. The
+  `device_clock` fields, `capture.last_block.device_host_time_ns` and
+  `capture.clocks.device_host_time` follow it, and a block without host time
+  clears an overload report, so a gap after it has cause `device_gap` rather
+  than `processor_overload`. A counter that jumps forward shows a gap of
+  exactly that many frames. Listen calls a backward jump that lands from 0 to
+  just below one second's worth of frames a `counter_reset`, and any other,
+  including one that lands below 0, a `counter_backward`.
+- Each level and near-silence event reports the device's sample time and host
+  time beside its interval, in `device_clock`. Health events, such as
+  `frames_missing`, carry an interval but no `device_clock`.
   `device_clock.sample_time_start` is the device sample time of the interval's
   first frame. `host_time_ns` is the host time of the block that holds that
   frame, which starts at stream frame `host_time_frame` with device sample time
@@ -447,22 +504,34 @@ frame and every `frames_missing` event is exact: a start frame and a frame
 count. When blocks stop arriving, Listen reports `capture_stale` and then
 `capture_resumed`, and a gap only if the counter moved on meanwhile.
 
-A gap made only of frames the macOS helper dropped has cause
-`helper_ring_overflow`. That cause covers every frame the helper dropped:
-blocks it had no room for, and IO cycles longer than the 8192 frames it
-accepts, which this version doesn't refuse in advance. Frames it dropped just
-before a stream began, at the start of capture or across a counter reset or
-backward jump, belong to no stream; the new stream's `stream_started` counts
-them in `adapter_dropped_frames`. Frames it dropped after the last block
-capture took have no later block to report them; the `listen_stop` receipt
-does.
+The macOS helper counts the frames it drops: blocks it had no room for, and
+IO cycles longer than the 8192 frames it accepts, which this version doesn't
+refuse in advance. It reports how many, not where, so Listen places them by
+the counter:
+
+- A gap of exactly as many frames as the helper dropped has cause
+  `helper_ring_overflow`.
+- A gap that lost more frames than the helper dropped has cause `device_gap`
+  or `processor_overload`, and its `adapter_dropped_frames` gives the
+  helper's share.
+- When the helper dropped more frames than the counter skipped, the counter
+  moved back inside them, so a new stream epoch starts, as for any backward
+  jump.
+- Frames it dropped just before a stream began, at the start of capture or
+  across a counter reset or backward jump, belong to no stream; the new
+  stream's `stream_started` counts them in `adapter_dropped_frames`. Frames it
+  dropped just before a block without a usable sample time are counted in the
+  `adapter_dropped_frames` of the `stream_ended` that block causes.
+- Frames it dropped after the last block capture took have no later block to
+  report them; the `listen_stop` receipt does.
 
 Some changes end the stream instead: a block without a usable sample time
 (`device_sample_time_unavailable`: none, flagged invalid, not finite, not a
 whole frame or beyond a signed 64-bit frame count), a sample-rate, format or
 channel-layout change, the device going away, another app taking the device
 for exclusive use, the macOS helper failing to read one of those properties
-(`device_property_unreadable`; it never guesses a value), or the end of a
+while capturing (`device_property_unreadable`; it never guesses a value
+then), or the end of a
 synthetic script. After a device change the macOS
 helper sends none of the audio its ring still holds, since some of it may
 already be in a new format; the `listen_stop` receipt counts it. Listen doesn't
@@ -486,7 +555,9 @@ rate changed, prepare a new session first.
   replay is history; call `listen_observe` for the current state.
 - If a reply is lost, `listen_request_status` shows which runtime the request
   started or which terminal it sealed, without contacting the runtime or
-  repeating anything.
+  repeating anything. It looks through the session's newest 64 runtimes
+  (`runtimes_scanned`, with `runtimes_omitted` for older ones), so for a
+  request older than those, `request_runtime` and `stop_terminal` are `null`.
 - A runtime stops on its own at `limits.max_runtime_seconds`, 4 hours by
   default.
 - At most eight calls to a runtime run at once, and a ninth is told the
@@ -506,12 +577,21 @@ rate changed, prepare a new session first.
 - If a runtime's process dies, its directory stays as history. The next start
   checks its journal, records what it found and never reuses it. The journal
   marks where its full queue dropped lines (`dropped_lines_marked` in that
-  check) and where it stopped writing because its budget ran out or a write
-  failed (`stopped_writing`). It can't mark lines still waiting to be written
-  when the process died, or a write error that left a partial line; that check
-  then shows a torn final line.
-- A terminal record gives each route's `availability` when the runtime stopped,
-  beside `availability_at_start`.
+  check) and where it stopped writing because its budget ran out
+  (`stopped_writing`). After a failed write it marks the place only if the
+  file accepts that line; a write error that persists, such as a full disk,
+  leaves no mark, and the check then reads like a journal that ended cleanly,
+  though a sealed terminal's `journal.state` says `failed`. A
+  write error that left a partial line shows in that check as a torn final
+  line. Lines still waiting to be written when the process died leave no
+  trace.
+- A terminal record gives each route's `availability_at_start` beside its
+  `availability`, which is `unavailable` for every route once the runtime has
+  stopped. Its `reason` tells them apart: `capture_stopped` when capture ran
+  until the stop, `capture_ended` or `capture_failed` when it ended first,
+  `measurement_worker_failed` when level measurement had failed, and the
+  route's own reason, such as `routing_test_not_available`, for a route that
+  was never metered.
 - `capture_opened` and the terminal's `capture.provenance` say which software
   produced the capture: `pocket_version` and, with the macOS helper, the
   `macos_version` its helper reported and the build's `helper_sha256` and
@@ -529,14 +609,17 @@ compiles on your Mac.
 
 - Build it with `pocket listen build-helper --spec build.json`, where
   `build.json` is `{}`. It needs macOS 15 or later with the Swift compiler
-  (`swiftc`). Building only compiles; it opens no device.
+  (`swiftc`) from Xcode or the Command Line Tools. Building only compiles; it
+  opens no device.
 - Pocket compiles each build into a new folder of its own, in `~/.pocket/listen`
   or in the folder `POCKET_LISTEN_DIR` names; a relative folder counts from the
   directory Pocket runs in. The receipt's `build.build_id` names the build, and
   `build.build_dir` says where it is.
-- Use the build by its `build_id`. Listen runs only builds it compiled into its
-  own folder, unchanged and private to you, so a build copied, moved or edited
-  is refused, and you build again.
+- Use the build by its `build_id`. Listen runs only builds recorded under its
+  folder's private key, unchanged and private to you. A build edited, or copied
+  or moved without its record and that key, is refused, and you build again.
+  The key binds no location: a whole Listen folder copied or moved with its
+  key, and named by `POCKET_LISTEN_DIR`, keeps its builds usable.
 - Keep that folder on a volume that enforces ownership. On a volume that
   ignores ownership, as macOS can set for an external drive (Get Info: Ignore
   ownership on this volume), every account counts as the owner of every file,
@@ -564,17 +647,23 @@ compiles on your Mac.
   nothing to turn on: run Pocket from an app that already has microphone
   access. `listen_devices` reports the state macOS gives and the step that
   fits it.
-- The helper checks the input once more just before capture begins. If it
-  changed since `listen_start` opened it, the start is refused:
+- The helper checks the input once more just before capture begins: its
+  liveness, rate, exclusive use, channel layout and stream formats. If one of
+  them changed since `listen_start` opened it, the start is refused:
   `device_not_alive`, `device_hogged` or `sample_rate_mismatch` when the
   input went away, was taken or changed rate, and
-  `device_changed_before_start` for any other change, or for a property the
-  helper couldn't read then, with the change named in
-  `capture_refusal.detail.exit_event_type`.
+  `device_changed_before_start` for a channel-layout or format change, or for
+  one of those properties the helper couldn't read then, with the change
+  named in `capture_refusal.detail.exit_event_type`. Other properties, such as
+  the block size, aren't checked again.
 - `listen_devices` gives each input a `profile_fit` and its
-  `supported_channels`. An input with some streams that aren't 32-bit float is
-  `partial:not_float32_streams`, and routes can use the channels listed in
-  `supported_channels`. An input whose exclusive-use state the helper couldn't
+  `supported_channels`. An input with some streams that aren't 32-bit float,
+  but whose streams all carry 32-bit samples, is `partial:not_float32_streams`,
+  and routes can use the channels listed in `supported_channels`. The helper
+  reads every stream of an input in each IO cycle, so when any stream's
+  samples aren't 32 bits wide, the input is `unsupported:not_float32` with no
+  `supported_channels`, and a start on it is refused with
+  `format_not_float32`. An input whose exclusive-use state the helper couldn't
   read has `hog_mode_pid: null` and is `unsupported:hog_mode_unreadable`. A
   device whose input stream configuration it couldn't read isn't listed, and
   `devices_unreadable` counts those devices, with a notice when there are any.
@@ -604,13 +693,18 @@ These are configuration limits, not measured performance.
 | `measurement.near_silence.min_duration_ms` | 100 to 600000 | none: required |
 | `measurement.window_frames` | 32 to the sample rate, at most a quarter of the ring, and with `meter_coalesce_windows` at most `stale_after_ms` of audio | a tenth of the sample rate |
 | `buffering.ring_seconds` | 1 to 60 | 10 |
-| `health.stale_after_ms` | 100 to 5000, more than twice the input's block period, and at least the audio one level event covers (`window_frames` times `meter_coalesce_windows`) | 500 |
+| `health.stale_after_ms` | 100 to 5000, at least the audio one level event covers (`window_frames` times `meter_coalesce_windows`), and more than twice the input's block period when the input reports one; an input that reports no block size isn't checked | 500 |
 | `delivery.meter_coalesce_windows` | 1 to 50, and with `window_frames` at least 10 ms and at most `stale_after_ms` of audio per level event | 5 |
 | `delivery.normal_retention_events` / `_bytes` | 256 to 65536 / 65536 to 33554432 | 8192 / 4194304 |
 | `delivery.health_retention_events` / `_bytes` | 64 to 8192 / 32768 to 4194304 | 1024 / 524288 |
 | `limits.max_runtime_seconds` | 10 to 43200 | 14400 |
 | `device.expected_sample_rate` | 44100, 48000, 88200 or 96000 | none: required |
-| An event page | at most 256 events and 262144 bytes, at least 16384 bytes, waiting up to 1000 ms | 64 events, 65536 bytes, no wait |
+| `listen_events` `max_events` | 1 to 256 | 64 |
+| `listen_events` `max_bytes` | 16384 to 262144 | 65536 |
+| `listen_events` `wait_ms` | 0 to 1000 | 0 |
+
+`max_bytes` bounds the summed canonical bytes of a page's events. The page's
+own fields come on top, and a page can hold fewer bytes or no events at all.
 
 ## Not in this version
 

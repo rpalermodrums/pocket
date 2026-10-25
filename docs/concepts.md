@@ -212,7 +212,7 @@ The standalone practice, review and MIDI tools are named for what they do. See
 | Comparison | A baseline, its variants and the question you want answered |
 | Context | Pocket's record of which recordings, clocks, occurrences and anchors belong together |
 | Coverage | The part of a receipt that says what was and was not attempted |
-| Cursor | Your place in a stream of events: a runtime epoch and the last sequence number you've read |
+| Cursor | Your place in a stream of events: a runtime epoch and the sequence your reads have covered, which can be past the last event you received when filters skipped some. Pass a page's `next_after` as the next cursor |
 | DAW | Digital audio workstation, such as Ableton Live |
 | Epoch | One run of a Listen runtime, or one run of an audio stream's frame count. A restart, or a counter reset or backward jump, starts a new one, and positions from an old one don't carry over. The device's sample counter places missing frames exactly, as gaps on the same count, so an epoch can contain gaps |
 | Frame | One sample position, across all channels, in an audio file |

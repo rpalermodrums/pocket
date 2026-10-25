@@ -246,6 +246,8 @@ def test_prepare_seals_resolved_config_and_memory_cost_without_any_subprocess(tm
     handle = result["artifacts"]["session"]
     record = read_record(handle, root, "pocket.listen-session/v1")
     resolved = record["config"]
+    assert result["session"]["settings"] == {k: resolved[k] for k in ("device", "measurement", "buffering",
+                                                                      "health", "delivery", "limits")}
     assert resolved["measurement"] == {"clip_threshold_dbfs": -1.0, "window_frames": RATE // 10,
                                        "near_silence": {"level_dbfs": -60.0, "min_duration_ms": 2000}}
     assert isinstance(resolved["measurement"]["clip_threshold_dbfs"], float)
@@ -262,8 +264,10 @@ def test_prepare_seals_resolved_config_and_memory_cost_without_any_subprocess(tm
     assert again["session"]["config_sha256"] == record["config_sha256"]
     assert record["memory"] == {"pcm_ring_bytes": 10 * RATE * 2 * 4, "helper_ring_bytes": None,
                                 "adapter_queue_max_bytes": None, "descriptor_ring_bytes": 4096 * 64,
+                                "measurement_scratch_bytes": RATE // 10 * 2 * 4,
                                 "broker_max_bytes": 4194304 + 524288,
-                                "total_declared_bytes": 10 * RATE * 2 * 4 + 4096 * 64 + 4194304 + 524288,
+                                "total_declared_bytes": 10 * RATE * 2 * 4 + 4096 * 64 + RATE // 10 * 2 * 4
+                                + 4194304 + 524288,
                                 "not_in_total": {"journal_queue_lines": 4096, "journal_line_max_bytes": 9216,
                                                  "facts_queue_items": 1024,
                                                  "python_object_overhead": "not_counted"}}
@@ -706,6 +710,7 @@ def test_full_synthetic_walkthrough_seals_a_terminal_and_writes_no_audio(walkthr
                                            "last_sequence": last, "journal": terminal["journal"]}
     unknown = listen.listen_events(walkthrough["session_dir"], {"runtime_epoch": OTHER_EPOCH, "sequence": 0})
     assert unknown["missing"] == [] and unknown["cursor_runtime"]["terminal"] == "unknown"
+    assert "No runtime of this session" in unknown["next_actions"][0] and "lost" in unknown["next_actions"][0]
 
 
 def test_routes_report_declared_unverified_master_unlabeled_no_claim_and_unavailable_cue(walkthrough):
@@ -1136,10 +1141,10 @@ _RUNNING = {"runtime": {"pid": 7, "started_monotonic_ns": 1, "scheduled_stop_mon
     (None, "capturing", "partial", "capturing", "unavailable"),
     ({**_RUNNING, "runtime": {**_RUNNING["runtime"], "state": "stopping", "stop": {"cause": "listen_stop"}},
       "capture": {"state": "running", "frames_received": 480}},
-     "capturing", "partial", "stopped_during_start", "observed"),
+     "capturing", "partial", "stopped_during_start", None),
     ({**_RUNNING, "runtime": {**_RUNNING["runtime"], "state": "stopped", "stop": {"cause": "fatal_error"}},
       "capture": {"state": "stopped", "frames_received": 960}},
-     "capturing", "partial", "stopped_during_start", "observed"),
+     "capturing", "partial", "stopped_during_start", None),
     ({**_RUNNING, "capture": {"state": "running", "frames_received": 480}}, "started_no_audio_yet", "ok",
      "capturing", "observed"),
 ])
@@ -1152,16 +1157,39 @@ def test_start_receipt_follows_the_snapshot_it_reports(tmp_path, monkeypatch, ob
     result = listen._running_receipt(tmp_path, session, "start-1", tmp_path, runtime,
                                      {"outcome": outcome, "ping": ping},
                                      {"start_outcome": outcome, "replayed": False, "previous_runtime": None})
-    assert (result["status"], result["start_outcome"], result["capture_snapshot"]) == (status, start_outcome,
-                                                                                      snapshot)
+    outcomes = (result["status"], result["start_outcome"], result.get("capture_snapshot"))
+    assert outcomes == (status, start_outcome, snapshot)
     if snapshot == "unavailable":
         assert "listen_observe" in result["next_actions"][0] and result["capture"]["routes"] == []
     if start_outcome == "stopped_during_start":
         (step,) = result["next_actions"]
         assert "began stopping" in step and "listen_events" not in step
+        assert "capture" not in result and result["stopped_runtime"]["terminal"] is None
+        assert result["coverage"]["capture"] == "stopped"
     if start_outcome == "capturing" and status == "ok":
         assert result["next_actions"] == listen._CAPTURING_ACTIONS
         assert result["capture"]["frames_received"] == 480
+
+
+def test_a_start_that_sees_its_runtime_stopping_reports_the_terminal_once_it_is_sealed(tmp_path, monkeypatch):
+    stopped = {**_RUNNING["runtime"], "state": "stopped", "stop": {"cause": "fatal_error"}}
+    observed = {**_RUNNING, "runtime": stopped, "capture": {"state": "running", "frames_received": 960}}
+    record = {"schema": "pocket.listen-terminal/v1", "runtime_epoch": OTHER_EPOCH, "state": "failed",
+              "cause": "fatal_error", "stop_request_id": None, "capture": {"final_state": "stopped"},
+              "worker": {"drain": "complete", "state": "running"}, "stop": {"adapter_close": "clean"}}
+    terminal = (put_record(record, tmp_path), record)
+    monkeypatch.setattr(listen, "_observe_once", lambda runtime_dir: observed)
+    monkeypatch.setattr(listen_host, "read_terminal", lambda root, path: terminal)
+    runtime = {"runtime_epoch": OTHER_EPOCH, "ordinal": 1, "runtime_dir": "runtimes/0001-" + OTHER_EPOCH}
+    result = listen._running_receipt(tmp_path, {"config": make_config()}, "start-1", tmp_path, runtime,
+                                     {"outcome": "capturing", "ping": {"capture_state": "running",
+                                                                      "frames_received": 480}},
+                                     {"start_outcome": "capturing", "replayed": False,
+                                      "previous_runtime": None})
+    assert (result["status"], result["start_outcome"]) == ("partial", "stopped_during_start")
+    assert result["stopped_runtime"]["terminal"] == terminal[0]
+    assert result["terminal"]["cause"] == "fatal_error"
+    assert "capture" not in result and result["coverage"]["capture"] == "stopped"
 
 
 def test_a_start_whose_runtime_was_still_stopping_at_the_deadline_is_partial_without_a_terminal(tmp_path):
@@ -1196,6 +1224,11 @@ def test_a_sealed_stop_whose_measurement_didnt_drain_is_partial(tmp_path):
     bounded = {**record, "worker": {"drain": "incomplete", "state": "running", "overruns": 1,
                                     "unmeasured_frames": 4800, "unmeasured_at_stop_frames": 4800}}
     assert not any("fell behind" in action for action in _sealed(tmp_path, bounded)["next_actions"])
+    lost = {**record, "worker": {"drain": "complete", "state": "running", "overruns": 0,
+                                 "unmeasured_frames": 0, "unaccounted_frames": 624, "facts_dropped": 3}}
+    steps = _sealed(tmp_path, lost)["next_actions"]
+    assert not any("fell behind" in action for action in steps)
+    assert any("lost track of 624 frames" in action and "frames_missing" in action for action in steps)
 
 
 @pytest.mark.parametrize("change, step", [
@@ -1205,7 +1238,7 @@ def test_a_sealed_stop_whose_measurement_didnt_drain_is_partial(tmp_path):
                  "unmeasured_after_failure_frames": 0, "unmeasured_at_stop_frames": 0}},
      "480,000 received frames it skipped"),
     ({"worker": {"drain": "complete", "state": "running", "unaccounted_frames": 96000, "facts_dropped": 12}},
-     "96,000 frames it lost track of"),
+     "lost track of 96,000 frames"),
     ({"stop": {"adapter_close": "timeout"}}, "adapter_close is timeout"),
     ({"stop": {"adapter_close": "clean",
                "adapter_exit": {"counters": {"undelivered_blocks": 140, "undelivered_frames": 71680}}}},
@@ -1222,7 +1255,7 @@ def test_a_sealed_stop_whose_measurement_didnt_drain_is_partial(tmp_path):
     ({"journal": {"state": "exhausted", "dropped_lines": 23, "closed": True, "lines_unwritten_at_close": 0}},
      "state exhausted, 23 lines dropped"),
     ({"journal": {"state": "writing", "dropped_lines": 0, "closed": True, "lines_unwritten_at_close": 0},
-      "broker": {"publish_hook_errors": 6}}, "publish_hook_errors: 6 health events never reached it"),
+      "broker": {"publish_hook_errors": 6}}, "publish_hook_errors: 6 events never reached it"),
 ])
 def test_a_sealed_stop_with_a_failed_worker_adapter_or_runtime_is_partial(tmp_path, change, step):
     record = {"schema": "pocket.listen-terminal/v1", "runtime_epoch": OTHER_EPOCH, "state": "stopped",
@@ -1336,6 +1369,26 @@ def test_a_stop_after_the_runtime_already_stopped_on_its_own_returns_its_sealed_
         assert result["stopped_by"] == {"cause": cause, "stop_request_id": None}
     else:
         assert result["status"] == "needs_input" and result["previous_runtime"]["terminal"] == "sealed"
+
+
+def test_a_stop_that_finds_a_refused_runtime_is_not_running_even_when_its_reply_was_lost(tmp_path,
+                                                                                         monkeypatch):
+    record = {"schema": "pocket.listen-terminal/v1", "runtime_epoch": OTHER_EPOCH, "state": "refused",
+              "cause": "startup_refused", "stop_request_id": None, "capture": {"final_state": "refused"},
+              "worker": {"drain": "complete", "state": "running"}, "stop": {"adapter_close": "clean"}}
+    _terminal_row(tmp_path, monkeypatch, record)
+    monkeypatch.setattr(listen_host, "lease_held", lambda root: True)
+    monkeypatch.setattr(listen_host, "current_runtime", lambda root: {"runtime_epoch": OTHER_EPOCH})
+    monkeypatch.setattr(listen, "_wait_released", lambda root, seconds, epoch: True)
+
+    def unreachable(*args, **kwargs):
+        raise listen_host.RuntimeUnreachable("lease_held_no_connection")
+
+    monkeypatch.setattr(listen_host, "call", unreachable)
+    result = listen._stop(tmp_path, {"config": make_config()}, "stop-late", OTHER_EPOCH)
+    assert (result["status"], result["stop_outcome"]) == ("needs_input", "not_running")
+    assert "stopped_by" not in result and "reason" not in result
+    assert result["previous_runtime"]["terminal"] == "sealed"
 
 
 def test_a_lost_stop_reply_while_a_newer_runtime_holds_the_lease_still_finds_the_named_terminal(tmp_path,
@@ -1455,7 +1508,8 @@ def test_events_receipts_report_loss_as_conflict_or_partial_never_ok(runtimes):
     assert current["status"] == "ok" and current["missing"] == []
     mismatch = listen.listen_events(session_dir, {"runtime_epoch": OTHER_EPOCH, "sequence": 0})
     assert mismatch["status"] == "conflict" and mismatch["events_status"] == "runtime_epoch_mismatch"
-    assert started["runtime"]["runtime_epoch"] in mismatch["next_actions"][0]
+    assert "No runtime of this session" in mismatch["next_actions"][0]
+    assert started["runtime"]["runtime_epoch"] in mismatch["next_actions"][1]
 
 
 def test_a_cursor_from_a_stopped_runtime_names_what_it_missed_while_a_newer_runtime_runs(runtimes):
@@ -1480,6 +1534,8 @@ def test_a_cursor_from_a_stopped_runtime_names_what_it_missed_while_a_newer_runt
     assert later["runtime"]["runtime_epoch"] in page["next_actions"][1]
     unknown = listen.listen_events(session_dir, {"runtime_epoch": OTHER_EPOCH, "sequence": 0})
     assert unknown["missing"] == [] and unknown["cursor_runtime"]["terminal"] == "unknown"
+    assert "No runtime of this session" in unknown["next_actions"][0]
+    assert later["runtime"]["runtime_epoch"] in unknown["next_actions"][1]
 
 
 def _journal_record(terminal, broker=None, **journal):
@@ -1598,6 +1654,32 @@ def test_a_session_directory_keeps_no_access_list_its_parent_would_pass_on(tmp_p
     assert not listen_native.acl_grants_access(session_dir)
 
 
+def test_a_session_directory_on_a_volume_that_ignores_ownership_is_refused(tmp_path, monkeypatch):
+    parent = tmp_path / "external"
+    monkeypatch.setattr(listen_native, "volume_ignores_ownership", lambda where: where == str(parent))
+    error = raised(lambda: listen.listen_prepare(str(parent / "session"), make_config()))
+    assert error.code == "io_error" and "ignores ownership" in str(error)
+    assert parent.is_dir() and not (parent / "session").exists()
+
+
+def test_a_session_directory_swapped_for_a_symlink_as_it_is_created_is_refused_never_followed(
+        tmp_path, monkeypatch):
+    theirs = tmp_path / "theirs"
+    theirs.mkdir(mode=0o755)
+    named = tmp_path / "session"
+    real_mkdir = Path.mkdir
+
+    def swapped(self, *args, **kwargs):
+        real_mkdir(self, *args, **kwargs)
+        if self == named:
+            self.rename(tmp_path / "moved")
+            self.symlink_to(theirs)
+    monkeypatch.setattr(Path, "mkdir", swapped)
+    error = raised(lambda: listen.listen_prepare(str(named), make_config()))
+    assert error.code == "io_error"
+    assert stat.S_IMODE(os.stat(theirs).st_mode) == 0o755 and list(theirs.iterdir()) == []
+
+
 def test_a_name_that_is_a_dangling_symlink_is_refused_never_followed(tmp_path):
     target = tmp_path / "theirs" / "session"
     (tmp_path / "theirs").mkdir()
@@ -1699,6 +1781,19 @@ def test_listen_raises_only_existing_error_codes_with_valid_hints(walkthrough, t
         assert valid_hint(envelope.get("hint")), name
 
 
+def test_build_helper_discovery_needs_a_toolchain_behind_the_xcode_select_shim(monkeypatch, tmp_path):
+    monkeypatch.delenv("DEVELOPER_DIR", raising=False)
+    monkeypatch.setattr(listen_native, "XCODE_SELECT_LINK", tmp_path / "no-link")
+    monkeypatch.setattr(listen_native, "DEFAULT_DEVELOPER_DIRS", (tmp_path / "Xcode",))
+    with monkeypatch.context() as patch:
+        patch.setattr(capabilities.sys, "platform", "darwin")
+        patch.setattr(capabilities.platform, "mac_ver", lambda: ("15.1", ("", "", ""), ""))
+        patch.setattr(capabilities.shutil, "which", lambda name: listen_native.SWIFTC_SHIM)
+        rows = capabilities.capabilities_list(domain="listen", limit=50)["capabilities"]
+    (build,) = [row for row in rows if row["public_tool"] == "listen_build_helper"]
+    assert build["status"] == "requires_optional_setup"
+
+
 def _discovery(monkeypatch, *, platform, os_name, mac="15.1", swiftc=True):
     with monkeypatch.context() as patch:
         patch.setattr(capabilities.sys, "platform", platform)
@@ -1763,12 +1858,16 @@ def test_listen_discovery_rows_families_gates_status_and_side_effects(monkeypatc
         dependency = rows[name]["conditional_dependencies"][0]
         assert builds_in in dependency and "POCKET_LISTEN_DIR" in dependency
         assert any("listen_build_helper compiled into Listen's own folder" in text
-                   and "copied, moved or changed build is refused" in text for text in rows[name]["prerequisites"])
+                   and "copied or moved without its record and that key, is refused" in text
+                   for text in rows[name]["prerequisites"])
     (build_prerequisite,) = rows["listen_build_helper"]["prerequisites"]
     assert "returns its build_id" in build_prerequisite and "output" not in build_prerequisite
-    for name in ("listen_start", "listen_observe", "listen_events", "listen_stop"):
-        assert "microphone access already granted" in rows[name]["conditional_dependencies"][0]
-        assert any("microphone access already granted" in text for text in rows[name]["prerequisites"])
+    assert "microphone access already granted" in rows["listen_start"]["conditional_dependencies"][0]
+    assert any("microphone access already granted" in text for text in rows["listen_start"]["prerequisites"])
+    for name in ("listen_observe", "listen_events", "listen_stop"):
+        assert "checks no microphone access itself" in rows[name]["conditional_dependencies"][0]
+        assert not any("already granted" in text for text in
+                       rows[name]["prerequisites"] + rows[name]["conditional_dependencies"])
     for name, says in (("listen_devices", "reports microphone access rather than needing it"),
                        ("listen_prepare", "microphone access is checked when listen_start runs")):
         assert says in rows[name]["conditional_dependencies"][0]
@@ -1781,7 +1880,8 @@ def test_listen_discovery_rows_families_gates_status_and_side_effects(monkeypatc
         gate = rows[name]
         assert gate["public_tool"] is None and gate["implementation_status"] == "not_implemented"
         assert gate["status"] == "documented_unprobed" and gate["native_verified"] is False
-    assert "cue stays unavailable" in rows["listen_calibrate"]["summary"]
+    assert "would establish which channels carry cue (until one is measured, cue stays unavailable" in rows[
+        "listen_calibrate"]["summary"]
     assert "headphone" in rows["listen_calibrate"]["summary"]
     assert "clock test" in rows["listen_calibrate"]["summary"] and "drift" in rows["listen_calibrate"]["summary"]
 
@@ -1822,7 +1922,7 @@ def test_build_helper_runs_only_swiftc_and_never_the_helper(tmp_path, monkeypatc
         pytest.fail("building must never run the helper")
     monkeypatch.setattr(listen_native.sys, "platform", "darwin")
     monkeypatch.setattr(listen_native.platform, "mac_ver", lambda: ("15.1", ("", "", ""), ""))
-    monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/usr/bin/swiftc")
+    monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/tools/swiftc")
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(subprocess, "Popen", forbidden)
     result = listen.listen_build_helper()

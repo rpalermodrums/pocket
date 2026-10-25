@@ -97,6 +97,24 @@ def macos_major():
         return 0
 
 
+SWIFTC_SHIM = "/usr/bin/swiftc"
+XCODE_SELECT_LINK = Path("/var/db/xcode_select_link")
+DEFAULT_DEVELOPER_DIRS = (Path("/Applications/Xcode.app/Contents/Developer"),
+                          Path("/Library/Developer/CommandLineTools"))
+_TOOLCHAIN_SWIFTC = ("usr/bin/swiftc", "Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc")
+
+
+def swift_compiler():
+    found = shutil.which("swiftc")
+    if found != SWIFTC_SHIM:
+        return found
+    selected = os.environ.get("DEVELOPER_DIR")
+    developers = ((Path(selected),) if selected else (XCODE_SELECT_LINK,) if XCODE_SELECT_LINK.is_symlink()
+                  else DEFAULT_DEVELOPER_DIRS)
+    real = any((developer / tool).is_file() for developer in developers for tool in _TOOLCHAIN_SWIFTC)
+    return found if real else None
+
+
 def helper_ring_frames(sample_rate, seconds=HELPER_RING_SECONDS):
     frames = 1
     while frames < seconds * sample_rate:
@@ -156,6 +174,7 @@ def _acl_api():
     libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
     libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
     libc.acl_set_link_np.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p]
+    libc.acl_set_fd_np.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
     libc.acl_init.argtypes = [ctypes.c_int]
     libc.acl_free.argtypes = [ctypes.c_void_p]
     return ctypes, libc
@@ -190,7 +209,9 @@ def clear_acl(path):
     if not empty:
         raise OSError(ctypes.get_errno(), "Can't build an empty access list")
     try:
-        if libc.acl_set_link_np(os.fsencode(path), _ACL_TYPE_EXTENDED, empty) != 0:
+        result = (libc.acl_set_fd_np(path, empty, _ACL_TYPE_EXTENDED) if isinstance(path, int)
+                  else libc.acl_set_link_np(os.fsencode(path), _ACL_TYPE_EXTENDED, empty))
+        if result != 0:
             code = ctypes.get_errno()
             raise OSError(code, os.strerror(code), str(path))
     finally:
@@ -247,7 +268,7 @@ def volume_ignores_ownership(where):
     return flags is None or bool(flags & _MNT_IGNORE_OWNERSHIP)
 
 
-def _private(info, shape, where):
+def is_private(info, shape, where):
     return (shape(info.st_mode) and info.st_uid == os.getuid() and not info.st_mode & 0o077
             and not acl_grants_access(where) and not volume_ignores_ownership(where))
 
@@ -271,7 +292,7 @@ def _registry_folder(create):
         info = os.lstat(folder)
     except FileNotFoundError:
         return None
-    if not _private(info, stat.S_ISDIR, folder):
+    if not is_private(info, stat.S_ISDIR, folder):
         raise _registry_error(f"Listen's build registry {folder} isn't a directory private to you",
                               "io_error" if create else "evidence_mismatch")
     return folder
@@ -286,7 +307,7 @@ def _read_key(folder, code="evidence_mismatch"):
         raise _registry_error(f"Can't read Listen's build registry key in {folder}", code) from error
     with os.fdopen(descriptor, "rb") as stream:
         info = os.fstat(stream.fileno())
-        private = _private(info, stat.S_ISREG, stream.fileno())
+        private = is_private(info, stat.S_ISREG, stream.fileno())
         key = stream.read(REGISTRY_KEY_BYTES + 1)
     if not private or len(key) != REGISTRY_KEY_BYTES:
         raise _registry_error(f"Listen's build registry key in {folder} isn't private to you or has changed",
@@ -322,7 +343,7 @@ def _builds_folder(folder, create):
         info = os.lstat(builds)
     except FileNotFoundError:
         return None
-    if not _private(info, stat.S_ISDIR, builds):
+    if not is_private(info, stat.S_ISDIR, builds):
         raise _registry_error(f"Listen's build folder {builds} isn't a directory private to you",
                               "io_error" if create else "evidence_mismatch")
     return builds
@@ -383,7 +404,7 @@ def _registration(builds, build_id, key, unknown):
     except OSError as error:
         raise _mismatch(f"Can't read Listen's record of the helper build {build_id}") from error
     with os.fdopen(descriptor, "rb") as stream:
-        private = _private(os.fstat(stream.fileno()), stat.S_ISREG, stream.fileno())
+        private = is_private(os.fstat(stream.fileno()), stat.S_ISREG, stream.fileno())
         data = stream.read(REGISTRATION_MAX_BYTES + 1)
     if not private:
         raise _mismatch(f"Listen's record of the helper build {build_id} isn't private to you")
@@ -413,7 +434,7 @@ def build_helper():
         raise PocketError("The Listen helper builds only on macOS", code="unsupported_profile", hint=_TOOLCHAIN_HINT)
     if macos_major() < 15:
         raise PocketError("The Listen helper needs macOS 15 or later", code="unsupported_profile", hint=_MACOS_HINT)
-    if not shutil.which("swiftc"):
+    if not swift_compiler():
         raise PocketError("The Swift compiler (swiftc) isn't installed", code="unsupported_profile",
                           hint=_TOOLCHAIN_HINT)
     build_id, output = _new_build()
@@ -478,7 +499,7 @@ def verify_build(build_id):
         info = os.lstat(root)
     except OSError as error:
         raise _mismatch(f"The helper build folder {root} is missing") from error
-    if not _private(info, stat.S_ISDIR, root):
+    if not is_private(info, stat.S_ISDIR, root):
         raise _mismatch(f"The helper build folder {root} isn't a directory private to you")
     try:
         data = _read_regular(root / "build.json")
@@ -650,8 +671,15 @@ def _stream_row(stream):
             "virtual_format": None if virtual is None else {k: virtual.get(k) for k in keys}}
 
 
+def has_four_byte_samples(virtual):
+    return (isinstance(virtual, dict) and virtual.get("format_id") == "lpcm"
+            and virtual.get("bits_per_channel") == 32)
+
+
 def _float32_channels(row):
     rate = row["nominal_sample_rate"]
+    if not all(has_four_byte_samples(s["virtual_format"]) for s in row["input_streams"]):
+        return []
     return [c for s in row["input_streams"] if s["starting_channel"] is not None
             and is_float32(s["virtual_format"], rate)
             for c in range(s["starting_channel"], s["starting_channel"] + s["channels"])]
