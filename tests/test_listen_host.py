@@ -1429,6 +1429,7 @@ def test_the_daemon_runs_a_private_helper_copy_never_the_build_or_session_and_ne
     assert not helper.parent.exists()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="the CoreAudio adapter runs on macOS only")
 def test_a_helper_copy_that_cant_be_made_safely_fails_startup_at_adapter_open(tmp_path, hosts, monkeypatch):
     session_dir, _ = _coreaudio_session(tmp_path)
     unsafe = tmp_path / "unsafe-tmp"

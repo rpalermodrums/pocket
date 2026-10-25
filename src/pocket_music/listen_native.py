@@ -180,8 +180,11 @@ def _acl_api():
     return ctypes, libc
 
 
+_HOST_IS_MACOS = sys.platform == "darwin"
+
+
 def acl_grants_access(where):
-    if sys.platform != "darwin":
+    if not _HOST_IS_MACOS:
         return False
     ctypes, libc = _acl_api()
     ctypes.set_errno(0)
@@ -202,7 +205,7 @@ def acl_grants_access(where):
 
 
 def clear_acl(path):
-    if sys.platform != "darwin":
+    if not _HOST_IS_MACOS:
         return
     ctypes, libc = _acl_api()
     empty = libc.acl_init(0)
@@ -262,7 +265,7 @@ def _volume_flags(where):
 
 
 def volume_ignores_ownership(where):
-    if sys.platform != "darwin":
+    if not _HOST_IS_MACOS:
         return False
     flags = _volume_flags(where)
     return flags is None or bool(flags & _MNT_IGNORE_OWNERSHIP)
