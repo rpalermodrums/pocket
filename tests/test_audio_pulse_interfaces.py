@@ -9,6 +9,7 @@ import sys
 from unittest.mock import patch
 
 import pytest
+from test_audio_model_runtime_entry import isolated_executable
 from test_audio_models import PulseModelTests
 from test_midi_interfaces import cli_call, environment
 
@@ -31,7 +32,8 @@ def test_cli_retained_model_query_and_missing_optional_runtime(fixture, tmp_path
         handle = fixture.call()['artifacts']['hypotheses']
     args = {'store_root': fixture.store, 'hypotheses': handle, 'view': 'summary'}
     assert cli_call(tmp_path, 'audio_hypothesis_query', args) == audio_hypothesis_query(**args)
-    inspect = {'store_root': fixture.store, 'request_id': 'base-runtime', 'declaration': fixture.declaration}
+    declaration = {**fixture.declaration, 'executable': isolated_executable(tmp_path / 'missing-runtime-environment')}
+    inspect = {'store_root': fixture.store, 'request_id': 'base-runtime', 'declaration': declaration}
     expected = audio_model_inspect(**inspect)
     assert expected['status'] == 'unsupported' and not expected['artifacts']
     assert cli_call(tmp_path, 'audio_model_inspect', inspect) == expected

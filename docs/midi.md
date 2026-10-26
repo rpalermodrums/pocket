@@ -336,6 +336,16 @@ The worker calls the same public primitive in a private staging store and publis
 
 `audio_model_inspect(store_root, request_id, declaration, qualification="none")` inspects an explicitly supplied local runtime and checkpoint. Call it with keyword arguments. The strict declaration has `adapter:"beat_this_cpu_v1"`, `executable:{path,sha256}`, `weights:{path,sha256}` and `expected_profile` (null or an exact runtime-profile SHA256). Paths are absolute. `qualification:"synthetic_cpu_v1"` runs seven bounded synthetic CPU cases and retains repeat hashes, raw outputs and the runtime profile. Missing dependencies return `unsupported` without a model artifact. This does not download, install or qualify musical accuracy.
 
+For a virtual environment, pass its Python entry path without resolving the
+symlink. Pocket runs that entry path and separately verifies the resolved
+executable's bytes before and after execution. The runtime profile records the
+environment actually loaded.
+
+If an earlier virtual-environment declaration ran with the base interpreter,
+inspect and qualify the intended environment again with a new request ID.
+The existing `expected_profile` check refuses a changed runtime profile.
+Retained reports still describe their original execution.
+
 `audio_pulse_hypotheses` accepts the same exact source and attribution as `audio_hypotheses`, plus `model` and `settings`. Model is exactly either `{kind:"inline",declaration,qualification:"synthetic_cpu_v1"}` or `{kind:"inspected",model:<qualified artifact handle>}`. Inline and inspected composition produce the same evidence; no inspection call history is required. Settings are exactly `{device:"cpu",dtype:"float32",threads:1,postprocessor:"minimal",downmix:"arithmetic_mean",resampler:"soxr_hq",seed:0}`. The qualified input profile is 2–20 seconds of mono/stereo PCM16 WAV at 8000, 44100 or 48000 Hz, within the existing 256 MiB source bound. The base Pocket environment needs no model packages. The separate declared environment needs BeatThis and its CPU dependencies; the local checkpoint is captured and loaded through the safe weights-only route.
 
 The `pocket.audio-model-hypotheses/v1` artifact retains complete original bytes, exact crop frames, raw float32 arrays, two-run equality checks, preprocessing hashes, model/checkpoint/runtime identity, uncalibrated learned beat/downbeat hypotheses and excluded right-boundary events. Model-frame and source-frame coordinates are rational, including fractional peak positions. Downbeat snapping retains the original peak support. Synthetic tests have produced false boundary pulses; these are hypotheses, never authoritative meter, note onsets or musical decisions. The recorded file profile does not establish every operating-system or dynamically loaded dependency.

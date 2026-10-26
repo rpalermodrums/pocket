@@ -4,6 +4,10 @@ Notable changes to Pocket, newest first. Package versions and the versions of se
 
 ## Unreleased
 
+### Fixed
+
+- The learned-pulse model launcher preserves a declared virtual environment's Python entry path while verifying the resolved executable's bytes. It no longer substitutes the base interpreter and loads that interpreter's packages instead. Retained artifact schemas and byte-pinned model runners are unchanged.
+
 ### Changed
 
 - **Pocket is now licensed under the GNU Affero General Public License, version 3 only (AGPL-3.0-only)**, with [additional permissions](LICENSE-EXCEPTION.md) for output and for unmodified Pocket Max for Live devices shared inside musical projects. Using Pocket stays free, including commercially, and what you make with it is yours; a commercial license is available for closed products. [Licensing](LICENSING.md) explains the change in plain language. **0.4.0 is the last version released under the MIT License**, and copies of it and earlier versions keep that license. `examples/` and `skills/` stay MIT licensed.

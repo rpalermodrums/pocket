@@ -31,7 +31,7 @@ def logits(seconds=2):
 
 @pytest.fixture
 def setup(tmp_path):
-    executable = Path(sys.executable).resolve()
+    executable = Path(sys.executable).absolute()
     weights = tmp_path / 'declared-weights'; weights.write_bytes(b'NOT A REAL MODEL')
     source = tmp_path / 'source.wav'
     with wave.open(str(source), 'wb') as out:

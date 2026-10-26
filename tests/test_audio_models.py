@@ -11,6 +11,8 @@ import wave
 from pathlib import Path
 from unittest.mock import patch
 
+from test_audio_model_runtime_entry import isolated_executable
+
 from pocket_music.artifact_store import digest, read_record
 from pocket_music.audio_pulse_hypotheses import (
     _CONTEXT,
@@ -51,7 +53,7 @@ class PulseModelTests(unittest.TestCase):
         self.store = str(self.root / 'store')
         weights = self.root / 'weights.ckpt'
         weights.write_bytes(b'explicit mocked checkpoint, never deserialized')
-        executable = Path(sys.executable).resolve()
+        executable = Path(sys.executable).absolute()
         self.declaration = {'adapter': 'beat_this_cpu_v1',
                             'executable': {'path': str(executable), 'sha256': hashlib.sha256(executable.read_bytes()).hexdigest()},
                             'weights': {'path': str(weights), 'sha256': hashlib.sha256(weights.read_bytes()).hexdigest()},
@@ -146,7 +148,8 @@ class PulseModelTests(unittest.TestCase):
         self.assertFalse(result['artifacts'])
 
     def test_real_base_environment_does_not_require_torch(self):
-        result = audio_model_inspect(store_root=self.store, request_id='base-no-model', declaration=self.declaration)
+        declaration = {**self.declaration, 'executable': isolated_executable(self.root / 'base-no-model-environment')}
+        result = audio_model_inspect(store_root=self.store, request_id='base-no-model', declaration=declaration)
         self.assertEqual(result['status'], 'unsupported')
 
     def test_explicit_lease_context_is_scoped(self):
