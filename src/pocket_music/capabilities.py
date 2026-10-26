@@ -56,6 +56,9 @@ PUBLIC_CAPABILITIES = (
     ('context_create', 'musical_context', 'context', 'create', False, 'Immutable musical context with explicit clocks, authored anchors and occurrence identities; no host required.'),
     ('context_query', 'musical_context', 'context', 'query', True, 'Bounded pages of an exact musical context revision.'),
     ('context_resolve', 'musical_context', 'context', 'resolve', True, 'Resolve an internal anchor or explicit position through a named occurrence; ambiguous mappings are refused.'),
+    ('audio_score_create', 'audio_score', 'audio', 'score_create', False, 'Bind attributed audio passages and relationships to an exact musical context; no copied clock or inferred identity.'),
+    ('audio_score_query', 'audio_score', 'audio', 'score_query', True, 'Revalidate and query source-bound passages, members and authored relationships.'),
+    ('audio_score_revise', 'audio_score', 'audio', 'score_revise', False, 'Carry an audio score through a verified edit of its exact parent context, preserving its authored definition.'),
     ('practice_render', 'practice_audio', 'practice', 'render', False, 'Exact original-rate PCM passages and repetitions from declared occurrences; no implicit DSP.'),
     ('practice_compare', 'practice_audio', 'practice', 'compare', False, 'Bind a baseline and alternatives to a question; measurements and listening remain separate.'),
     ('practice_feedback', 'practice_audio', 'practice', 'feedback', False, 'Attributed, exact-render and interval-bound feedback without inferred listening or preferences.'),
@@ -172,6 +175,9 @@ _HANDLE_FAMILIES = {
     'context_create': (['pocket.musical-context/v1', 'pocket.audio-region-capture/v1', 'pocket.time-map/v1', 'pocket.material/v1'], ['pocket.musical-context/v1']),
     'context_query': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.musical-context/v1', 'pocket.musical-context/v2']),
     'context_resolve': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.musical-context/v1', 'pocket.musical-context/v2']),
+    'audio_score_create': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.audio-score/v1']),
+    'audio_score_query': (['pocket.audio-score/v1'], ['pocket.audio-score/v1']),
+    'audio_score_revise': (['pocket.audio-score/v1', 'pocket.context-edit/v1'], ['pocket.audio-score/v1', 'pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.context-edit/v1']),
     'practice_render': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.practice-render/v1', 'pocket.render-audio/v1']),
     'practice_compare': (['pocket.practice-render/v1'], ['pocket.practice-comparison/v1']),
     'practice_envelope': (['pocket.practice-render/v1'], ['pocket.practice-envelope/v1', 'pocket.render-audio/v1']),
@@ -273,6 +279,9 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         if module == 'context_edits':
             profile = 'literal-context-edits/v1'
             prerequisites = ['Exact immutable parent and explicitly named linked occurrences or anchors; locked fields preserved; renderability reported separately']
+        if module == 'audio_score':
+            profile = 'authored-audio-passages/v1'
+            prerequisites = ['Exact retained musical context, explicit occurrence members and attributed acyclic passage relationships; no rendering, native execution or listening claim']
         if module == 'interpretations':
             profile = 'source-bound-interpretations/v1'
             prerequisites = ['Exact context source clock and retained candidate revision, or explicitly authored/unresolved claim; no implicit tempo or meter edit']

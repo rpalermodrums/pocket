@@ -14,6 +14,10 @@
       "target": "docs/acquisition.md"
     },
     {
+      "source": "docs/audio-score.md",
+      "target": "docs/audio-score.md"
+    },
+    {
       "source": "docs/agents.md",
       "target": "docs/agents.md"
     },
@@ -236,6 +240,9 @@
       "Practice and listening": [
         {
           "Musical context & practice": "docs/musical-context.md"
+        },
+        {
+          "Audio passage scores": "docs/audio-score.md"
         },
         {
           "Practice review": "docs/practice-review.md"
