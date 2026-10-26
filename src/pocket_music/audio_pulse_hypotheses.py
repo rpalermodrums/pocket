@@ -137,7 +137,8 @@ def _runner(declaration, qualification, weights_path, source=None):
         try:
             # Bound output storage: diagnostics belong only to the bounded JSON
             # response, never unbounded dependency stdout/stderr files or pipes.
-            process = subprocess.run([before['executable']['resolved_path'], '-I', '-B', str(runner),
+            # Preserve the declared venv entry; the resolved binary remains hash-bound.
+            process = subprocess.run([before['executable']['supplied_path'], '-I', '-B', str(runner),
                                       str(request_path), str(response_path)],
                                      env=environment, pass_fds=_CONTEXT.get()[0],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
