@@ -19,6 +19,8 @@ These work anywhere Python runs. No DAW is needed.
 - [Musical context and practice](musical-context.md): mark passages, clocks and
   cues in a recording, render exact alternatives, compare them and keep
   attributed reports.
+- [Audio passage scores](audio-score.md): name linked audio occurrences and
+  their musical roles, then retain their relationships through exact edits.
 - [Practice review](practice-review.md): a local browser page for listening to a
   comparison and saving what you heard, pinned to the exact audio and interval.
 - [Peek](peek.md): look inside a recording. See where sounds start, which pulse
