@@ -223,6 +223,9 @@ def practice_compare(store_root: str, request_id: str, baseline: ArtifactHandle,
 
 def load_practice_audio(handle, store_root):
     """Dispatch declared audio profiles without broadening the exact PCM reader."""
+    if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.audio-score-render/v1":
+        from .audio_score_practice import load_audio_score_render
+        return load_audio_score_render(handle, store_root)
     if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.practice-envelope/v1":
         from .practice_envelopes import load_practice_envelope
         return load_practice_envelope(handle, store_root)
@@ -230,6 +233,9 @@ def load_practice_audio(handle, store_root):
 
 
 def load_comparison(handle, store_root):
+    if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.audio-score-comparison/v1":
+        from .audio_score_practice import load_audio_score_comparison
+        return load_audio_score_comparison(handle, store_root)
     if isinstance(handle, dict) and handle.get("artifact_schema") == "pocket.practice-processed-comparison/v1":
         from .practice_envelopes import load_processed_comparison
         return load_processed_comparison(handle, store_root)
@@ -381,10 +387,11 @@ def practice_query(store_root: str, artifact: ArtifactHandle,
     audio_schema = schema
     extra_coverage = {}
     mappings = None
-    if schema in (RENDER_SCHEMA, "pocket.practice-envelope/v1"):
+    if schema in (RENDER_SCHEMA, "pocket.practice-envelope/v1", "pocket.audio-score-render/v1"):
         record = load_practice_audio(artifact, store_root)
         mappings = record["mappings"]
-    elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1", "pocket.practice-processed-comparison/v1"):
+    elif schema in (COMPARISON_SCHEMA, "pocket.practice-revision-comparison/v1", "pocket.practice-processed-comparison/v1",
+                    "pocket.audio-score-comparison/v1"):
         record, _ = load_comparison(artifact, store_root)
     elif schema == FEEDBACK_SCHEMA:
         record, render = load_practice_feedback(artifact, store_root)
@@ -403,6 +410,7 @@ def practice_query(store_root: str, artifact: ArtifactHandle,
     else:
         raise PocketError("Unknown practice artifact schema")
     profile = ("browser-pcm16-original-rate/v1" if audio_schema == PREVIEW_SCHEMA else
+               "same-rate-overlay-linear/v1" if audio_schema in ("pocket.audio-score-render/v1", "pocket.audio-score-comparison/v1") else
                "linear-loop-join-envelope/v1" if audio_schema in
                ("pocket.practice-envelope/v1", "pocket.practice-processed-comparison/v1") else PROFILE)
     common = {"artifacts": {"artifact": artifact},

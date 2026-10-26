@@ -18,6 +18,10 @@
       "target": "docs/audio-score.md"
     },
     {
+      "source": "docs/audio-score-audition.md",
+      "target": "docs/audio-score-audition.md"
+    },
+    {
       "source": "docs/agents.md",
       "target": "docs/agents.md"
     },
@@ -243,6 +247,9 @@
         },
         {
           "Audio passage scores": "docs/audio-score.md"
+        },
+        {
+          "Audio score auditions": "docs/audio-score-audition.md"
         },
         {
           "Practice review": "docs/practice-review.md"

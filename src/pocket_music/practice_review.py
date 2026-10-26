@@ -41,7 +41,8 @@ _RANGE = re.compile(r"bytes=(\d{0,18})-(\d{0,18})")
 _ABSOLUTE_PATH = re.compile(r"(?<![\w.>-])/[^\s'\"]+")
 COMPARISON_LABELS = {"pocket.practice-comparison/v1": "Same context revision",
                      "pocket.practice-revision-comparison/v1": "Edited revisions with explicit correspondence",
-                     "pocket.practice-processed-comparison/v1": "Declared processing of one exact baseline"}
+                     "pocket.practice-processed-comparison/v1": "Declared processing of one exact baseline",
+                     "pocket.audio-score-comparison/v1": "Audio score correction in one fixed timeline window"}
 
 
 def _load_handle(path, key):
@@ -78,6 +79,8 @@ def _short(sha):
 
 def _processing(render):
     profile = render["processing"]["profile"]
+    if profile == "same-rate-overlay-linear/v1":
+        return {"profile": profile, "label": "Declared original-rate overlay and amplitude controls", "source_exact": False}
     if profile == "linear-loop-join-envelope/v1":
         rate = render["signal"]["sample_rate"]
         joins = "; ".join(f"{j['fade_out_frames']} frames out / {j['fade_in_frames']} in at "
@@ -88,6 +91,9 @@ def _processing(render):
 
 def _alignment(schema, record, renders):
     """Switch at the same output frame only when the comparison itself proves correspondence."""
+    if schema == "pocket.audio-score-comparison/v1":
+        return True, ("Both versions use the same verified timeline window, sample rate and frame count; "
+                      "the named source occurrence is intentionally shifted within that window")
     if schema == "pocket.practice-processed-comparison/v1" and len({canonical_bytes(r["mappings"]) for r in renders}) == 1:
         return True, "Every member derives from one exact baseline with identical timing and frame counts"
     if schema == "pocket.practice-revision-comparison/v1" and all(
