@@ -233,7 +233,8 @@ def load_audio_score_render(handle, store_root):
     from .audio_score import load_audio_score
     score = load_audio_score(record["score"], store_root)
     plan = _inputs(record["score"], record["timeline_clock_id"], record["interval_qn"], record["recipe"], store_root)
-    if (record["context"] != score["context"] or record["mappings"] != plan["mappings"]
+    if (record["context"] != score["context"]
+            or canonical_bytes(record["mappings"]) != canonical_bytes(plan["mappings"])
             or record["occurrence_ids"] != [m["occurrence_id"] for m in plan["mappings"]]
             or canonical_bytes(record["processing"]) != canonical_bytes(PROCESSING)
             or record["listening"] != "not_reviewed" or record["musical_verdict"] is not None):
@@ -337,7 +338,8 @@ def load_audio_score_comparison(handle, store_root):
     if (edit["parent"] != parent["context"] or edit["child"] != child["context"]
             or edit["operations"] != [operation] or edit["locks"] != record["locks"]
             or edit["attribution"] != record["attribution"] or child["parent"] != record["score"]
-            or child["context_edit"] != record["context_edit"] or record["anchor_positions"] != anchors):
+            or child["context_edit"] != record["context_edit"]
+            or canonical_bytes(record["anchor_positions"]) != canonical_bytes(anchors)):
         raise PocketError("Audio score correction ancestry or anchor evidence mismatch", code="evidence_mismatch")
     bounded_list(record["variants"], "audition variants", 1, 1)
     handles = [record["baseline"], *record["variants"]]
@@ -347,7 +349,7 @@ def load_audio_score_comparison(handle, store_root):
     if len({(r["signal"]["sample_rate"], r["signal"]["channels"], r["signal"]["frames"]) for r in renders}) != 1:
         raise PocketError("Audition requires one common rate, layout and frame count", code="evidence_mismatch")
     for render, score_handle in zip(renders, (record["score"], record["child_score"]), strict=True):
-        if (render["score"] != score_handle or any(render[k] != record[k]
+        if (render["score"] != score_handle or any(canonical_bytes(render[k]) != canonical_bytes(record[k])
                 for k in ("timeline_clock_id", "interval_qn", "recipe"))):
             raise PocketError("Audition renders differ from the exact score or common window/recipe", code="evidence_mismatch")
     ready = all(r["signal"]["usable_for_expectation"] for r in renders)

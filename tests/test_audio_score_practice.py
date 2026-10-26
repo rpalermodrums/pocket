@@ -238,6 +238,29 @@ def test_rehashed_comparison_cannot_forge_ancestry_or_window(tmp_path, field):
         practice_query(f["store"], put_record(record, f["store"]))
 
 
+@pytest.mark.parametrize("field,value", [("source_span_frames", False), ("output_span_frames", 0.0)])
+def test_rehashed_render_requires_exact_integer_mapping_types(tmp_path, field, value):
+    f = score_fixture(tmp_path)
+    render = audio_score_render(**f["render_args"])["artifacts"]["render"]
+    record = read_record(render, f["store"])
+    record["mappings"][0][field][0] = value
+    with pytest.raises(PocketError, match="mapping or profile evidence mismatch"):
+        practice_query(f["store"], put_record(record, f["store"]), section="mappings")
+
+
+@pytest.mark.parametrize("field,value", [("anchor_n", 5.0), ("anchor_d", True), ("recipe_gain", 1.0)])
+def test_rehashed_comparison_requires_exact_anchor_and_recipe_types(tmp_path, field, value):
+    f = score_fixture(tmp_path)
+    comparison = audio_score_audition(**f["audition_args"])["artifacts"]["comparison"]
+    record = read_record(comparison, f["store"])
+    if field == "recipe_gain":
+        record["recipe"]["controls"][0]["gain"]["n"] = value
+    else:
+        record["anchor_positions"]["before"]["value"][field.removeprefix("anchor_")] = value
+    with pytest.raises(PocketError, match="anchor evidence mismatch|common window/recipe"):
+        practice_query(f["store"], put_record(record, f["store"]))
+
+
 def test_same_source_repeat_is_not_rendered_twice_from_shared_membership(tmp_path):
     f = score_fixture(tmp_path)
     definition = copy.deepcopy(f["score_definition"])
