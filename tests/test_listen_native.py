@@ -292,6 +292,26 @@ def test_a_slow_reader_still_gets_helper_heartbeats_on_time():
     assert max(b - a for a, b in itertools.pairwise(sent)) < HEARTBEAT_LIMIT_NS
 
 
+def test_the_decoder_never_buffers_more_than_the_bound_the_session_declares():
+    bound = listen_native.DECODER_BUFFER_BYTES
+    largest = max(listen_native.PAYLOAD_CAPS.values())
+    assert bound == listen_native.HEADER.size + largest - 1 + listen_native.READ_BYTES
+    decoder = listen_adapters.Decoder()
+    header = listen_native.HEADER.pack(listen_native.MAGIC, listen_native.BLOCK, 0, largest, 0)
+    stream = header + bytes(largest)
+    chunks = [stream[i:i + listen_native.READ_BYTES] for i in range(0, len(stream), listen_native.READ_BYTES)]
+    for chunk in chunks[:-1]:
+        assert len(decoder._buffer) + len(chunk) <= bound
+        assert decoder.feed(chunk) == []
+    assert len(decoder._buffer) == len(stream) - len(chunks[-1]) <= bound - listen_native.READ_BYTES
+    with pytest.raises(listen_adapters.ProtocolError):
+        decoder.feed(chunks[-1])
+    oversized = listen_adapters.Decoder()
+    with pytest.raises(listen_adapters.ProtocolError) as raised:
+        oversized.feed(listen_native.HEADER.pack(listen_native.MAGIC, listen_native.BLOCK, 0, largest + 1, 0))
+    assert raised.value.reason == "payload_length"
+
+
 def _hello(**changes):
     device = {"uid": UID, "name": "Fake Duo", "manufacturer": None, "model_uid": None, "transport": "virtual",
               "audio_object_id": 7, "alive": True, "hog_mode_pid": -1, "nominal_sample_rate": 48000.0,
@@ -761,7 +781,7 @@ def test_a_helper_block_with_its_sample_time_flag_clear_ends_capture(harness, tm
                                                   ("stream_ended", "device_sample_time_unavailable"),
                                                   ("capture_ended", "device_sample_time_unavailable")]
     assert facts[1].detail["sample_time"] == "missing" and facts[1].detail["end_frame"] == 960
-    assert tracker.snapshot()["frames_received"] == 960 and tracker.snapshot()["blocks_after_end"] == 1
+    assert tracker.snapshot()["frames_received"] == 960 and tracker.snapshot()["after_end"]["blocks"] == 1
 
 
 def test_coreaudio_adapter_runs_through_listen_core_and_stops_without_a_capture_failure(harness):
@@ -877,7 +897,7 @@ def test_build_helper_runs_only_swiftc_and_seals_the_build_in_listens_own_folder
 def test_the_xcode_select_shim_counts_as_swiftc_only_with_a_toolchain_behind_it(monkeypatch, tmp_path):
     monkeypatch.setattr(listen_native.shutil, "which", lambda name: listen_native.SWIFTC_SHIM)
     monkeypatch.delenv("DEVELOPER_DIR", raising=False)
-    monkeypatch.setattr(listen_native, "XCODE_SELECT_LINK", tmp_path / "no-link")
+    monkeypatch.setattr(listen_native, "XCODE_SELECT_LINKS", (tmp_path / "no-link",))
     xcode, tools = tmp_path / "Xcode", tmp_path / "CommandLineTools"
     monkeypatch.setattr(listen_native, "DEFAULT_DEVELOPER_DIRS", (xcode, tools))
     assert listen_native.swift_compiler() is None
@@ -894,6 +914,31 @@ def test_the_xcode_select_shim_counts_as_swiftc_only_with_a_toolchain_behind_it(
     assert listen_native.swift_compiler() is None
     monkeypatch.setattr(listen_native.shutil, "which", lambda name: "/opt/swift/bin/swiftc")
     assert listen_native.swift_compiler() == "/opt/swift/bin/swiftc"
+
+
+@pytest.mark.parametrize("selection", ["var_select", "xcode_select_link", "developer_dir_app"])
+def test_the_xcode_select_shim_finds_a_toolchain_where_the_shim_would(monkeypatch, tmp_path, selection):
+    monkeypatch.setattr(listen_native.shutil, "which", lambda name: listen_native.SWIFTC_SHIM)
+    monkeypatch.delenv("DEVELOPER_DIR", raising=False)
+    default = tmp_path / "Xcode.app" / "Contents" / "Developer"
+    monkeypatch.setattr(listen_native, "DEFAULT_DEVELOPER_DIRS", (default,))
+    xcode = tmp_path / "Xcode-16.4.app"
+    developer = xcode / "Contents" / "Developer"
+    swiftc = developer / "Toolchains" / "XcodeDefault.xctoolchain" / "usr" / "bin" / "swiftc"
+    swiftc.parent.mkdir(parents=True)
+    swiftc.write_text("")
+    links = (tmp_path / "var-select-developer_dir", tmp_path / "xcode_select_link")
+    monkeypatch.setattr(listen_native, "XCODE_SELECT_LINKS", links)
+    if selection == "developer_dir_app":
+        monkeypatch.setenv("DEVELOPER_DIR", str(xcode))
+    else:
+        links[selection == "xcode_select_link"].symlink_to(developer)
+    assert listen_native.swift_compiler() == listen_native.SWIFTC_SHIM
+    if selection == "var_select":
+        links[1].symlink_to(default)
+        assert listen_native.swift_compiler() == listen_native.SWIFTC_SHIM
+        links[0].unlink()
+        assert listen_native.swift_compiler() is None
 
 
 @pytest.mark.parametrize("platform_name, mac, swiftc, hint", [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import hmac
 import json
@@ -21,6 +22,7 @@ import tempfile
 import threading
 import time
 import traceback
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
@@ -249,7 +251,7 @@ def allocate_runtime(session_dir):
     epoch = "rt-" + secrets.token_hex(8)
     base = root / RUNTIMES
     base.mkdir(mode=0o700, exist_ok=True)
-    _check_private(base, "dir")
+    _check_private(base)
     path = base / f"{ordinal:04d}-{epoch}"
     path.mkdir(mode=0o700, exist_ok=False)
     os.chmod(path, 0o700)
@@ -388,27 +390,47 @@ def _read_line(sock, limit):
             return bytes(data)
 
 
-def _check_private(path, kind):
-    info = os.lstat(path)
-    shape = {"dir": stat.S_ISDIR, "file": stat.S_ISREG, "socket": stat.S_ISSOCK}[kind]
-    if not is_private(info, shape, os.fspath(path)):
-        raise PocketError(f"Listen's runtime {kind} {Path(path).name} isn't private to you",
-                          code="evidence_mismatch", hint=_PRIVATE_HINT)
+def _not_private(path, kind):
+    return PocketError(f"Listen's runtime {kind} {Path(path).name} isn't private to you",
+                       code="evidence_mismatch", hint=_PRIVATE_HINT)
+
+
+_UNOPENABLE = (errno.ELOOP, errno.ENOTDIR, errno.EACCES, errno.EPERM)
+
+
+@contextmanager
+def _private(path, kind, *, dir_fd=None):
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_DIRECTORY if kind == "dir" else 0)
+    try:
+        descriptor = os.open(path, flags, dir_fd=dir_fd)
+    except OSError as error:
+        if error.errno in _UNOPENABLE:
+            raise _not_private(path, kind) from error
+        raise
+    try:
+        if not is_private(os.fstat(descriptor), stat.S_ISDIR if kind == "dir" else stat.S_ISREG, descriptor):
+            raise _not_private(path, kind)
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _check_private(path):
+    with _private(path, "dir"):
+        pass
 
 
 def read_connection(runtime_dir):
     runtime = Path(runtime_dir)
     try:
-        _check_private(runtime, "dir")
+        with _private(runtime, "dir") as folder:
+            try:
+                with _private(CONNECTION_NAME, "file", dir_fd=folder) as record:
+                    data = os.read(record, 4097)
+            except FileNotFoundError as error:
+                raise RuntimeUnreachable("lease_held_no_connection") from error
     except FileNotFoundError as error:
         raise _mismatch("The runtime directory is missing", _PRIVATE_HINT) from error
-    path = runtime / CONNECTION_NAME
-    try:
-        _check_private(path, "file")
-        with path.open("rb") as stream:
-            data = stream.read(4097)
-    except FileNotFoundError as error:
-        raise RuntimeUnreachable("lease_held_no_connection") from error
     try:
         value = json.loads(data)
     except ValueError as error:
@@ -423,8 +445,10 @@ def read_connection(runtime_dir):
     if socket_path.name != SOCKET_NAME or not socket_path.parent.name.startswith("pocket-listen-"):
         raise _mismatch("connection.json names a socket Listen didn't create", _PRIVATE_HINT)
     try:
-        _check_private(socket_path.parent, "dir")
-        _check_private(socket_path, "socket")
+        with _private(socket_path.parent, "dir") as folder:
+            info = os.stat(SOCKET_NAME, dir_fd=folder, follow_symlinks=False)
+            if not is_private(info, stat.S_ISSOCK, os.fspath(socket_path), volume=folder):
+                raise _not_private(socket_path, "socket")
     except FileNotFoundError as error:
         raise RuntimeUnreachable("socket_unreachable") from error
     return value
@@ -538,12 +562,8 @@ def wait_for_runtime(session_dir, runtime_dir, process, *, timeout_s=START_WAIT_
                         "startup_failure_record": None, "stderr_tail": None}
         if time.monotonic() >= deadline:
             if ping is not None and ping.get("runtime_state") != "running":
-                try:
-                    terminal = read_terminal(session_dir, runtime_dir)
-                except PocketError:
-                    terminal = None
                 return {"outcome": "stopped_during_start", "exit_code": None, "ping": ping,
-                        "terminal": terminal, "startup_failure": None, "startup_failure_record": None,
+                        "terminal": None, "startup_failure": None, "startup_failure_record": None,
                         "stderr_tail": None}
             return {"outcome": "started_no_audio_yet" if ping is not None else "start_unconfirmed",
                     "exit_code": None, "ping": ping, "terminal": None, "startup_failure": None,
@@ -930,7 +950,7 @@ class ListenHost:
         if match is None or self.runtime_dir.parent != self.session_dir / RUNTIMES or newest is None \
                 or newest[2] != self.runtime_dir:
             raise _mismatch("The runtime directory isn't this session's newest runtime")
-        _check_private(self.runtime_dir, "dir")
+        _check_private(self.runtime_dir)
         self.launch = read_launch(self.runtime_dir)
         if (self.launch["runtime_epoch"], self.launch["ordinal"]) != (match[2], int(match[1])) \
                 or self.launch["session_id"] != self.session["session_id"] \
@@ -954,7 +974,7 @@ class ListenHost:
     def _bind(self):
         parent = self._socket_parent or ("/private/tmp" if sys.platform == "darwin" else tempfile.gettempdir())
         self.socket_dir = Path(tempfile.mkdtemp(prefix="pocket-listen-", dir=parent))
-        _check_private(self.socket_dir, "dir")
+        _check_private(self.socket_dir)
         address = self.socket_dir / SOCKET_NAME
         if len(os.fsencode(address)) >= 100:
             raise PocketError("The socket path is too long for AF_UNIX")
@@ -1083,14 +1103,14 @@ class ListenHost:
                         "device_instance": None if identity is None else identity.instance,
                         "device_instance_epoch": None, "topology_epoch": None, "streams": [], "streams_omitted": 0,
                         "missing": {"events": 0, "exact_frames": 0}, "stale_episodes": 0,
-                        "nonfinite_samples": 0, "callback_ns": None, "helper_stderr_tail": self._helper_stderr(),
+                        "callback_ns": None, "helper_stderr_tail": self._helper_stderr(),
                         "provenance": capture_provenance(self.session, self.adapter.profile, opened.detail)},
             "routes": [{**r, "frames_measured": None, "max_sample_peak_dbfs": None, "clipped_total": None,
                         "nonfinite_total": None, "near_silence_frames": None} for r in routes],
             "broker": {"published": 0, "last_sequence": 0, "evicted": {"normal": 0, "health": 0},
                        "health_lost_through": 0},
             "worker": {"drain": None, **dict.fromkeys(WORKER_TERMINAL_KEYS, 0), "state": "not_started",
-                       "error": None},
+                       "error": None, "unmeasured_at_stop_is_upper_bound": False},
             "journal": journal,
             "stop": _stop_timing(begun, close_cause, close_detail, None),
             "error": None,

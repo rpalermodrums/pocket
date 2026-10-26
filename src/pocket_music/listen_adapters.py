@@ -18,7 +18,6 @@ import numpy as np
 from .errors import PocketError, contained
 from .listen_native import (
     ADAPTER_QUEUE_FRAMES,
-    BLOCK,
     BLOCK_HEADER,
     COREAUDIO_PROFILE,
     EVENT,
@@ -34,6 +33,8 @@ from .listen_native import (
     MAX_BLOCK_FRAMES,
     MICROPHONE_STATES,
     ORDERLY_EXIT_CODES,
+    PAYLOAD_CAPS,
+    READ_BYTES,
     SAMPLE_RATES,
     START_REFUSALS,
     STARTED,
@@ -45,8 +46,6 @@ from .listen_native import (
     verify_build,
 )
 
-_CAPS = {HELLO: 65536, BLOCK: 1024 * 1024, EVENT: 16384, HEARTBEAT_TYPE: HEARTBEAT.size, EXIT: 16384,
-         STARTED: 16384}
 _ENDING_HELPER_EVENTS = ("device_lost", "sample_rate_changed", "format_changed", "channel_map_changed",
                          "device_hogged", "device_property_unreadable")
 _ONGOING_HELPER_EVENTS = ("processor_overload", "devices_changed")
@@ -572,11 +571,11 @@ class Decoder:
             magic, kind, reserved, length, serial = HEADER.unpack_from(self._buffer, 0)
             if magic != MAGIC:
                 raise ProtocolError("bad_magic")
-            if kind not in _CAPS:
+            if kind not in PAYLOAD_CAPS:
                 raise ProtocolError("unknown_type")
             if reserved:
                 raise ProtocolError("reserved_nonzero")
-            if length > _CAPS[kind] or (kind == HEARTBEAT_TYPE and length != HEARTBEAT.size):
+            if length > PAYLOAD_CAPS[kind] or (kind == HEARTBEAT_TYPE and length != HEARTBEAT.size):
                 raise ProtocolError("payload_length")
             if serial != self._serial:
                 raise ProtocolError("serial_not_contiguous")
@@ -1000,7 +999,7 @@ class CoreAudioHelperAdapter:
         def pump():
             try:
                 while True:
-                    chunk = stream.read(65536)
+                    chunk = stream.read(READ_BYTES)
                     now = self._clock.monotonic_ns()
                     if not chunk:
                         decoder.finish()
@@ -1024,7 +1023,7 @@ class CoreAudioHelperAdapter:
     def _protocol_error(self, stream, reason):
         self._put(("protocol_error", reason, self._clock.monotonic_ns()))
         try:
-            while stream.read(65536):
+            while stream.read(READ_BYTES):
                 pass
         except (OSError, ValueError):
             return

@@ -16,7 +16,7 @@ import pytest
 from pocket_music import listen, listen_adapters, listen_runtime
 from pocket_music.artifact_store import canonical_bytes
 from pocket_music.errors import PocketError
-from pocket_music.listen import resolve_routes, selected_channels
+from pocket_music.listen import WORKER_TERMINAL_KEYS, resolve_routes, selected_channels
 from pocket_music.listen_adapters import (
     ENDING_EVENTS,
     AdapterBlock,
@@ -686,15 +686,33 @@ def test_a_block_without_a_device_sample_time_ends_the_stream_and_capture_and_no
     assert max(e["interval"]["start_frame"] + e["interval"]["frames"] for e in measured) == 9600
     assert not r.events("frames_missing") and len(r.events("stream_started")) == 1
     snapshot = r.core.tracker.snapshot()
-    assert snapshot["frames_received"] == 9600 and snapshot["blocks_after_end"] == 19
+    assert snapshot["frames_received"] == 9600
+    assert snapshot["after_end"] == {"blocks": 19, "frames": 19 * 480, "events": {"end_of_stream": 1}}
     observation = r.observe()
     capture_block = observation["capture"]
-    assert capture_block["state"] == "ended"
+    assert capture_block["state"] == "ended" and capture_block["after_end"] == snapshot["after_end"]
+    assert observation["summary"].endswith(" · 19 blocks received since capture ended")
+    assert r.core.health_summary()["blocks_after_end"] == 19
     assert capture_block["ended_cause"] == "device_sample_time_unavailable"
     assert capture_block["clocks"]["device_sample_time"] == "unavailable"
     (ended_notice,) = [n for n in observation["notices"] if n["code"] == "capture_ended"]
     assert "device_sample_time_unavailable" in ended_notice["text"]
     assert ended_notice["next_step"].startswith("Stop this runtime with listen_stop and its runtime_epoch")
+
+
+def test_blocks_and_events_after_a_first_block_capture_couldnt_place_are_counted_not_dropped():
+    r = build_core(script(clocks(False), stereo_tone(4800), {"kind": "device_lost"}), coalesce=1)
+    r.drive()
+    assert [evidence(e)["type"] for e in r.published][-1] == "capture_ended"
+    after = {"blocks": 9, "frames": 9 * 480, "events": {"device_lost": 1}}
+    observation = r.observe()
+    assert observation["capture"]["frames_received"] == 0 and observation["capture"]["after_end"] == after
+    assert observation["summary"].endswith("no stream yet · 9 blocks received since capture ended")
+    terminal = r.stop()
+    assert terminal["capture"]["after_end"] == after
+    assert terminal["capture"]["ended_cause"] == "device_sample_time_unavailable"
+    steps = listen._stop_caveats(terminal)
+    assert any("the input sent 9 more blocks (4,320 frames)" in step for step in steps)
 
 
 @pytest.mark.parametrize("sample_time, reason", [(None, "missing"), (math.nan, "nonfinite"),
@@ -715,7 +733,8 @@ def test_a_block_without_a_usable_sample_time_is_never_placed_and_ends_capture(s
     assert facts[1].state_transition == ("running", "ended")
     assert tracker.observe_block(AdapterBlock(480, pcm, 960.0, None, 3, 240)) == (None, ())
     snapshot = tracker.snapshot()
-    assert (snapshot["state"], snapshot["frames_received"], snapshot["blocks_after_end"]) == ("ended", 480, 1)
+    assert (snapshot["state"], snapshot["frames_received"]) == ("ended", 480)
+    assert snapshot["after_end"] == {"blocks": 1, "frames": 480, "events": {}}
     first = StreamTracker(RUNTIME, RATE)
     placement, (only,) = first.observe_block(AdapterBlock(480, pcm, sample_time, None, 1, 0))
     assert placement is None and only.type == "capture_ended"
@@ -823,7 +842,7 @@ def test_format_rate_or_channel_map_change_ends_the_stream_and_never_relabels(en
     assert evidence(meters[-1])["truncated_by"] == "stream_ended"
     assert r.tracker.capture_state == "ended"
     block = AdapterBlock(480, np.zeros((480, 2), dtype=np.float32), 9600.0, None, r.clock.monotonic_ns(), 0)
-    assert r.feed.ingest(block) is None and r.tracker.snapshot()["blocks_after_end"] == 1
+    assert r.feed.ingest(block) is None and r.tracker.snapshot()["after_end"]["blocks"] == 1
     assert r.adapter.read(50 * MS) is None and len(r.events("stream_started")) == 1
 
 
@@ -1543,7 +1562,7 @@ def test_core_publishes_lifecycle_in_ingest_order_and_stop_closes_meters_and_sea
     assert terminal["worker"] == {"drain": "complete", "state": "running", "error": None, "lag_frames": 0,
                                   "overruns": 0, "unmeasured_frames": 0, "unmeasured_after_failure_frames": 0,
                                   "unaccounted_frames": 0, "facts_dropped": 0, "unmeasured_at_stop_frames": 0,
-                                  "suppressed_after_stop": 0}
+                                  "unmeasured_at_stop_is_upper_bound": False}
     assert terminal["routes"][0]["frames_measured"] == r.core.tracker.snapshot()["frames_received"]
     assert terminal["coverage"]["control_issued"] is False
     assert terminal["coverage"]["audio_written_to_disk"] is False
@@ -1696,7 +1715,7 @@ def test_route_totals_retained_ring_span_and_notices_follow_the_published_eviden
     (master,) = r.core.terminal_summary()["routes"]
     assert master["max_sample_peak_dbfs"] == pytest.approx(3.0, abs=1e-3)
     assert master["clipped_total"] == 2 and master["nonfinite_total"] == 1
-    assert r.core.terminal_summary()["capture"]["nonfinite_samples"] == 1
+    assert "nonfinite_samples" not in r.core.terminal_summary()["capture"]
 
 
 def test_retained_span_reports_only_the_current_stream_epoch():
@@ -2025,14 +2044,21 @@ def test_an_incomplete_stop_drain_is_sealed_as_incomplete_and_nothing_publishes_
     for _ in range(200):
         r.core.ingest(r.adapter.read(50 * MS))
     inside, release = threading.Event(), threading.Event()
-    original = r.core.worker._measure
+    original, emit, refused = r.core.worker._measure, r.core.worker._emit, []
 
     def slow(d):
         inside.set()
         release.wait(5)
         original(d)
 
+    def counted(event):
+        sequence = emit(event)
+        if r.core.state == "stopped":
+            refused.append(sequence)
+        return sequence
+
     monkeypatch.setattr(r.core.worker, "_measure", slow)
+    monkeypatch.setattr(r.core.worker, "_emit", counted)
     worker = threading.Thread(target=r.core.measure_pending)
     worker.start()
     assert inside.wait(5)
@@ -2040,14 +2066,16 @@ def test_an_incomplete_stop_drain_is_sealed_as_incomplete_and_nothing_publishes_
     terminal = r.core.finish_stop(drain_ns=20 * MS)
     release.set()
     worker.join(5)
-    assert not worker.is_alive()
+    assert not worker.is_alive() and refused and set(refused) == {None}
     stopped = r.events("runtime_stopped")[0]
     assert evidence(stopped)["detail"]["worker_drain"] == "incomplete"
     assert r.published[-1] is stopped and r.core.broker.head == stopped["sequence"]
     assert terminal["broker"]["last_sequence"] == stopped["sequence"]
     assert terminal["worker"]["drain"] == "incomplete" and terminal["worker"]["lag_frames"] >= 96000 - 480
     assert terminal["routes"][0]["frames_measured"] == 0
-    assert r.core.worker.snapshot()["suppressed_after_stop"] >= 1
+    after = r.core.worker.snapshot()
+    assert {k: after[k] for k in WORKER_TERMINAL_KEYS} == {k: terminal["worker"][k]
+                                                           for k in WORKER_TERMINAL_KEYS}
 
 
 GAP_THEN_LOST = script(stereo_tone(4800), gap(512), stereo_tone(4800), {"kind": "device_lost"})
@@ -2129,6 +2157,339 @@ def test_a_stop_the_worker_never_lets_go_of_leaves_every_capture_fact_readable(m
     assert work["drain"] == "incomplete" and work["lag_frames"] == 9600 and master["frames_measured"] == 0
     assert terminal["capture"]["missing"]["exact_frames"] == 512
     assert terminal["capture"]["ended_cause"] == "device_lost"
+
+
+@pytest.mark.parametrize("change", [gap(4800), {"kind": "counter_backward", "delta_frames": -4800}],
+                         ids=["gap", "new_stream"])
+def test_a_failed_worker_counts_the_frames_it_never_took_before_a_gap_or_a_new_stream(monkeypatch, change):
+    r = build_core(script(stereo_tone(48000), change, stereo_tone(48000)), descriptor_capacity=8)
+    measure, calls = r.core.worker._measure, []
+
+    def fails_third(d):
+        calls.append(d)
+        if len(calls) == 3:
+            raise RuntimeError("injected")
+        return measure(d)
+
+    monkeypatch.setattr(r.core.worker, "_measure", fails_third)
+    reads = 0
+    while True:
+        item = r.adapter.read(50 * MS)
+        r.core.ingest(item)
+        reads += 1
+        if reads < 5 or reads % 60 == 0:
+            r.core.measure_pending()
+        if isinstance(item, AdapterEvent) and item.type in ENDING_EVENTS:
+            break
+    r.core.measure_pending()
+    terminal = r.stop()
+    work, (master,) = terminal["worker"], terminal["routes"]
+    assert work["state"] == "failed" and work["unaccounted_frames"] == 0
+    received = r.core.tracker.frames_received
+    assert master["frames_measured"] + work["unmeasured_frames"] == received
+    assert work["unmeasured_after_failure_frames"] == received - master["frames_measured"]
+
+
+@pytest.mark.parametrize("change", [RESET, {"kind": "counter_backward", "delta_frames": -4800}],
+                         ids=["reset", "backward"])
+def test_a_failed_worker_counts_an_old_streams_tail_when_the_new_streams_fact_was_dropped(monkeypatch,
+                                                                                         change):
+    r = build_core(script(stereo_tone(24000), gap(480), stereo_tone(24000), change, stereo_tone(48000)),
+                   window_frames=480, coalesce=1, facts_capacity=1, descriptor_capacity=8)
+    add, calls = r.core.worker._add, []
+
+    def fails_third(d, frame, pcm):
+        calls.append(frame)
+        if len(calls) == 3:
+            raise RuntimeError("injected")
+        return add(d, frame, pcm)
+
+    monkeypatch.setattr(r.core.worker, "_add", fails_third)
+    reads = 0
+    while True:
+        item = r.adapter.read(50 * MS)
+        r.core.ingest(item)
+        reads += 1
+        if reads <= 4:
+            r.core.measure_pending()
+        if isinstance(item, AdapterEvent) and item.type in ENDING_EVENTS:
+            break
+    r.core.measure_pending()
+    terminal = r.stop()
+    work, (master,) = terminal["worker"], terminal["routes"]
+    assert work["state"] == "failed" and work["facts_dropped"] == 2 and len(r.events("stream_started")) == 2
+    assert work["unmeasured_frames"] == work["unmeasured_after_failure_frames"]
+    assert master["frames_measured"] + work["unmeasured_frames"] + work["unaccounted_frames"] \
+        == r.core.tracker.frames_received == 96000
+
+
+def _hold_inside(r, monkeypatch, name, when):
+    inside, release = threading.Event(), threading.Event()
+    real = getattr(r.core.worker, name)
+
+    def held(*args):
+        if when(*args):
+            inside.set()
+            release.wait(5)
+        return real(*args)
+
+    monkeypatch.setattr(r.core.worker, name, held)
+    worker = threading.Thread(target=r.core.measure_pending)
+    worker.start()
+    assert inside.wait(5)
+    return worker, release
+
+
+def _held_stop(r, worker, release):
+    assert r.core.begin_stop("listen_stop", request_id="stop-1")
+    terminal = r.core.finish_stop(drain_ns=20 * MS)
+    release.set()
+    worker.join(5)
+    return terminal
+
+
+def _accounted(terminal):
+    work, (master,) = terminal["worker"], terminal["routes"]
+    return (master["frames_measured"] + work["unmeasured_frames"] + work["unaccounted_frames"]
+            + work["lag_frames"])
+
+
+@pytest.mark.parametrize("coalesce", [1, 5])
+def test_a_stop_holding_a_worker_mid_block_counts_each_frame_once_whatever_the_block_already_published(
+        monkeypatch, coalesce):
+    r = build_core(script(stereo_tone(48000), block=512), window_frames=4800, coalesce=coalesce)
+    for _ in range(40):
+        r.core.ingest(r.adapter.read(10 * MS))
+    received = r.core.tracker.frames_received
+    adds = []
+
+    def eleventh(d, frame, pcm):
+        adds.append(frame)
+        return len(adds) == 11
+
+    worker, release = _hold_inside(r, monkeypatch, "_add", eleventh)
+    assert adds[-1] == 4800 and r.core.worker._inflight.start_frame == 4608
+    terminal = _held_stop(r, worker, release)
+    work, (master,) = terminal["worker"], terminal["routes"]
+    assert received == 10240 and _accounted(terminal) == received
+    assert master["frames_measured"] == 4800 and work["unmeasured_at_stop_frames"] == 320
+    assert work["lag_frames"] == 5120 and work["unmeasured_at_stop_is_upper_bound"] is False
+    assert evidence(r.events("signal_level")[-1])["truncated_by"] == ("stop" if coalesce > 1 else None)
+    after = r.core.worker.snapshot()
+    assert {k: after[k] for k in WORKER_TERMINAL_KEYS} == {k: work[k] for k in WORKER_TERMINAL_KEYS}
+
+
+def test_a_stop_holding_a_worker_publishes_and_counts_the_unmeasured_span_it_had_open(monkeypatch):
+    r = build_core(script(stereo_tone(96000)), window_frames=480, coalesce=1, ring_seconds=1)
+    for _ in range(200):
+        r.core.ingest(r.adapter.read(50 * MS))
+    worker, release = _hold_inside(r, monkeypatch, "_measure", lambda d: d.ring_pos == 4800)
+    assert r.core.worker._unmeasured.frames == 4800
+    terminal = _held_stop(r, worker, release)
+    work = terminal["worker"]
+    (overrun,) = r.events("measurement_overrun")
+    assert evidence(overrun)["cause"] == "measurement_lag" and spans([overrun]) == [(0, 4800)]
+    assert overrun["sequence"] < r.events("runtime_stopped")[0]["sequence"]
+    assert (work["overruns"], work["unmeasured_frames"], work["unmeasured_at_stop_frames"]) == (1, 4800, 0)
+    assert _accounted(terminal) == r.core.tracker.frames_received == 96000
+    assert work["lag_frames"] == 96000 - 4800 and work["unmeasured_at_stop_is_upper_bound"] is False
+
+
+def test_a_stop_holding_a_worker_counts_an_open_span_it_lost_track_of_as_unaccounted(monkeypatch):
+    r = build_core(script(stereo_tone(9600), RESET, stereo_tone(4800), RESET, stereo_tone(9600)),
+                   window_frames=480, coalesce=1, facts_capacity=1, descriptor_capacity=4)
+    while True:
+        item = r.adapter.read(50 * MS)
+        r.core.ingest(item)
+        if isinstance(item, AdapterEvent) and item.type in ENDING_EVENTS:
+            break
+    inside, release, real = threading.Event(), threading.Event(), r.core.worker._unmeasured_span
+
+    def span(start, frames, received_ns, **kwargs):
+        if kwargs["cause"] == "measurement_lag":
+            inside.set()
+            release.wait(5)
+        return real(start, frames, received_ns, **kwargs)
+
+    monkeypatch.setattr(r.core.worker, "_unmeasured_span", span)
+    worker = threading.Thread(target=r.core.measure_pending)
+    worker.start()
+    assert inside.wait(5) and r.core.worker._unmeasured[1:3] == (0, 7680)
+    assert r.core.worker._unmeasured.cause == "facts_queue_full"
+    terminal = _held_stop(r, worker, release)
+    work = terminal["worker"]
+    unaccounted = r.events("frames_unaccounted")
+    assert [(e["stream_epoch"][-2:], *spans([e])[0]) for e in unaccounted][-1] == ("s3", 0, 7680)
+    assert unaccounted[-1]["sequence"] < r.events("runtime_stopped")[0]["sequence"]
+    assert work["unaccounted_frames"] == 9600 + 4800 + 7680 and work["unmeasured_at_stop_frames"] == 480
+    assert _accounted(terminal) == r.core.tracker.frames_received == 24000
+
+
+def test_a_stop_holding_a_worker_counts_only_received_frames_after_it_lost_track_of_a_gap(monkeypatch):
+    r = build_core(script(stereo_tone(4800), gap(480), stereo_tone(4800)), window_frames=4800, coalesce=1,
+                   facts_capacity=1)
+    while True:
+        item = r.adapter.read(50 * MS)
+        r.core.ingest(item)
+        if isinstance(item, AdapterEvent) and item.type in ENDING_EVENTS:
+            break
+    worker, release = _hold_inside(r, monkeypatch, "_add", lambda d, frame, pcm: frame == 9120)
+    assert r.core.worker._window.frames == 3840
+    terminal = _held_stop(r, worker, release)
+    work, (master,) = terminal["worker"], terminal["routes"]
+    (unaccounted,) = r.events("frames_unaccounted")
+    assert spans([unaccounted]) == [(4800, 480)] and work["unaccounted_frames"] == 480
+    assert (work["unmeasured_at_stop_frames"], work["lag_frames"]) == (3840 + 480, 480)
+    assert master["frames_measured"] + work["unmeasured_frames"] + work["lag_frames"] \
+        == r.core.tracker.frames_received == 9600
+
+
+@pytest.mark.parametrize("change", [gap(4800), {"kind": "counter_backward", "delta_frames": -4800}],
+                         ids=["gap", "new_stream"])
+def test_a_stop_holding_a_worker_after_a_fact_counts_the_frames_that_fact_accounted_for_once(monkeypatch,
+                                                                                            change):
+    r = build_core(script(stereo_tone(48000), change, stereo_tone(48000)), window_frames=480, coalesce=1,
+                   descriptor_capacity=8)
+    while True:
+        item = r.adapter.read(50 * MS)
+        r.core.ingest(item)
+        if isinstance(item, AdapterEvent) and item.type in ENDING_EVENTS:
+            break
+    worker, release = _hold_inside(r, monkeypatch, "_measure", lambda d: True)
+    terminal = _held_stop(r, worker, release)
+    work = terminal["worker"]
+    assert _accounted(terminal) == r.core.tracker.frames_received == 96000
+    counts = (work["unmeasured_frames"], work["unmeasured_at_stop_frames"], work["lag_frames"])
+    assert counts == (48000, 0, 48000)
+    assert work["unmeasured_at_stop_is_upper_bound"] is False
+
+
+def test_a_stop_holding_a_worker_still_interrupts_a_near_silence_span_and_counts_it(monkeypatch):
+    r = build_core(script(silence(48000 * 4)), window_frames=480, coalesce=1, min_ms=2000)
+    for _ in range(300):
+        r.core.ingest(r.adapter.read(50 * MS))
+    r.core.measure_pending()
+    assert [evidence(e)["state"] for e in r.events("near_silence")] == ["started"]
+    for _ in range(50):
+        r.core.ingest(r.adapter.read(50 * MS))
+    worker, release = _hold_inside(r, monkeypatch, "_measure", lambda d: True)
+    terminal = _held_stop(r, worker, release)
+    (_, interrupted) = r.events("near_silence")
+    ended = evidence(interrupted)
+    assert (ended["state"], ended["interrupted_by"]) == ("interrupted", "stop")
+    assert interrupted["sequence"] < r.events("runtime_stopped")[0]["sequence"]
+    assert terminal["routes"][0]["near_silence_frames"] == interrupted["interval"]["frames"] > 0
+    assert _accounted(terminal) == r.core.tracker.frames_received
+
+
+def test_a_stop_that_cant_take_the_worker_lock_says_its_count_is_an_upper_bound(monkeypatch):
+    r = build_core(script(stereo_tone(48000)), window_frames=480, coalesce=5)
+    for _ in range(42):
+        r.core.ingest(r.adapter.read(10 * MS))
+    r.core.measure_pending()
+    for _ in range(20):
+        r.core.ingest(r.adapter.read(10 * MS))
+    taken, done = threading.Event(), threading.Event()
+
+    def hold():
+        with r.core._measure_lock, r.core.worker._lock:
+            taken.set()
+            done.wait(5)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    assert taken.wait(5)
+    terminal = _held_stop(r, holder, done)
+    work, (master,) = terminal["worker"], terminal["routes"]
+    assert work["unmeasured_at_stop_is_upper_bound"] is True and master["frames_measured"] == 40 * 480
+    assert (work["unmeasured_at_stop_frames"], work["lag_frames"]) == (2 * 480, 20 * 480)
+    assert _accounted(terminal) == r.core.tracker.frames_received
+    assert all(evidence(e)["truncated_by"] is None for e in r.events("signal_level"))
+
+
+@pytest.mark.parametrize("hold", ["_take_unmeasured", "_truncate"])
+def test_a_stop_that_cant_wait_while_measurement_places_frames_it_lost_track_of_still_bounds_them(monkeypatch,
+                                                                                                 hold):
+    r = build_core(script(stereo_tone(4800), gap(480), stereo_tone(96000), block=480), window_frames=480,
+                   coalesce=1, facts_capacity=1, descriptor_capacity=4, ring_seconds=1)
+    while True:
+        item = r.adapter.read(50 * MS)
+        r.core.ingest(item)
+        if isinstance(item, AdapterEvent) and item.type in ENDING_EVENTS:
+            break
+    worker, release = _hold_inside(r, monkeypatch, hold,
+                                   lambda *args: threading.current_thread() is not threading.main_thread())
+    assert r.core.worker._ring_end == 99360 and r.core.worker._unmeasured is None
+    terminal = _held_stop(r, worker, release)
+    work, (master,) = terminal["worker"], terminal["routes"]
+    received = r.core.tracker.frames_received
+    assert received == 100800 and work["unmeasured_at_stop_is_upper_bound"] is True
+    assert received - master["frames_measured"] - work["lag_frames"] <= work["unmeasured_at_stop_frames"]
+    assert _accounted(terminal) >= received
+
+
+def test_a_drained_stop_waits_out_a_reader_holding_the_worker_lock_and_seals_an_exact_count(monkeypatch):
+    r = build_core(script(stereo_tone(9600)), window_frames=480, coalesce=1)
+    for _ in range(10):
+        r.core.ingest(r.adapter.read(50 * MS))
+    r.core.measure_pending()
+    flush, taken = r.core.worker.flush, threading.Event()
+
+    def hold():
+        with r.core.worker._lock:
+            taken.set()
+            time.sleep(0.2)
+
+    def flush_then_a_reader(cause="stop"):
+        flush(cause)
+        threading.Thread(target=hold).start()
+        assert taken.wait(5)
+
+    monkeypatch.setattr(r.core.worker, "flush", flush_then_a_reader)
+    assert r.core.begin_stop("listen_stop", request_id="stop-1")
+    work = r.core.finish_stop(drain_ns=20 * MS)["worker"]
+    assert work["drain"] == "complete" and work["unmeasured_at_stop_is_upper_bound"] is False
+    assert work["unmeasured_at_stop_frames"] == 0
+
+
+@pytest.mark.parametrize("coalesce", [1, 5])
+def test_a_stop_that_cant_wait_for_a_level_being_published_counts_its_frames_once(monkeypatch, coalesce):
+    r = build_core(script(stereo_tone(48000)), window_frames=480, coalesce=coalesce)
+    for _ in range(40):
+        r.core.ingest(r.adapter.read(10 * MS))
+    publish, inside, release = r.core.worker._publish, threading.Event(), threading.Event()
+
+    def held(event):
+        sequence = publish(event)
+        if evidence(event)["type"] == "signal_level" and not inside.is_set():
+            inside.set()
+            release.wait(5)
+        return sequence
+
+    monkeypatch.setattr(r.core.worker, "_publish", held)
+    worker = threading.Thread(target=r.core.measure_pending)
+    worker.start()
+    assert inside.wait(5)
+    terminal = _held_stop(r, worker, release)
+    work, (master,) = terminal["worker"], terminal["routes"]
+    assert work["unmeasured_at_stop_is_upper_bound"] is True and master["frames_measured"] == 480 * coalesce
+    assert _accounted(terminal) == r.core.tracker.frames_received
+
+
+def test_a_stop_between_two_routes_levels_for_a_window_leaves_no_route_more_unmeasured_than_it_counts(
+        monkeypatch):
+    routes = MASTER + ({"route_id": "aux", "role": "unlabeled", "channels": [2, 3]},)
+    r = build_core(script(stereo_tone(48000)), routes, window_frames=480, coalesce=1)
+    for _ in range(40):
+        r.core.ingest(r.adapter.read(10 * MS))
+    worker, release = _hold_inside(r, monkeypatch, "_route_window",
+                                   lambda window: window.route.route_id == "aux")
+    terminal = _held_stop(r, worker, release)
+    work = terminal["worker"]
+    measured = {row["route_id"]: row["frames_measured"] for row in terminal["routes"]}
+    assert measured == {"master": 480, "aux": 0} and work["unmeasured_at_stop_is_upper_bound"] is True
+    rest = work["unmeasured_frames"] + work["unaccounted_frames"] + work["lag_frames"]
+    assert measured["aux"] + rest == r.core.tracker.frames_received < measured["master"] + rest
 
 
 @pytest.mark.parametrize("slow_blocks, drain, measured", [("last", "complete", 4800),
@@ -2265,6 +2626,22 @@ def test_a_fault_on_a_later_route_counts_that_routes_window_too(monkeypatch):
     accounts = _route_accounts(terminal, 120000)
     assert fired and terminal["worker"]["state"] == "failed"
     assert accounts["aux"] == 0 and 0 <= accounts["master"] <= 4800
+
+
+def test_a_fault_while_a_gap_is_accounted_counts_no_missing_frame_as_received(monkeypatch):
+    r = build_core(script(stereo_tone(4800), gap(9600), stereo_tone(48000)), descriptor_capacity=8)
+    while True:
+        item = r.adapter.read(50 * MS)
+        r.core.ingest(item)
+        if isinstance(item, AdapterEvent) and item.type in ENDING_EVENTS:
+            break
+    fired = _one_shot_fault(monkeypatch, r.core.worker, "_close_window")
+    r.core.measure_pending()
+    terminal = r.stop()
+    work, (master,) = terminal["worker"], terminal["routes"]
+    assert fired and work["state"] == "failed" and work["unmeasured_at_stop_frames"] == 0
+    assert master["frames_measured"] + work["unmeasured_frames"] == r.core.tracker.frames_received == 52800
+    assert work["unmeasured_after_failure_frames"] == 52800 - master["frames_measured"]
 
 
 def test_blocks_overwritten_while_a_failed_worker_wasnt_reading_are_counted(monkeypatch):

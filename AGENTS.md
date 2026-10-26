@@ -29,15 +29,17 @@ all other saved XML and media must be preserved. Use normal Thread validation.
 
 For Listen, copy input only: never change a device, route or transport, write
 audio or take a device for exclusive use. Run only helper builds
-listen_build_helper recorded in this user's registry, and signal only the
-adapter's own child process, never a PID read from a file. Never meter, keep or
-report cue channels without a routing test. listen_observe and listen_events
-stay reads, every lost event shows as a missing range or an explicit refusal,
-and no new error code is added. Native capture stays unqualified
-(native_verified false) until separate native acceptance; the synthetic
-adapter and fake helper are not evidence of CoreAudio behavior. Fake-helper
-records run the real CoreAudio path, so they say audio_source device_input;
-they exist only in test temporary folders, so never cite one as evidence.
+listen_build_helper recorded in this user's registry, and signal only child
+processes Listen itself spawned (the capture helper, the list-devices probe, a
+swiftc build that timed out), never a PID read from a file or from the helper.
+Never meter, keep or report cue channels without a routing test. listen_observe
+and listen_events stay reads, every lost event shows as a missing range or an
+explicit refusal, and no new error code is added. Native capture stays
+unqualified (native_verified false) until separate native acceptance; the
+synthetic adapter and fake helper are not evidence of CoreAudio behavior.
+Fake-helper records run the real CoreAudio path, so they say audio_source
+device_input; they exist only in test temporary folders, so never cite one as
+evidence.
 
 For selection work, preserve a deterministic annotated baseline alongside creative variants. Slot contours are planning intent, not measurements. Keep route/pair feedback scoped to exact bag and brief identities; keep live decisions in a revision-checked shared session. Do not interpret playlist order, heuristic score or embedding similarity as audition, phrase alignment or mix compatibility. Models operate on independently sourced local audio and user-authored intent, not imported Spotify content. Never run inference or network requests in the live suggestion loop.
 

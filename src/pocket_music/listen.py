@@ -27,7 +27,7 @@ DESCRIPTOR_BYTES = 64
 FACTS_CAPACITY = 1024
 WORKER_KEYS = ("state", "error", "lag_frames", "overruns", "unmeasured_frames", "unmeasured_after_failure_frames",
                "unaccounted_frames", "facts_dropped")
-WORKER_TERMINAL_KEYS = (*WORKER_KEYS, "unmeasured_at_stop_frames", "suppressed_after_stop")
+WORKER_TERMINAL_KEYS = (*WORKER_KEYS, "unmeasured_at_stop_frames", "unmeasured_at_stop_is_upper_bound")
 SAMPLE_RATES = listen_native.SAMPLE_RATES
 
 
@@ -73,6 +73,7 @@ _ROLE_WORD_HINT = ("Use a route_id with a word that starts with 'cue' or 'master
 _NAMESPACE_HINT = ("Synthetic devices use uids starting with 'synthetic:'; the CoreAudio adapter never "
                    "accepts them.")
 _DIRECTORY_HINT = "Choose a new output_dir; Listen never reuses or overwrites a directory."
+CURSOR_AHEAD_HINT = "Use the cursor listen_start or listen_observe returned; Listen never clamps a cursor."
 _WRITABLE_HINT = "Choose a new output_dir in a writable location."
 _OWNERSHIP_HINT = ("Choose an output_dir on a volume that enforces ownership; on one that ignores it, every "
                    "account counts as the owner of every file.")
@@ -590,6 +591,7 @@ def _memory(config, metered):
              "helper_ring_bytes": listen_native.helper_ring_frames(rate) * channels * 4 if native else None,
              "adapter_queue_max_bytes": (listen_native.ADAPTER_QUEUE_FRAMES * listen_native.MAX_BLOCK_FRAMES
                                          * channels * 4) if native else None,
+             "adapter_decoder_max_bytes": listen_native.DECODER_BUFFER_BYTES if native else None,
              "descriptor_ring_bytes": DESCRIPTOR_CAPACITY * DESCRIPTOR_BYTES,
              "measurement_scratch_bytes": config["measurement"]["window_frames"] * channels * 4,
              "broker_max_bytes": config["delivery"]["normal_retention_bytes"]
@@ -619,6 +621,12 @@ def _new_directory(output_dir):
     named = Path(output_dir).expanduser()
     try:
         named.parent.mkdir(parents=True, exist_ok=True)
+    except FileExistsError as error:
+        raise PocketError(f"Can't create {named}: {named.parent} isn't a directory", code="io_error",
+                          hint=_WRITABLE_HINT) from error
+    except OSError as error:
+        raise PocketError(f"Can't create {named}: {error}", code="io_error", hint=_WRITABLE_HINT) from error
+    try:
         if listen_native.volume_ignores_ownership(str(named.parent)):
             raise PocketError(f"{named.parent} is on a volume that ignores ownership", code="io_error",
                               hint=_OWNERSHIP_HINT)
@@ -652,7 +660,7 @@ def _terminal_summary(handle, record, *, include_handle=True):
                "capture": {"final_state": capture.get("final_state"),
                            "ended_cause": capture.get("ended_cause"),
                            "refusal_reasons": refusal.get("reasons") if isinstance(refusal, dict) else None,
-                           "missing": capture.get("missing"),
+                           "missing": capture.get("missing"), "after_end": capture.get("after_end"),
                            "stale_episodes": capture.get("stale_episodes")},
                "routes": record.get("routes"), "worker": record.get("worker"),
                "broker": record.get("broker"), "journal": record.get("journal"), "stop": record.get("stop")}
@@ -723,11 +731,12 @@ def listen_devices(adapter: ListenAdapter) -> dict:
         from .listen_adapters import synthetic_inventory
         rows = list(synthetic_inventory(resolved["script"]))
         return receipt(devices=rows, devices_omitted=len(resolved["script"]["devices"]) - len(rows),
-                       adapter_profile=SYNTHETIC_PROFILE, microphone_authorization="not_applicable",
+                       devices_unreadable=0, adapter_profile=SYNTHETIC_PROFILE,
+                       microphone_authorization="not_applicable", macos_version="not_applicable", build=None,
                        notices=order_notices(_device_notices(rows, "not_applicable")
                                              + [notice("synthetic_audio")]),
                        coverage=coverage("synthetic_script", device_opened=False, stream_opened=False,
-                                         helper_executed=False),
+                                         helper_executed=False, helper_mode=None),
                        next_actions=["listen_prepare with device.uid set to one of these uids"])
     if sys.platform != "darwin":
         raise PocketError("The CoreAudio adapter runs on macOS only", code="unsupported_profile",
@@ -901,6 +910,9 @@ _ENDED_ACTIONS = [("listen_stop with this runtime_epoch and a new request_id end
 _STOPPING_STEP = ("The runtime began stopping ({cause}) while this start waited, so it isn't capturing. "
                   "listen_request_status with this request_id shows whether its terminal is sealed, and "
                   "listen_observe then summarizes it; listen_start with a new request_id starts again")
+_STOPPED_UNVERIFIED_STEP = ("The runtime stopped ({cause}) while this start waited, and its terminal "
+                            "record doesn't verify, so Listen can't say what it captured. Keep the session "
+                            "directory unchanged; listen_start with a new request_id starts again")
 _ROUTE_KEYS = ("route_id", "role", "channels", "channels_exposed", "availability", "metering",
                "semantic_status", "reason", "route_calibration_id")
 _CAPTURE_KEYS = ("adapter", "device", "device_instance_epoch", "topology_epoch", "format", "clocks",
@@ -917,12 +929,9 @@ def _running_receipt(root, session, request_id, runtime_dir, runtime, outcome, c
     stopping = (observed.get("state") or ping.get("runtime_state")) in ("stopping", "stopped")
     ended = state in ("ended", "failed")
     if stopping:
-        try:
-            terminal = listen_host.read_terminal(root, runtime_dir)
-        except PocketError:
-            terminal = None
         return _stopped_receipt(root, session, request_id, runtime_dir, runtime,
-                                {"terminal": terminal, "exit_code": None,
+                                {"terminal": None, "exit_code": None,
+                                 "stop_cause": (observed.get("stop") or {}).get("cause"),
                                  "ping": {"runtime_state": observed.get("state") or ping.get("runtime_state"),
                                           "frames_received": frames}},
                                 {**common, "start_outcome": "stopped_during_start"})
@@ -945,7 +954,8 @@ def _running_receipt(root, session, request_id, runtime_dir, runtime, outcome, c
                             "ended_cause": capture.get("ended_cause", ping.get("capture_cause")),
                             **{k: capture.get(k) for k in _CAPTURE_KEYS},
                             "frames_received": frames,
-                            "routes": [{k: r.get(k) for k in _ROUTE_KEYS}
+                            "routes": [{**{k: r.get(k) for k in _ROUTE_KEYS},
+                                        **{k: r[k] for k in ("isolated_cue",) if k in r}}
                                        for r in observation.get("routes") or []]},
                    capture_snapshot="observed" if snapshot is not None else "unavailable",
                    device_instance_changed_since_previous_runtime=_device_changed(
@@ -1010,15 +1020,24 @@ def _refused_receipt(root, session, request_id, runtime_dir, runtime, outcome, c
 
 
 def _stopped_receipt(root, session, request_id, runtime_dir, runtime, outcome, common):
-    if outcome["terminal"] is None:
+    terminal, reason = outcome["terminal"], None
+    if terminal is None:
+        try:
+            terminal = listen_host.read_terminal(root, runtime_dir)
+        except PocketError:
+            reason = "terminal_integrity_mismatch"
+    if terminal is None:
         frames = (outcome["ping"] or {}).get("frames_received")
+        cause = outcome.get("stop_cause") or "a stop request"
+        step = (_STOPPED_UNVERIFIED_STEP if reason else _STOPPING_STEP).format(cause=cause)
         return receipt(request_id, status="partial",
                        stopped_runtime={**runtime, "terminal": None, "exit_code": outcome["exit_code"]},
                        runtime_state=(outcome["ping"] or {}).get("runtime_state"),
+                       **({"reason": reason} if reason else {}),
                        coverage=coverage(_audio_source(session, read=type(frames) is int and frames > 0),
                                          capture="stopped"),
-                       next_actions=[_STOPPING_STEP.format(cause="its terminal isn't sealed yet")], **common)
-    handle, record = outcome["terminal"]
+                       next_actions=[step], **common)
+    handle, record = terminal
     return receipt(request_id, status="partial",
                    stopped_runtime={**runtime, "terminal": handle, "exit_code": outcome["exit_code"]},
                    terminal=_terminal_summary(handle, record, include_handle=False),
@@ -1244,6 +1263,9 @@ def _unread_after_stop(root, after):
     sealed = record["terminal"] == "sealed"
     last = (record.get("broker") or {}).get("last_sequence") if sealed else record["journal"]["last_sequence"]
     found = {**found, "last_sequence": last if type(last) is int else None, "journal": record.get("journal")}
+    if sealed and type(last) is int and last < after["sequence"]:
+        raise PocketError(f"after.sequence {after['sequence']} is ahead of that runtime's last event {last}",
+                          hint=CURSOR_AHEAD_HINT)
     if type(last) is not int or last <= after["sequence"]:
         return found, []
     kept = "runtime_journal" if _journal_complete(record) else "runtime_journal_incomplete"
@@ -1362,6 +1384,10 @@ _NO_TERMINAL_STEP = ("The runtime stopped without a sealed terminal record; its 
 _DRAIN_STEP = ("Measurement didn't finish within the stop bound: terminal.worker.unmeasured_at_stop_frames "
                "received frames (and any terminal.worker.lag_frames) have no levels, and each route's totals "
                "cover only its frames_measured")
+_UPPER_BOUND_STEP = ("Measurement was in the middle of an update the stop couldn't wait for, so "
+                     "terminal.worker.unmeasured_at_stop_frames is an upper bound, the levels it had ready "
+                     "weren't published, and a near-silence span that had started may have no ended or "
+                     "interrupted event")
 _JOURNAL_STEP = ("The runtime journal didn't keep every line (terminal.journal: state {state}, {dropped} "
                  "lines dropped, {unwritten} unwritten at close; terminal.broker.publish_hook_errors: {hooks} "
                  "events never reached it); the sealed terminal doesn't depend on it")
@@ -1382,8 +1408,12 @@ _UNDELIVERED_STEP = ("The macOS helper ended with {blocks} blocks ({frames} fram
                      "but not sent, such as when a device change ended capture; no event covers them, so "
                      "capture's frames end before them (terminal.stop.adapter_exit.counters)")
 _TAIL_DROPS_STEP = ("The macOS helper counted {frames} frames dropped after the last block capture took; no "
-                    "frames_missing event covers them, since no later block reached capture "
+                    "frames_missing event covers them, since capture placed no block after them "
                     "(terminal.stop.helper_drops_after_last_block_frames)")
+_AFTER_END_STEP = ("Capture ended ({cause}) before the stop, and the input sent {blocks} more blocks "
+                   "({frames} frames) after that, which capture didn't place: no level, health event or "
+                   "frame total covers them (terminal.capture.after_end, which also counts input events "
+                   "after the end)")
 _FAILED_RUNTIME_STEP = "The runtime failed; terminal.error says why"
 _CLEAN_CLOSE = (None, "clean", "not_started")
 
@@ -1413,12 +1443,14 @@ def _stop_caveats(record):
     worker, stop = record.get("worker") or {}, record.get("stop") or {}
     close = stop.get("adapter_close")
     steps = (_DRAIN_STEP if worker.get("drain") == "incomplete" else None,
+             _UPPER_BOUND_STEP if worker.get("unmeasured_at_stop_is_upper_bound") else None,
              _FAILED_WORKER_STEP if worker.get("state") == "failed" else None,
              _overrun_step(worker),
              _unaccounted_step(worker),
              None if close in _CLEAN_CLOSE else _CLOSE_STEP.format(close=close),
              _undelivered_step(stop),
              _tail_drops_step(stop),
+             _after_end_step(record.get("capture") or {}),
              _FAILED_RUNTIME_STEP if record.get("state") == "failed" else None,
              _journal_step(record))
     return [step for step in steps if step is not None]
@@ -1450,6 +1482,14 @@ def _tail_drops_step(stop):
     if type(frames) is not int or frames <= 0:
         return None
     return _TAIL_DROPS_STEP.format(frames=f"{frames:,}")
+
+
+def _after_end_step(capture):
+    after = capture.get("after_end") or {}
+    if not after.get("blocks"):
+        return None
+    return _AFTER_END_STEP.format(cause=capture.get("ended_cause"), blocks=f"{after['blocks']:,}",
+                                  frames=f"{after['frames']:,}")
 
 
 def _journal_step(record):

@@ -19,6 +19,7 @@ import numpy as np
 from .artifact_store import canonical_bytes, digest
 from .errors import PocketError, contained
 from .listen import (
+    CURSOR_AHEAD_HINT,
     DESCRIPTOR_CAPACITY,
     EVENT_MAX_BYTES,
     FACTS_CAPACITY,
@@ -52,7 +53,6 @@ _INTEGRAL_TOLERANCE = 1e-6
 _PLAYBACK_CAVEAT = ("playback_stopped",)
 _SILENCE_CAVEATS = ("stopped_transport", "dropout", "intended_ending")
 _PUBLISHED_PLACEHOLDER = {"sequence": 2 ** 53, "published_monotonic_ns": 2 ** 63 - 1}
-_CURSOR_AHEAD_HINT = "Use the cursor listen_start or listen_observe returned; Listen never clamps a cursor."
 _ADAPTER_STAT_KEYS = ("helper_dropped_frames", "helper_dropped_blocks", "oversize_blocks", "layout_mismatch_blocks",
                       "scripted_dropped_frames", "blocks_generated", "device_period_ns", "callback_ns",
                       "blocks", "helper_blocks_written", "queued_items", "queued_audio_frames",
@@ -141,6 +141,7 @@ class Fact:
     interval: tuple[int, int] | None = None
     state_transition: tuple[str, str] | None = None
     affected_routes: tuple[str, ...] | None = None
+    ring_pos: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,8 +405,8 @@ class StreamTracker:
         self._record = None
         self._streams = deque(maxlen=STREAM_RECORDS)
         self._streams_omitted = 0
-        self._counts = {"blocks": 0, "blocks_after_end": 0, "events_after_end": 0, "processor_overloads": 0,
-                        "devices_changed": 0}
+        self._counts = {"blocks": 0, "processor_overloads": 0, "devices_changed": 0}
+        self._after_end = {"blocks": 0, "frames": 0, "events": {}}
 
     @property
     def capture_state(self):
@@ -478,7 +479,9 @@ class StreamTracker:
     def observe_block(self, block):
         with self._lock:
             if self._state in _FINAL_STATES:
-                self._counts["blocks_after_end"] += 1
+                if self._state != "stopped":
+                    self._after_end["blocks"] += 1
+                    self._after_end["frames"] += block.frames
                 return None, ()
             received = block.received_monotonic_ns
             dropped = max(0, block.adapter_dropped_frames_total - self._dropped)
@@ -520,7 +523,9 @@ class StreamTracker:
     def observe_event(self, event):
         with self._lock:
             if self._state in _FINAL_STATES:
-                self._counts["events_after_end"] += 1
+                if self._state != "stopped":
+                    events = self._after_end["events"]
+                    events[event.type] = events.get(event.type, 0) + 1
                 return ()
             received = event.received_monotonic_ns
             if event.type == "processor_overload":
@@ -557,6 +562,7 @@ class StreamTracker:
                     "last_block": dict(self._last) if self._last else None, "missing": dict(self._missing),
                     "last_exact_missing": dict(self._last_exact) if self._last_exact else None,
                     "adapter_dropped_frames_total": self._dropped,
+                    "after_end": {**self._after_end, "events": dict(self._after_end["events"])},
                     "streams": streams[-STREAM_RECORDS:], "streams_omitted": omitted, **self._counts}
 
 
@@ -669,12 +675,12 @@ class CaptureFeed:
     def committed(self):
         return self._committed
 
-    def _publish_locked(self, facts, ordinal):
+    def _publish_locked(self, facts, ordinal, ring_pos):
         for fact in facts:
             self._publish_now(fact if fact.stream_ordinal is not None
                               else replace(fact, stream_ordinal=ordinal))
             if fact.type in _ACCOUNTED_FACTS:
-                if not self.facts.push(self._next, fact):
+                if not self.facts.push(self._next, replace(fact, ring_pos=ring_pos)):
                     self._keep_stream_end(fact)
                 self._next += 1
 
@@ -711,18 +717,19 @@ class CaptureFeed:
                 item = AdapterEvent("helper_protocol_error", {"reason": "block_layout"},
                                     getattr(item, "received_monotonic_ns", 0))
             if isinstance(item, AdapterEvent):
-                self._publish_locked(self.tracker.observe_event(item), self.tracker.stream_ordinal)
+                self._publish_locked(self.tracker.observe_event(item), self.tracker.stream_ordinal,
+                                     self.ring.write_counter)
                 self._committed = self._next
                 return None
             before = self.tracker.stream_ordinal
             placement, facts = self.tracker.observe_block(item)
             if placement is None:
-                self._publish_locked(facts, before)
+                self._publish_locked(facts, before, self.ring.write_counter)
                 self._committed = self._next
                 return None
             resumed = self.watchdog.block_received(item.received_monotonic_ns)
             ring_pos = self.ring.write(item.pcm)
-            self._publish_locked((() if resumed is None else (resumed,)) + facts, before)
+            self._publish_locked((() if resumed is None else (resumed,)) + facts, before, ring_pos)
             self.descriptors.push(Descriptor(self._next, placement.stream_ordinal, placement.start_frame,
                                              placement.frames, ring_pos, item.received_monotonic_ns,
                                              placement.sample_time, placement.host_ns,
@@ -735,7 +742,7 @@ class CaptureFeed:
         with self._lock:
             facts, stop = self.watchdog.tick(now_ns, capture_active=self.tracker.capture_active,
                                              heartbeat_ns=heartbeat_ns, reader_backpressured=reader_backpressured)
-            self._publish_locked(facts, self.tracker.stream_ordinal)
+            self._publish_locked(facts, self.tracker.stream_ordinal, self.ring.write_counter)
         return stop
 
     def close(self, cause="stop"):
@@ -1126,84 +1133,103 @@ class MeasurementWorker:
         self._published_frames = {r.route_id: 0 for r in context.routes}
         self._cancel = threading.Event()
         self._sealed = threading.Event()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._counts_lock = threading.Lock()
+        self._frozen = None
+        self._at_seal = None
         self._state = "running"
         self._error = None
         self._overruns = 0
         self._unmeasured_frames = 0
         self._failed_frames = 0
         self._unaccounted_frames = 0
+        self._unaccounted_received = 0
         self._stop_frames = 0
-        self._suppressed = 0
         self._nonfinite = {r.route_id: False for r in context.routes}
         self._latest = {r.route_id: None for r in context.routes}
 
     @property
     def state(self):
-        with self._lock:
+        with self._counts_lock:
             return self._state
 
     def snapshot(self):
-        with self._lock:
-            routes = {rid: {"nonfinite": self._nonfinite[rid], "near_silence": self._silence[rid].activity,
-                            "latest_signal": None if self._latest[rid] is None else dict(self._latest[rid])}
-                      for rid in self._latest}
-            state, error, overruns, unmeasured = self._state, self._error, self._overruns, self._unmeasured_frames
-            failed_frames, suppressed = self._failed_frames, self._suppressed
-            unaccounted, stop_frames = self._unaccounted_frames, self._stop_frames
-        return {"state": state, "error": error, "lag_frames": max(0, self._feed.ring.write_counter - self._ring_end),
-                "overruns": overruns, "unmeasured_frames": unmeasured,
-                "unmeasured_after_failure_frames": failed_frames, "unaccounted_frames": unaccounted,
+        frozen = self._frozen
+        if frozen is not None:
+            return frozen
+        with self._lock, self._counts_lock:
+            return self._counts(self._ring_end)
+
+    def _counts(self, frontier, *, flushed=True):
+        routes = {rid: {"nonfinite": self._nonfinite[rid],
+                        "near_silence": self._silence[rid].activity if flushed else "unknown",
+                        "latest_signal": None if self._latest[rid] is None else dict(self._latest[rid])}
+                  for rid in self._latest}
+        return {"state": self._state, "error": self._error,
+                "lag_frames": max(0, self._feed.ring.write_counter - frontier),
+                "overruns": self._overruns, "unmeasured_frames": self._unmeasured_frames,
+                "unmeasured_after_failure_frames": self._failed_frames,
+                "unaccounted_frames": self._unaccounted_frames,
                 "facts_dropped": self._feed.facts.dropped_total,
-                "unmeasured_at_stop_frames": stop_frames, "suppressed_after_stop": suppressed,
-                "routes": routes}
+                "unmeasured_at_stop_frames": self._stop_frames,
+                "unmeasured_at_stop_is_upper_bound": not flushed, "routes": routes}
 
     def cancel(self):
         self._cancel.set()
 
-    def seal(self):
-        self._sealed.set()
+    def seal(self, timeout_s=None):
+        flushed = self._lock.acquire(timeout=-1 if timeout_s is None else timeout_s)
+        try:
+            if flushed:
+                now = self._clock.monotonic_ns()
+                for route in self._ctx.routes:
+                    with suppress(Exception):
+                        self._emit_all(self._coalescers[route.route_id].flush("stop"))
+                        self._emit_all(self._silence[route.route_id].interrupt("stop", now))
+            self._sealed.set()
+            with self._counts_lock:
+                run = self._count_unmeasured()
+                self._at_seal = (self._ring_end, self._unaccounted_received)
+                self._frozen = self._counts(self._ring_end, flushed=flushed)
+            if run is not None:
+                with suppress(Exception):
+                    self._publish(self._unmeasured_event(run))
+        finally:
+            if flushed:
+                self._lock.release()
+
+    def account_held(self, measured):
+        frozen, (frontier, unaccounted) = self._frozen, self._at_seal
+        held = frontier - measured - frozen["unmeasured_frames"] - unaccounted
+        self._frozen = {**frozen, "unmeasured_frames": frozen["unmeasured_frames"] + held,
+                        "unmeasured_at_stop_frames": frozen["unmeasured_at_stop_frames"] + held}
 
     def _emit(self, event):
-        if self._sealed.is_set():
-            with self._lock:
-                self._suppressed += 1
-            return None
-        sequence = self._publish(event)
-        if sequence is None:
-            with self._lock:
-                self._suppressed += 1
-            return None
-        evidence = event["evidence"]
-        if evidence.get("type") == "signal_level":
-            with self._lock:
-                self._latest[event["route_id"]] = {"evidence": evidence, "interval": event["interval"],
-                                                   "received_monotonic_ns": event["received_monotonic_ns"],
-                                                   "sequence": sequence}
-                self._published_frames[event["route_id"]] += evidence["frames_measured"]
-        return sequence
+        with self._lock:
+            if self._sealed.is_set():
+                return None
+            sequence = self._publish(event)
+            evidence = event["evidence"]
+            if sequence is not None and evidence.get("type") == "signal_level":
+                with self._counts_lock:
+                    self._latest[event["route_id"]] = {
+                        "evidence": evidence, "interval": event["interval"],
+                        "received_monotonic_ns": event["received_monotonic_ns"], "sequence": sequence}
+                    self._published_frames[event["route_id"]] += evidence["frames_measured"]
+            return sequence
 
     def _read_without_a_level(self):
         window = self._window
-        with self._lock:
+        with self._counts_lock:
             behind = max(self._windowed_frames - published for published in self._published_frames.values())
         return behind + (window.frames if window is not None else 0)
-
-    def account_held(self):
-        d = self._inflight
-        held = self._read_without_a_level()
-        held = max(0, held - (max(0, self._consumed - d.start_frame) if d is not None else 0))
-        with self._lock:
-            self._unmeasured_frames += held
-            self._stop_frames += held
-        return held
 
     def _emit_all(self, events):
         for event in events:
             self._emit(event)
 
     def _fail(self, error):
-        with self._lock:
+        with self._counts_lock:
             if self._state == "failed":
                 return
             self._state = "failed"
@@ -1214,7 +1240,6 @@ class MeasurementWorker:
         if d is not None:
             lost += max(0, d.start_frame + d.frames - self._consumed)
             self._cursor = max(self._cursor, d.start_frame + d.frames)
-            self._ring_end = d.ring_pos + d.frames
         with suppress(Exception):
             self._close_unmeasured()
         now = self._clock.monotonic_ns()
@@ -1223,14 +1248,15 @@ class MeasurementWorker:
                                         detail={"error_type": type(error).__name__, "error": str(error)[:300]}))
         for route in self._ctx.routes:
             rid = route.route_id
-            with suppress(Exception):
-                self._emit_all(self._coalescers[rid].flush("measurement_worker_failed"))
-                self._emit_all(self._silence[rid].interrupt("measurement_worker_failed", now))
-            self._silence[rid].interrupt_silently()
             with self._lock:
-                self._nonfinite[rid] = False
+                with suppress(Exception):
+                    self._emit_all(self._coalescers[rid].flush("measurement_worker_failed"))
+                    self._emit_all(self._silence[rid].interrupt("measurement_worker_failed", now))
+                self._silence[rid].interrupt_silently()
+                with self._counts_lock:
+                    self._nonfinite[rid] = False
         lost += self._read_without_a_level()
-        with self._lock:
+        with self._counts_lock:
             self._unmeasured_frames += lost
             self._failed_frames += lost
 
@@ -1277,17 +1303,37 @@ class MeasurementWorker:
         if run is not None:
             self._facts_dropped(run)
         if self.state == "failed":
-            start = self._cursor if item.stream_ordinal == self._stream else 0
-            skipped = max(0, item.start_frame - start)
-            unaccounted = skipped if self._gap_cause(item.ingest_index) == "facts_queue_full" else 0
-            with self._lock:
-                self._unmeasured_frames += item.frames + skipped - unaccounted
-                self._failed_frames += item.frames + skipped - unaccounted
-                self._unaccounted_frames += unaccounted
-            self._stream, self._cursor = item.stream_ordinal, max(start, item.start_frame + item.frames)
-            self._ring_end = item.ring_pos + item.frames
+            contained(partial(self._count_after_failure, item), on_error=self._fail)
         else:
             self._guarded(self._measure, item)
+
+    def _count_after_failure(self, d):
+        with self._lock:
+            lost = self._reach_ring(d.ring_pos, d.ring_pos + d.frames, self._gap_cause(d.ingest_index))
+            self._place(d)
+            with self._counts_lock:
+                self._count_failed(d.frames, unaccounted=False)
+                self._unaccounted_received += lost
+            self._cursor = max(self._cursor, d.start_frame + d.frames)
+
+    def _reach_ring(self, gap_end, frontier, cause):
+        with self._counts_lock:
+            lost = gap_end - self._ring_end if cause == "facts_queue_full" else 0
+            self._ring_end = frontier
+        return lost
+
+    def _lost_received(self, frames):
+        with self._counts_lock:
+            self._unaccounted_received += frames
+
+    def _count_failed(self, frames, *, unaccounted):
+        if frames <= 0:
+            return
+        if unaccounted:
+            self._unaccounted_frames += frames
+        else:
+            self._unmeasured_frames += frames
+            self._failed_frames += frames
 
     def _facts_dropped(self, run):
         self._facts_lost = True
@@ -1298,12 +1344,19 @@ class MeasurementWorker:
         self._guarded(self._truncate, cause, self._clock.monotonic_ns())
 
     def _on_fact(self, fact):
-        self._guarded(self._reach, fact)
-        self._guarded(self._account, fact)
-        if self.state == "failed" and fact.type == "frames_missing" and fact.stream_ordinal == self._stream:
-            self._cursor = max(self._cursor, sum(fact.interval))
-        if fact.type == "stream_started":
-            self._stream, self._stream_open, self._cursor = fact.stream_ordinal, True, 0
+        with self._lock:
+            lost = self._reach_ring(fact.ring_pos, fact.ring_pos, self._gap_cause())
+            live = self.state != "failed"
+            contained(partial(self._place_fact, fact, lost), on_error=self._fail)
+            if live and self.state == "failed":
+                contained(partial(self._place_fact, fact, lost), on_error=self._fail)
+            if fact.type == "stream_started":
+                self._stream, self._stream_open, self._cursor = fact.stream_ordinal, True, 0
+
+    def _place_fact(self, fact, lost):
+        self._reach(fact)
+        self._account(fact)
+        self._lost_received(lost)
 
     def _reach(self, fact):
         if fact.stream_ordinal is None:
@@ -1325,9 +1378,9 @@ class MeasurementWorker:
             at, frames = fact.interval
             if self._stream_open and at > self._cursor:
                 self._unmeasured_span(self._cursor, at - self._cursor, received, cause=self._gap_cause())
+            self._cursor = at + frames
             self._close_unmeasured()
             self._truncate("frames_missing", received)
-            self._cursor = at + frames
         elif fact.type == "stream_started":
             previous = fact.detail.get("previous_stream")
             self._end_stream(previous["end_frame"] if previous else None, received)
@@ -1341,28 +1394,17 @@ class MeasurementWorker:
         if end_frame is not None and end_frame > self._cursor:
             self._unmeasured_span(self._cursor, end_frame - self._cursor, received_ns,
                                   cause=self._gap_cause())
+            self._cursor = end_frame
         self._close_unmeasured()
         self._truncate("stream_ended", received_ns)
         self._stream_open = False
 
     def _measure(self, d):
-        self._inflight, self._consumed = d, d.start_frame
-        if d.stream_ordinal != self._stream or not self._stream_open:
-            self._skip_to_stream(d.stream_ordinal, d.received_ns)
-            self._stream, self._stream_open, self._cursor = d.stream_ordinal, True, 0
-        self._consumed = min(self._cursor, d.start_frame)
-        if d.start_frame > self._cursor:
-            overwritten = self._feed.descriptors.overwritten
-            if overwritten != self._seen_overwritten:
-                self._seen_overwritten = overwritten
-                target = self._feed.descriptors.position_half_behind()
-                if target is not None:
-                    self._skip_before = max(self._skip_before, target)
-            self._unmeasured_span(self._cursor, d.start_frame - self._cursor, d.received_ns,
-                                  cause=self._gap_cause(d.ingest_index))
-            self._consumed = d.start_frame
-        if d.ingest_index > self._lost_through:
-            self._facts_lost = False
+        with self._lock:
+            lost = self._reach_ring(d.ring_pos, d.ring_pos + d.frames, self._gap_cause(d.ingest_index))
+            self._inflight, self._consumed = d, d.start_frame
+            self._consumed = self._place(d)
+            self._lost_received(lost)
         ring = self._feed.ring
         size = self._window_frames
         offset = 0
@@ -1389,8 +1431,26 @@ class MeasurementWorker:
                 self._add(d, frame, pcm)
             offset += count
         self._cursor = max(self._cursor, d.start_frame + d.frames)
-        self._ring_end = d.ring_pos + d.frames
         self._inflight = None
+
+    def _place(self, d):
+        if d.stream_ordinal != self._stream or not self._stream_open:
+            self._skip_to_stream(d.stream_ordinal, d.received_ns)
+            self._stream, self._stream_open, self._cursor = d.stream_ordinal, True, 0
+        start = min(self._cursor, d.start_frame)
+        if d.start_frame > self._cursor:
+            overwritten = self._feed.descriptors.overwritten
+            if overwritten != self._seen_overwritten:
+                self._seen_overwritten = overwritten
+                target = self._feed.descriptors.position_half_behind()
+                if target is not None:
+                    self._skip_before = max(self._skip_before, target)
+            self._unmeasured_span(self._cursor, d.start_frame - self._cursor, d.received_ns,
+                                  cause=self._gap_cause(d.ingest_index))
+            start = d.start_frame
+        if d.ingest_index > self._lost_through:
+            self._facts_lost = False
+        return start
 
     def _skip_to_stream(self, ordinal, received_ns):
         ends, evicted_through = self._feed.take_stream_ends(ordinal - 1)
@@ -1401,8 +1461,7 @@ class MeasurementWorker:
         for skipped in range(1 if self._stream is None else self._stream + 1, ordinal):
             end = ends.get(skipped)
             if end is not None and end > 0:
-                self._close_unmeasured()
-                self._unmeasured = _UnmeasuredSpan(skipped, 0, end, received_ns, "facts_queue_full")
+                self._unmeasured_span(0, end, received_ns, cause="facts_queue_full", ordinal=skipped)
                 self._close_unmeasured()
             elif end is None and skipped <= evicted_through:
                 self._unknown_extent(skipped, 0, received_ns)
@@ -1433,9 +1492,10 @@ class MeasurementWorker:
             return False
         full = truncated_by is None and window.frames == self._window_frames
         with self._lock:
-            self._windowed_frames += window.frames
-        for route in self._ctx.routes:
-            self._route_window(window.route_window(route, full, truncated_by))
+            with self._counts_lock:
+                self._windowed_frames += window.frames
+            for route in self._ctx.routes:
+                self._route_window(window.route_window(route, full, truncated_by))
         return True
 
     def _route_window(self, window):
@@ -1444,7 +1504,7 @@ class MeasurementWorker:
         self._emit_all(coalescer.transition(window))
         if window.finite == self._nonfinite[route_id]:
             state = "ended" if window.finite else "started"
-            with self._lock:
+            with self._counts_lock:
                 self._nonfinite[route_id] = not window.finite
             self._emit(self._factory.health(
                 "nonfinite_input", received_ns=window.received_ns, cause="nonfinite_samples",
@@ -1456,45 +1516,64 @@ class MeasurementWorker:
         self._emit_all(coalescer.add(window))
 
     def _truncate(self, cause, received_ns):
-        if self._close_window(cause):
+        if self.state == "failed" or self._close_window(cause):
             return
-        for route in self._ctx.routes:
-            self._emit_all(self._coalescers[route.route_id].flush(cause))
-            self._emit_all(self._silence[route.route_id].interrupt(cause, received_ns))
+        with self._lock:
+            for route in self._ctx.routes:
+                self._emit_all(self._coalescers[route.route_id].flush(cause))
+                self._emit_all(self._silence[route.route_id].interrupt(cause, received_ns))
 
-    def _unmeasured_span(self, start, frames, received_ns, *, cause):
-        run = self._unmeasured
-        if (run is not None and run.ordinal == self._stream and run.start + run.frames == start
-                and run.cause == cause):
-            self._unmeasured = _UnmeasuredSpan(run.ordinal, run.start, run.frames + frames, received_ns,
-                                               cause)
-            return
+    def _unmeasured_span(self, start, frames, received_ns, *, cause, ordinal=None):
+        ordinal = self._stream if ordinal is None else ordinal
+        with self._counts_lock:
+            if self._state == "failed":
+                self._count_failed(frames, unaccounted=cause == "facts_queue_full")
+                return
+            run = self._unmeasured
+            if (run is not None and run.ordinal == ordinal and run.start + run.frames == start
+                    and run.cause == cause):
+                self._unmeasured = _UnmeasuredSpan(run.ordinal, run.start, run.frames + frames, received_ns,
+                                                   cause)
+                return
         self._close_unmeasured()
         self._truncate("frames_unaccounted" if cause == "facts_queue_full" else "measurement_overrun",
                        received_ns)
-        self._unmeasured = _UnmeasuredSpan(self._stream, start, frames, received_ns, cause)
+        with self._counts_lock:
+            self._unmeasured = _UnmeasuredSpan(ordinal, start, frames, received_ns, cause)
 
-    def _close_unmeasured(self):
+    def _take_unmeasured(self):
+        with self._counts_lock:
+            return self._count_unmeasured()
+
+    def _count_unmeasured(self):
         run, self._unmeasured = self._unmeasured, None
         if run is None:
-            return
+            return None
+        if run.cause == "facts_queue_full":
+            self._unaccounted_frames += run.frames
+        else:
+            self._overruns += 1
+            self._unmeasured_frames += run.frames
+            self._stop_frames += run.frames if run.cause == "stop_drain_bound" else 0
+        return run
+
+    def _unmeasured_event(self, run):
         ordinal, start, frames, received, cause = run
         interval = {"start_frame": start, "frames": frames}
         if cause == "facts_queue_full":
-            with self._lock:
-                self._unaccounted_frames += frames
-            self._emit(self._factory.health("frames_unaccounted", received_ns=received, cause=cause,
-                                            ordinal=ordinal, interval=(start, frames),
-                                            detail={"unaccounted": interval,
-                                                    "may_be": ["frames_missing", "measurement_overrun"]}))
-            return
-        with self._lock:
-            self._overruns += 1
-            self._unmeasured_frames += frames
-            self._stop_frames += frames if cause == "stop_drain_bound" else 0
-        self._emit(self._factory.health("measurement_overrun", received_ns=received, cause=cause,
+            return self._factory.health("frames_unaccounted", received_ns=received, cause=cause,
                                         ordinal=ordinal, interval=(start, frames),
-                                        detail={"unmeasured": interval, "exact": True}))
+                                        detail={"unaccounted": interval,
+                                                "may_be": ["frames_missing", "measurement_overrun"]})
+        return self._factory.health("measurement_overrun", received_ns=received, cause=cause,
+                                    ordinal=ordinal, interval=(start, frames),
+                                    detail={"unmeasured": interval, "exact": True})
+
+    def _close_unmeasured(self):
+        with self._lock:
+            run = self._take_unmeasured()
+            if run is not None:
+                self._emit(self._unmeasured_event(run))
 
 
 class _RetainedEvent(NamedTuple):
@@ -1660,7 +1739,7 @@ class EventBroker:
                         "now_monotonic_ns": self._clock.monotonic_ns(), "waited_ms": 0}
             if cursor > self._head:
                 raise PocketError(f"after.sequence {cursor} is ahead of this runtime's newest event "
-                                  f"{self._head}", hint=_CURSOR_AHEAD_HINT)
+                                  f"{self._head}", hint=CURSOR_AHEAD_HINT)
             if wait_ms > 0 and self._head == cursor and not self._closed:
                 self._cond.wait_for(lambda: self._head > cursor or self._closed, timeout=wait_ms / 1000)
             now = self._clock.monotonic_ns()
@@ -1908,9 +1987,7 @@ class ListenCore:
                     self.worker.run_pending(deadline_ns=self._clock.monotonic_ns() + drain_ns)
                 drain = "incomplete" if self.worker.account_rest() else "complete"
                 self.worker.flush("stop")
-            self.worker.seal()
-            if not drained:
-                self.worker.account_held()
+            self.worker.seal(None if drained else max(0.0, waits_end - time.monotonic()))
             snapshot = self.tracker.snapshot()
             with self._lock:
                 now = self._now(now_ns)
@@ -1921,6 +1998,9 @@ class ListenCore:
                     detail={"request_id": self._stop["request_id"], "worker_drain": drain,
                             "capture": {"final_state": snapshot["state"],
                                         "ended_cause": snapshot["ended_cause"]}}), final=True)
+                with self._totals_lock:
+                    measured = min(totals["frames_measured"] for totals in self._totals.values())
+                self.worker.account_held(measured)
             self._closed = True
         finally:
             if drained:
@@ -2004,7 +2084,7 @@ class ListenCore:
                         "stale_after_ms": watch["stale_after_ms"], "stale_episodes": watch["stale_episodes"],
                         "helper_unresponsive": unresponsive,
                         "missing": capture["missing"], "ended_cause": capture["ended_cause"],
-                        "adapter_stats": adapter},
+                        "after_end": capture["after_end"], "adapter_stats": adapter},
             "ring": {"capacity_frames": self.ring.capacity_frames, "bytes": self.ring.nbytes,
                      "retained": self._retained(capture), "retention": "in_memory_bounded_window_no_file"},
             "worker": {k: worker[k] for k in WORKER_KEYS},
@@ -2049,6 +2129,7 @@ class ListenCore:
                 "worker_state": worker["state"], "stream_epoch": capture["stream_epoch"],
                 "last_block_age_ms": None if last is None
                 else max(0, now - last["received_monotonic_ns"]) // MS_NS,
+                "blocks_after_end": capture["after_end"]["blocks"],
                 "routes": [{k: row[k] for k in ("route_id", "availability", "health", "near_silence")}
                            for row in self._route_rows(capture_state, worker, {}, now)]}
 
@@ -2091,9 +2172,9 @@ class ListenCore:
                         "device_instance_epoch": self.device_instance_epoch,
                         "topology_epoch": self.topology_epoch,
                         "streams": capture["streams"], "streams_omitted": capture["streams_omitted"],
-                        "missing": capture["missing"], "stale_episodes": watch["stale_episodes"],
+                        "missing": capture["missing"], "after_end": capture["after_end"],
+                        "stale_episodes": watch["stale_episodes"],
                         "adapter_dropped_frames_total": capture["adapter_dropped_frames_total"],
-                        "nonfinite_samples": sum(t["nonfinite_total"] for t in totals.values()),
                         "callback_ns": dict(callback) if isinstance(callback, dict) else None,
                         "unwatched_properties": stats.get("unwatched_properties"),
                         "adapter_stats_errors": self._stats_error_count(), "provenance": self.provenance},
@@ -2312,8 +2393,10 @@ class ListenCore:
                              + (f" ({capture['ended_cause']})" if capture["ended_cause"] else ""))
         stream = (f"stream {capture['stream_ordinal']}, {_thousands(capture['missing']['exact_frames'])} "
                   "missing frames" if capture["stream_ordinal"] else "no stream yet")
-        last = capture["last_block"]
-        age = "no block yet" if last is None else f"last block {watch['age_ms']} ms ago"
+        after = capture["after_end"]["blocks"]
+        age = (f"{_thousands(after)} block{'' if after == 1 else 's'} received since capture ended" if after
+               else "no block yet" if capture["last_block"] is None
+               else f"last block {watch['age_ms']} ms ago")
         return " · ".join([*parts, stream, age])
 
     def _notices(self, state, capture_state, capture, watch, worker, routes, journal, now, adapter=None):

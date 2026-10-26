@@ -326,6 +326,12 @@ def connection(tmp_path):
         folder.rmdir()
 
 
+def _names(where, path):
+    seen = os.fstat(where) if isinstance(where, int) else os.stat(where, follow_symlinks=False)
+    info = os.stat(path, follow_symlinks=False)
+    return (seen.st_dev, seen.st_ino) == (info.st_dev, info.st_ino)
+
+
 @pytest.mark.parametrize("change", ["acl", "volume", "socket_name", "socket_folder"])
 def test_a_connection_record_counts_as_private_only_when_no_access_list_or_volume_lets_others_in(
         connection, monkeypatch, tmp_path, change):
@@ -334,10 +340,11 @@ def test_a_connection_record_counts_as_private_only_when_no_access_list_or_volum
     assert read_connection(runtime)["socket"] == str(sock)
     named = sock
     if change == "acl":
-        record = os.fspath(runtime / listen_host.CONNECTION_NAME)
-        monkeypatch.setattr(listen_native, "acl_grants_access", lambda where: where == record)
+        record = runtime / listen_host.CONNECTION_NAME
+        monkeypatch.setattr(listen_native, "acl_grants_access", lambda where: _names(where, record))
     elif change == "volume":
-        monkeypatch.setattr(listen_native, "volume_ignores_ownership", lambda where: where == os.fspath(sock))
+        monkeypatch.setattr(listen_native, "volume_ignores_ownership",
+                            lambda where: _names(where, sock.parent))
     elif change == "socket_name":
         named = sock.parent / "other.sock"
     else:
@@ -345,6 +352,32 @@ def test_a_connection_record_counts_as_private_only_when_no_access_list_or_volum
     with pytest.raises(PocketError) as raised:
         read_connection(write(named))
     assert raised.value.code == "evidence_mismatch"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="the access-list and volume checks run on macOS")
+@pytest.mark.parametrize("vanishes, check", [("record", "_volume_flags"), ("socket", "acl_grants_access")])
+def test_a_runtime_that_removes_its_records_mid_check_reads_as_unreachable_never_as_tampered(
+        connection, monkeypatch, vanishes, check):
+    write, sock = connection
+    runtime = write(sock)
+    record = runtime / listen_host.CONNECTION_NAME
+    target = os.stat(record if vanishes == "record" else sock, follow_symlinks=False)
+    real, removed = getattr(listen_native, check), []
+
+    def shutdown_then_check(where):
+        seen = os.fstat(where) if isinstance(where, int) else os.stat(where, follow_symlinks=False)
+        if not removed and (seen.st_dev, seen.st_ino) == (target.st_dev, target.st_ino):
+            record.unlink()
+            sock.unlink()
+            removed.append(where)
+        return real(where)
+
+    monkeypatch.setattr(listen_native, check, shutdown_then_check)
+    try:
+        read_connection(runtime)
+    except listen_host.RuntimeUnreachable as unreachable:
+        assert unreachable.reason == "socket_unreachable"
+    assert removed and not record.exists() and not sock.exists()
 
 
 def test_runtime_dir_0700_socket_0600_and_nonce_required(tmp_path, daemons):

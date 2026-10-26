@@ -37,6 +37,10 @@ HEADER = struct.Struct("<4sHHII")
 BLOCK_HEADER = struct.Struct("<QdQIIHHIQQQQ")
 HEARTBEAT = struct.Struct("<QQQQQ")
 HELLO, BLOCK, EVENT, HEARTBEAT_TYPE, EXIT, STARTED = 1, 2, 3, 4, 5, 6
+PAYLOAD_CAPS = {HELLO: 65536, BLOCK: 1024 * 1024, EVENT: 16384, HEARTBEAT_TYPE: HEARTBEAT.size, EXIT: 16384,
+                STARTED: 16384}
+READ_BYTES = 65536
+DECODER_BUFFER_BYTES = HEADER.size + max(PAYLOAD_CAPS.values()) - 1 + READ_BYTES
 HELPER_SCHEMAS = {HELLO: "pocket.listen-helper-hello/v1", EVENT: "pocket.listen-helper-event/v1",
                   EXIT: "pocket.listen-helper-exit/v1", STARTED: "pocket.listen-helper-started/v1"}
 ORDERLY_EXIT_CODES = {"refused": 3, "device_event": 4, "device_changed_before_start": 4}
@@ -98,20 +102,26 @@ def macos_major():
 
 
 SWIFTC_SHIM = "/usr/bin/swiftc"
-XCODE_SELECT_LINK = Path("/var/db/xcode_select_link")
+XCODE_SELECT_LINKS = (Path("/var/select/developer_dir"), Path("/var/db/xcode_select_link"))
 DEFAULT_DEVELOPER_DIRS = (Path("/Applications/Xcode.app/Contents/Developer"),
                           Path("/Library/Developer/CommandLineTools"))
 _TOOLCHAIN_SWIFTC = ("usr/bin/swiftc", "Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc")
+
+
+def _developer_dirs():
+    selected = os.environ.get("DEVELOPER_DIR")
+    if selected:
+        chosen = Path(selected)
+        return (chosen / "Contents" / "Developer" if chosen.suffix == ".app" else chosen,)
+    links = [link for link in XCODE_SELECT_LINKS if link.is_symlink()]
+    return links[:1] or DEFAULT_DEVELOPER_DIRS
 
 
 def swift_compiler():
     found = shutil.which("swiftc")
     if found != SWIFTC_SHIM:
         return found
-    selected = os.environ.get("DEVELOPER_DIR")
-    developers = ((Path(selected),) if selected else (XCODE_SELECT_LINK,) if XCODE_SELECT_LINK.is_symlink()
-                  else DEFAULT_DEVELOPER_DIRS)
-    real = any((developer / tool).is_file() for developer in developers for tool in _TOOLCHAIN_SWIFTC)
+    real = any((developer / tool).is_file() for developer in _developer_dirs() for tool in _TOOLCHAIN_SWIFTC)
     return found if real else None
 
 
@@ -271,9 +281,10 @@ def volume_ignores_ownership(where):
     return flags is None or bool(flags & _MNT_IGNORE_OWNERSHIP)
 
 
-def is_private(info, shape, where):
+def is_private(info, shape, where, volume=None):
     return (shape(info.st_mode) and info.st_uid == os.getuid() and not info.st_mode & 0o077
-            and not acl_grants_access(where) and not volume_ignores_ownership(where))
+            and not acl_grants_access(where)
+            and not volume_ignores_ownership(where if volume is None else volume))
 
 
 def _registry_error(message, code="evidence_mismatch"):
