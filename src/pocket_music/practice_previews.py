@@ -40,7 +40,7 @@ AUDIO_SCHEMA = "pocket.practice-preview-audio/v1"
 PROFILE = "browser-pcm16-original-rate/v1"
 IMPLEMENTATION = "pocket.practice-preview/v1"
 ENVELOPE_SCHEMA = "pocket.practice-envelope/v1"
-PARENT_SCHEMAS = (RENDER_SCHEMA, ENVELOPE_SCHEMA)
+PARENT_SCHEMAS = (RENDER_SCHEMA, ENVELOPE_SCHEMA, "pocket.audio-score-render/v1")
 FULL_SCALE = 32768
 # Rates whose PCM16 WAV bytes are qualified against a browser decoder. Other
 # rates are refused rather than resampled.
@@ -103,9 +103,9 @@ def pcm16_wav(values, sample_rate):
 
 def _parent(render, store_root):
     if not isinstance(render, dict) or render.get("artifact_schema") not in PARENT_SCHEMAS:
-        raise PocketError("A preview requires an exact practice render or join-envelope render; "
+        raise PocketError("A preview requires an exact practice render, join-envelope render or audio score render; "
                           "previews, comparisons and reports are not preview parents", code="unsupported_profile",
-                          hint="Pass as render the render handle from practice_render or practice_envelope.")
+                          hint="Pass the render handle from practice_render, practice_envelope or audio_score_render.")
     return load_practice_audio(render, store_root)
 
 

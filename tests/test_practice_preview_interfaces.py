@@ -71,7 +71,8 @@ def test_mcp_preview_and_query(tmp_path):
 def test_discovery_declares_preview_families_and_limits():
     rows = {row['public_tool']: row for row in capabilities_list(domain='practice', limit=50)['capabilities']}
     preview = rows['practice_preview']
-    assert preview['accepted_artifact_schemas'] == ['pocket.practice-render/v1', 'pocket.practice-envelope/v1']
+    assert preview['accepted_artifact_schemas'] == ['pocket.practice-render/v1', 'pocket.practice-envelope/v1',
+                                                     'pocket.audio-score-render/v1']
     assert preview['returned_artifact_schemas'] == ['pocket.practice-preview/v1', 'pocket.practice-preview-audio/v1']
     assert preview['required_profile'] == PROFILE and preview['side_effects'] == ['new_local_artifacts']
     assert 'pocket.practice-preview/v1' in rows['practice_query']['accepted_artifact_schemas']

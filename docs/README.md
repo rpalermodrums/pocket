@@ -21,6 +21,8 @@ These work anywhere Python runs. No DAW is needed.
   attributed reports.
 - [Audio passage scores](audio-score.md): name linked audio occurrences and
   their musical roles, then retain their relationships through exact edits.
+- [Audio score auditions](audio-score-audition.md): render a bounded overlap,
+  move a named pickup with its linked response, and compare the exact versions.
 - [Practice review](practice-review.md): a local browser page for listening to a
   comparison and saving what you heard, pinned to the exact audio and interval.
 - [Peek](peek.md): look inside a recording. See where sounds start, which pulse

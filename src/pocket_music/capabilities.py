@@ -59,6 +59,8 @@ PUBLIC_CAPABILITIES = (
     ('audio_score_create', 'audio_score', 'audio', 'score_create', False, 'Bind attributed audio passages and relationships to an exact musical context; no copied clock or inferred identity.'),
     ('audio_score_query', 'audio_score', 'audio', 'score_query', True, 'Revalidate and query source-bound passages, members and authored relationships.'),
     ('audio_score_revise', 'audio_score', 'audio', 'score_revise', False, 'Carry an audio score through a verified edit of its exact parent context, preserving its authored definition.'),
+    ('audio_score_render', 'audio_score_practice', 'practice', 'score_render', False, 'Render a bounded original-rate score overlap with explicit amplitude controls; no implicit processing or listening verdict.'),
+    ('audio_score_audition', 'audio_score_practice', 'practice', 'score_audition', False, 'Freeze before and after a named source-onset correction of one linked passage in the same timeline window.'),
     ('practice_render', 'practice_audio', 'practice', 'render', False, 'Exact original-rate PCM passages and repetitions from declared occurrences; no implicit DSP.'),
     ('practice_compare', 'practice_audio', 'practice', 'compare', False, 'Bind a baseline and alternatives to a question; measurements and listening remain separate.'),
     ('practice_feedback', 'practice_audio', 'practice', 'feedback', False, 'Attributed, exact-render and interval-bound feedback without inferred listening or preferences.'),
@@ -178,21 +180,23 @@ _HANDLE_FAMILIES = {
     'audio_score_create': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.audio-score/v1']),
     'audio_score_query': (['pocket.audio-score/v1'], ['pocket.audio-score/v1']),
     'audio_score_revise': (['pocket.audio-score/v1', 'pocket.context-edit/v1'], ['pocket.audio-score/v1', 'pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.context-edit/v1']),
+    'audio_score_render': (['pocket.audio-score/v1'], ['pocket.audio-score-render/v1', 'pocket.render-audio/v1']),
+    'audio_score_audition': (['pocket.audio-score/v1'], ['pocket.audio-score/v1', 'pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.context-edit/v1', 'pocket.audio-score-render/v1', 'pocket.audio-score-comparison/v1']),
     'practice_render': (['pocket.musical-context/v1', 'pocket.musical-context/v2'], ['pocket.practice-render/v1', 'pocket.render-audio/v1']),
     'practice_compare': (['pocket.practice-render/v1'], ['pocket.practice-comparison/v1']),
     'practice_envelope': (['pocket.practice-render/v1'], ['pocket.practice-envelope/v1', 'pocket.render-audio/v1']),
     'practice_compare_processed': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-processed-comparison/v1']),
-    'practice_feedback': (['pocket.practice-processed-comparison/v1', 'pocket.practice-envelope/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-preview/v1'], ['pocket.practice-feedback/v1', 'pocket.practice-feedback/v2']),
-    'practice_query': (['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2'],
-                       ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2']),
-    'practice_preview': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1'], ['pocket.practice-preview/v1', 'pocket.practice-preview-audio/v1']),
+    'practice_feedback': (['pocket.practice-processed-comparison/v1', 'pocket.practice-envelope/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-preview/v1', 'pocket.audio-score-render/v1', 'pocket.audio-score-comparison/v1'], ['pocket.practice-feedback/v1', 'pocket.practice-feedback/v2']),
+    'practice_query': (['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2', 'pocket.audio-score-render/v1', 'pocket.audio-score-comparison/v1'],
+                       ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-preview/v1', 'pocket.practice-feedback/v2', 'pocket.audio-score-render/v1', 'pocket.audio-score-comparison/v1']),
+    'practice_preview': (['pocket.practice-render/v1', 'pocket.practice-envelope/v1', 'pocket.audio-score-render/v1'], ['pocket.practice-preview/v1', 'pocket.practice-preview-audio/v1']),
     'interpretation_create': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.audio-region-hypotheses/v1'], ['pocket.interpretation/v1']),
     'interpretation_query': (['pocket.interpretation/v1'], ['pocket.interpretation/v1']),
     'context_bind_interpretation': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.interpretation/v1'], ['pocket.musical-context/v2']),
     'context_edit': (['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.interpretation/v1'], ['pocket.musical-context/v1', 'pocket.musical-context/v2', 'pocket.context-edit/v1']),
     'context_edit_query': (['pocket.context-edit/v1'], ['pocket.context-edit/v1']),
     'practice_compare_revisions': (['pocket.practice-render/v1', 'pocket.context-edit/v1'], ['pocket.practice-revision-comparison/v1']),
-    'practice_feedback_query': (['pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-envelope/v1', 'pocket.practice-feedback/v2'], ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v2', 'pocket.practice-preview/v1']),
+    'practice_feedback_query': (['pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-envelope/v1', 'pocket.practice-feedback/v2', 'pocket.audio-score-render/v1'], ['pocket.practice-envelope/v1', 'pocket.practice-processed-comparison/v1', 'pocket.practice-feedback/v1', 'pocket.practice-render/v1', 'pocket.practice-comparison/v1', 'pocket.practice-revision-comparison/v1', 'pocket.practice-feedback/v2', 'pocket.practice-preview/v1', 'pocket.audio-score-render/v1', 'pocket.audio-score-comparison/v1']),
     'instrument_inspect': ([], ['pocket.instrument-state/v1', 'pocket.instrument-inventory/v1', 'pocket.environment/v1']),
     'instrument_parameters': (['pocket.instrument-state/v1'], ['pocket.instrument-state/v1']),
     'preset_catalog': (['pocket.preset-catalog/v1'], ['pocket.preset-catalog/v1']),
@@ -258,14 +262,14 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
             prerequisites = ['Verified retained source regions and explicit authored coordinates; no model, instrument or DAW']
         if name == 'practice_feedback':
             profile = None
-            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1 and linear-loop-join-envelope/v1; no model, instrument or DAW',
+            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1, linear-loop-join-envelope/v1 and same-rate-overlay-linear/v1; no model, instrument or DAW',
                              'Optional declared browser-pcm16-original-rate/v1 preview of the selected render records the reviewed preview and interval as practice-feedback/v2']
         if name == 'practice_query':
             profile = None
-            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1, linear-loop-join-envelope/v1 and browser-pcm16-original-rate/v1 previews; no model, instrument or DAW']
+            prerequisites = ['Verified retained practice artifacts; accepts exact-pcm-occurrences/v1, linear-loop-join-envelope/v1, same-rate-overlay-linear/v1 and browser-pcm16-original-rate/v1 previews; no model, instrument or DAW']
         if module == 'practice_previews':
             profile = 'browser-pcm16-original-rate/v1'
-            prerequisites = ['Exact verified render or join-envelope parent at 8000/11025/16000/22050/24000/32000/44100/48000/88200/96000 Hz, mono/stereo; every sample must round into PCM16 without clamping',
+            prerequisites = ['Verified exact render, join-envelope or score-overlay parent at 8000/11025/16000/22050/24000/32000/44100/48000/88200/96000 Hz, mono/stereo; every sample must round into PCM16 without clamping',
                              'Verified bytes are the encoded player input; browser/device output and human listening are not established']
         if module == 'practice_envelopes':
             profile = 'linear-loop-join-envelope/v1'
@@ -282,6 +286,10 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
         if module == 'audio_score':
             profile = 'authored-audio-passages/v1'
             prerequisites = ['Exact retained musical context, explicit occurrence members and attributed acyclic passage relationships; no rendering, native execution or listening claim']
+        if module == 'audio_score_practice':
+            profile = 'same-rate-overlay-linear/v1'
+            prerequisites = ['Exact audio score, explicit original-rate amplitude recipe and fixed window; matching mono/stereo rates, constant tempo and integer-frame unwarped placements; no model or DAW',
+                             'At most 32 active occurrences, eight simultaneous, 120 seconds and 64 MiB; no implicit conversion, normalization, timing inference or listening verdict']
         if module == 'interpretations':
             profile = 'source-bound-interpretations/v1'
             prerequisites = ['Exact context source clock and retained candidate revision, or explicitly authored/unresolved claim; no implicit tempo or meter edit']
