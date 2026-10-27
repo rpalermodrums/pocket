@@ -27,6 +27,17 @@ _SPEC_OPERATIONS = {
         "act": ("shuttle", "shuttle_act", None),
         "request-status": ("shuttle", "shuttle_request_status", None),
     },
+    "b2b": {
+        "prepare": ("b2b", "b2b_prepare", "output_dir"),
+        "authorize": ("b2b", "b2b_authorize", None),
+        "observe": ("b2b", "b2b_observe", None),
+        "claim": ("b2b", "b2b_claim", None),
+        "act": ("b2b", "b2b_act", None),
+        "release": ("b2b", "b2b_release", None),
+        "revoke": ("b2b", "b2b_revoke", None),
+        "events": ("b2b", "b2b_events", None),
+        "request-status": ("b2b", "b2b_request_status", None),
+    },
     "pipette": {
         "promote": ("pipette", "promote_trial", "output_dir"),
         "validate": ("pipette", "validate_promotion", None),
@@ -174,6 +185,7 @@ def parser() -> argparse.ArgumentParser:
     for group, operations in _SPEC_OPERATIONS.items():
         help_text = {
             "shuttle": "Improvise from a local Serato crate through the qualified native bridge",
+            "b2b": "Share named controls with an agent through a b2b host you start",
             "pipette": "Promote a kept Stitch candidate into a new collected saved project",
             "bag": "Create or navigate a sealed record catalog",
             "weave": "Explore routes through a set and refine them with feedback",

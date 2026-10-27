@@ -1,0 +1,83 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket · b2b</title>
+  <link rel="stylesheet" href="/b2b.css">
+  <script type="module" src="/b2b.js"></script>
+</head>
+<body>
+  <!-- First on the page and a fixed height, so nothing the agent changes can move Stop. -->
+  <div class="bar" role="region" aria-label="Stop agent control">
+    <div class="row">
+      <button type="button" id="stop" class="stop-button">Stop agent control</button>
+      <button type="button" id="hold-all" class="quiet">Hold every control</button>
+    </div>
+    <p class="meta">Your decks keep playing. Every agent grant ends and nothing is sent to the decks.</p>
+    <p id="error" role="alert" tabindex="-1" hidden></p>
+  </div>
+
+  <header>
+    <p class="eyebrow">Pocket b2b · synthetic two-deck mixer, not a real device</p>
+    <h1>Who owns each control</h1>
+    <p id="session" class="meta">Connecting to the b2b host…</p>
+    <p id="locked" class="banner" hidden>Locked: reopen the page link from the host terminal to acknowledge
+      notices or issue permissions. Stop, Hold, Deny, Take it back, Withdraw and Revoke still work.</p>
+    <p id="settings" class="meta" hidden></p>
+    <p id="journal" class="banner" hidden>Journal unavailable. Agent control stopped. Touching your controls,
+      Hold and Stop still work; releasing a hold, inviting, accepting a pickup or issuing waits for a new
+      host.</p>
+    <p id="fault" class="banner" hidden>The host hit an internal fault. Agent control stopped. Touching your
+      controls, Hold and Stop still work; releasing a hold, inviting, accepting a pickup or issuing waits for
+      a new host.</p>
+  </header>
+
+  <main>
+    <section aria-labelledby="notices-heading" class="notices">
+      <h2 id="notices-heading">Notices</h2>
+      <p class="meta">Every agent claim is announced here before its first move. If this page can't show it in
+        time, nothing is sent.</p>
+      <ul id="notices" aria-live="assertive"></ul>
+    </section>
+
+    <section aria-labelledby="resources-heading">
+      <h2 id="resources-heading">Controls</h2>
+      <table id="resources-table">
+        <colgroup><col class="col-control"><col class="col-owner"><col class="col-actions"></colgroup>
+        <thead>
+          <tr><th scope="col">Control</th><th scope="col">Owner</th><th scope="col">Actions</th></tr>
+        </thead>
+        <tbody id="resources"></tbody>
+      </table>
+      <ul id="grants" class="plain" aria-label="Agent grants"></ul>
+    </section>
+
+    <section aria-labelledby="permission-heading">
+      <h2 id="permission-heading">Standing permission</h2>
+      <div id="permission"></div>
+      <h3>Proposals from the agent</h3>
+      <p class="meta">A proposal grants nothing. Review its exact lines, then issue it yourself.</p>
+      <ul id="proposals" class="plain"></ul>
+    </section>
+
+    <section aria-labelledby="events-heading">
+      <h2 id="events-heading">Last 20 events</h2>
+      <ol id="events" reversed></ol>
+    </section>
+
+    <section aria-labelledby="panel-heading" id="panel-section" class="panel" hidden>
+      <h2 id="panel-heading">Synthetic controller (not a real device)</h2>
+      <p class="meta">These controls send messages to the host's synthetic mixer, exactly as a controller
+        would. Nothing here reaches Serato, MIDI or an audio device.</p>
+      <p id="panel-state" class="meta"></p>
+      <div id="panel-controls" class="panel-grid"></div>
+      <div class="row">
+        <button type="button" id="handback" class="pad">Hand back (hold half a second)</button>
+      </div>
+      <div class="row" id="panel-faults"></div>
+    </section>
+  </main>
+</body>
+</html>

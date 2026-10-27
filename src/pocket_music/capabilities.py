@@ -18,6 +18,15 @@ PUBLIC_CAPABILITIES = (
     ('shuttle_options', 'shuttle', 'performance', 'options', True, 'Propose next records using the crate, history and observed current deck.'),
     ('shuttle_act', 'shuttle', 'performance', 'act', False, 'One revision-checked bounded move with native observation, replay and FLX4 takeover.'),
     ('shuttle_request_status', 'shuttle', 'performance', 'request_status', True, 'Inspect a retained native request without redispatch.'),
+    ('b2b_prepare', 'b2b', 'collaboration', 'prepare', False, 'Bind a session to a running b2b host (synthetic mixer) and record an optional policy proposal; grants nothing.'),
+    ('b2b_authorize', 'b2b', 'collaboration', 'authorize', False, 'Agents only propose a standing permission; the person issues it on the b2b host page.'),
+    ('b2b_observe', 'b2b', 'collaboration', 'observe', True, 'Read owners, grants, notices, permissions and synthetic adapter evidence, each with its own age.'),
+    ('b2b_claim', 'b2b', 'collaboration', 'claim', False, 'Atomically claim named idle resources under an invitation or standing permission; a page notice precedes any move.'),
+    ('b2b_act', 'b2b', 'collaboration', 'act', False, 'One bounded move (set, nudge or set_state as one step, or a ramp of up to 4 s in 50 ms steps), each step rechecked before dispatch.'),
+    ('b2b_release', 'b2b', 'collaboration', 'release', False, 'Give back some or all of your grant and cancel its undispatched steps; controls stay where they are.'),
+    ('b2b_revoke', 'b2b', 'collaboration', 'revoke', False, 'Shorten your lease, withdraw your own proposal or drop your own authority; only the person can revoke a standing permission.'),
+    ('b2b_events', 'b2b', 'collaboration', 'events', True, 'Page through numbered b2b events after a cursor: notices, owner changes and act outcomes, a bounded batch per call.'),
+    ('b2b_request_status', 'b2b', 'collaboration', 'request_status', True, 'Inspect a retained b2b request without redispatch, from the journal after the host stops.'),
     ('request_status', 'artifact_store', 'artifact', 'status', True, 'Inspect request journals and retained artifact integrity without redispatching.'),
     ('material_import', 'material', 'material', 'import', False, 'Retain source bytes and project supported MIDI material.'),
     ('material_query', 'material', 'material', 'query', True, 'Bounded summaries, exact selections and semantic differences.'),
@@ -113,6 +122,12 @@ _UNAVAILABLE = (
     ('candidate_apply', 'candidate', 'apply', 'Qualified individually callable native primitives'),
     ('audio_transcribe', 'audio', 'transcribe', 'General transcription and musician-owned E8 acceptance; narrow optional note hypotheses are separately callable'),
     ('performance_launch', 'performance', 'launch', 'E9 scheduling, takeover, panic and 30-minute soak'),
+    ('b2b_serato_adapter', 'collaboration', 'serato_adapter', 'Per-resource Serato/FLX4 control on a qualified profile: native aliases, yields and cancellation timing'),
+    ('b2b_listen_evidence', 'collaboration', 'listen_evidence', 'Master and cue route evidence from Listen as a step precondition; evidence never grants'),
+    ('b2b_instrument_extension', 'collaboration', 'instrument_extension', 'Separately qualified instrument writer, owned-note cleanup and combined audio route'),
+    ('b2b_monitor_exemption', 'collaboration', 'monitor_exemption', 'Native proof that a monitoring control cannot change the program; until then it yields every control'),
+    ('b2b_soft_takeover', 'collaboration', 'soft_takeover', 'Native proof of soft takeover for a nonmotorized control; explicit pickup only for now'),
+    ('b2b_issuer_credential', 'collaboration', 'issuer_credential', 'Programmatic issuer credential or physical authorization gesture; policy is issued only on the host page'),
 )
 
 # These are semantic artifact families, distinct from the common handle envelope.
@@ -124,6 +139,15 @@ _HANDLE_FAMILIES = {
     'shuttle_options': ([], []),
     'shuttle_act': ([], []),
     'shuttle_request_status': ([], []),
+    'b2b_prepare': ([], []),
+    'b2b_authorize': ([], []),
+    'b2b_observe': ([], []),
+    'b2b_claim': ([], []),
+    'b2b_act': ([], []),
+    'b2b_release': ([], []),
+    'b2b_revoke': ([], []),
+    'b2b_events': ([], []),
+    'b2b_request_status': ([], []),
     'request_status': ([], []),
     'material_import': ([], ['pocket.material/v1']),
     'material_query': (['pocket.material/v1'], []),
@@ -289,6 +313,24 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                 status = 'requires_native_setup'
             if name == 'shuttle_act':
                 side_effects += ['native_serato_controls', 'session_revision', 'track_gain_metadata']
+        if module == 'b2b':
+            profile = 'synthetic-two-deck/v1'
+            prerequisites = [('A b2b host you start in your own terminal (python -m pocket_music.b2b_host); '
+                              'built-in synthetic two-deck mixer only, '
+                              'no Serato, controller, MIDI or audio device')]
+            if sys.platform not in ('darwin', 'linux'):
+                status = 'unsupported'
+            elif name == 'b2b_request_status':
+                prerequisites = prerequisites + ['Reads the retained journal after the host stops']
+            else:
+                status = 'requires_optional_setup'
+            side_effects = {'b2b_prepare': ['new_local_artifacts', 'b2b_host_session'],
+                            'b2b_authorize': ['b2b_policy_proposal', 'b2b_control_journal'],
+                            'b2b_claim': ['b2b_authority_grant', 'trusted_page_notice',
+                                          'b2b_control_journal'],
+                            'b2b_act': ['synthetic_adapter_controls', 'b2b_control_journal'],
+                            'b2b_release': ['b2b_authority_reduction', 'b2b_control_journal'],
+                            'b2b_revoke': ['b2b_authority_reduction', 'b2b_control_journal']}.get(name, [])
         if name == 'midi_timing_query':
             side_effects = ['temporary_local_proof_replay; caller_store_unchanged']
         if name in ('audio_region_hypotheses', 'audio_region_submit'):
@@ -338,7 +380,10 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                      'provider': f'pocket_music.{module}.{name}', 'domain': area, 'operation': op,
                      'input_schema': f'pocket.{name}-input/v1',
                      'output_schema': {'validate_candidate_promotion': 'pocket.promotion-validation/v2',
-                                       'midi_timing_query': 'pocket.midi-timing-query/v1'}.get(
+                                       'midi_timing_query': 'pocket.midi-timing-query/v1',
+                                       'b2b_observe': 'pocket.b2b-observation/v1',
+                                       'b2b_events': 'pocket.b2b-events/v1',
+                                       'b2b_request_status': 'pocket.b2b-request-status/v1'}.get(
                                            name, 'pocket.operation-receipt/v1'),
                      'accepted_handles': (['pocket.artifact-handle/v1'] if _HANDLE_FAMILIES[name][0] or name == 'promote_candidate' else [])
                                          + (['pocket.set-handle/v1'] if name == 'material_import' else []),

@@ -61,6 +61,12 @@ Tools for planning and playing sets of records. They propose; you decide.
 - [Local workspace](workspace.md): a small browser page for bags, routes and
   next-record choices.
 
+## Performing with an agent
+
+- [b2b](b2b.md): share named controls with an agent, with visible notices, and
+  your touch always wins. Experimental; this version runs only against a
+  built-in synthetic mixer.
+
 ## Optional connections
 
 Each of these needs its own setup and is never used unless you ask for it.
