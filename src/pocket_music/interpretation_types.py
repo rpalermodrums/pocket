@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Closed musical claims; observations, choices and coordinate clocks stay distinct."""
 from typing import Literal
 

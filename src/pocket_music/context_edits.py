@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable literal context revisions with replayable preservation evidence."""
 from __future__ import annotations
 
@@ -6,8 +7,10 @@ import copy
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
     digest,
+    per_call_verification,
     put_record,
     read_record,
     run_request,
@@ -51,7 +54,9 @@ def _locks(locks, before, after):
             if field not in original:
                 raise PocketError("Unknown locked context field")
             if canonical_bytes(original[field]) != canonical_bytes(result[field]):
-                raise PocketError("Context edit changes a locked field", code="locked_field")
+                raise PocketError("Context edit changes a locked field", code="locked_field",
+                                  hint="Revise operations so every field named in locks keeps its value. Removing "
+                                       "a lock is an authoring decision, not a fix.")
 
 
 def _changes(before, after):
@@ -152,6 +157,7 @@ def _renderability(child, operations, store_root):
     return results
 
 
+@call_memo("context_edit")
 def load_context_edit(handle, store_root):
     _verify_handles(handle, store_root)
     record = read_record(handle, store_root, SCHEMA)
@@ -190,6 +196,7 @@ def context_edit(store_root: str, request_id: str, context: ArtifactHandle, oper
     return result
 
 
+@per_call_verification
 def context_edit_query(store_root: str, edit: ArtifactHandle) -> dict:
     """Recompute preservation and supported render-profile checks from retained parents."""
     return context_receipt(artifacts={"edit": edit}, summary=load_context_edit(edit, store_root), coverage=COVERAGE)

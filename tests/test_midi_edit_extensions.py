@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Selected-note extension integration, complexity and source-preservation checks."""
 from __future__ import annotations
 

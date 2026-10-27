@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent wire fixtures and streaming/failure checks for external-source regions."""
 import hashlib
 import io

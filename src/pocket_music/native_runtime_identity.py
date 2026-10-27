@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Observed runtime-ID metadata qualification for the narrow stock fixture shape.
 
 This predicate only restores seven mapped leaf values in a comparison copy.

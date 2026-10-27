@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Pruned traversal equivalence fixtures; no optional runtime/model execution."""
 import hashlib
 import os

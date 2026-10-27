@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Offline canonical gates and explicitly ordered binary-sustain interpretation.
 
 This is a declared symbolic simulation, never receiver, allocator or panic proof.

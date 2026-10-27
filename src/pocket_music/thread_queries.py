@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Thread queries over bounded, immutable local saved-set snapshots.
 
 Handles reference hash-bound disk artifacts, not process globals. Filesystem

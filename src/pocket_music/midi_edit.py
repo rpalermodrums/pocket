@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Exact, selected note edits with revision-bound locks and semantic differences."""
 from __future__ import annotations
 

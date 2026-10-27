@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent wire and actual-interface qualification of explicit expression SMF."""
 from __future__ import annotations
 

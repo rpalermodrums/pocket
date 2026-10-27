@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent adversarial phrase-ledger QA; explicit synthetic musical material."""
 from __future__ import annotations
 

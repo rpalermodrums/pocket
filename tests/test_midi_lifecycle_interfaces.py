@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual CLI and stdio acceptance for symbolic lifecycle and motif composition."""
 from __future__ import annotations
 

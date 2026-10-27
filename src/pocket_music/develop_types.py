@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict deterministic motif-development input records."""
 from __future__ import annotations
 

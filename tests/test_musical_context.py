@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent clock/occurrence oracles and a generated, no-DAW practice path."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Resolve an approved main-history revision and require its successful Tests run."""
 import json
 import os

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent real CLI/MCP and wire-decoded sequence delivery."""
 from __future__ import annotations
 

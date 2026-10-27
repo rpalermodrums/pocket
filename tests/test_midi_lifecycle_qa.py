@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent symbolic pedal lifecycle expectations; never receiver acceptance."""
 from __future__ import annotations
 

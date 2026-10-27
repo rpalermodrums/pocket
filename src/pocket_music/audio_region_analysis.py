@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Public crop analysis composition with separate exact original-frame projection."""
 from __future__ import annotations
 

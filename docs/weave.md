@@ -1,5 +1,15 @@
 # Weave
 
+> **In brief.** Weave interlaces a crate of records into possible sets. Give it
+> a [record bag](record-bag.md) and a brief, such as "an hour-long warm-up
+> that includes these two records", and it proposes several routes. One stays close to
+> your notes, and the others explore. You can tell it which pairings to avoid
+> and ask for another attempt. Every route is a hypothesis to try, not a
+> verdict on what will work.
+>
+> **You need** a record bag. Weave doesn't listen to audio or build a Live
+> arrangement.
+
 Weave explores several possible orders from a sealed [record bag](record-bag.md).
 Every route is a musical hypothesis. It does not audition records, create an
 Ableton arrangement or validate beat, phrase, key or audible transition quality.
@@ -97,7 +107,7 @@ still produce candidates with weak or missing supporting annotations.
 ## Duration and feedback
 
 The ledger separates full recording duration from estimated performance time.
-Local decoded frame counts take precedence over catalogue duration. Known lengths
+Local decoded frame counts take precedence over catalog duration. Known lengths
 use the requested `performance_fraction` (default 0.75), with a separately shown
 estimated overlap (default 20 seconds, bounded by the two estimated performances).
 Unknown lengths stay unknown in the full-track total; any planning allocation is

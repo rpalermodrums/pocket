@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit, independently verifiable gain envelopes at retained occurrence joins."""
 from __future__ import annotations
 
@@ -9,7 +10,9 @@ import soundfile as sf
 from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
+    call_memo,
     canonical_bytes,
+    per_call_verification,
     put_bytes,
     put_record,
     read_bytes,
@@ -46,7 +49,8 @@ def _gains(parent, joins):
         out = integer(join["fade_out_frames"], "fade_out_frames", 1, rate // 4)
         into = integer(join["fade_in_frames"], "fade_in_frames", 1, rate // 4)
         if join["curve"] != "linear":
-            raise PocketError("Only an explicit linear join envelope is supported", code="unsupported_profile")
+            raise PocketError("Only an explicit linear join envelope is supported", code="unsupported_profile",
+                              hint='Set each join\'s curve to "linear", the only supported join envelope.')
         if boundary not in boundaries:
             raise PocketError("Envelope boundary must be an actual occurrence join")
         start, end = boundary - out, boundary + into
@@ -66,6 +70,7 @@ def _processed(parent, joins, store_root):
     return samples * gain[:, None], rate
 
 
+@call_memo("practice_envelope")
 def load_practice_envelope(handle, store_root):
     _verify_handles(handle, store_root)
     record = read_record(handle, store_root, SCHEMA)
@@ -95,6 +100,7 @@ def load_practice_envelope(handle, store_root):
     return record
 
 
+@per_call_verification
 def practice_envelope(store_root: str, request_id: str, render: ArtifactHandle,
                       joins: list[JoinEnvelope], attribution: Attribution) -> dict:
     """Create a declared linear fade-out/in at explicit joins; timing and baseline stay fixed."""
@@ -132,10 +138,12 @@ def _comparison(baseline, variants, question, store_root):
     original = load_practice_render(baseline, store_root)
     processed = [load_practice_envelope(h, store_root) for h in variants]
     if any(r["parent_render"] != baseline for r in processed):
-        raise PocketError("Processed comparison requires derivatives of its exact baseline", code="source_mismatch")
+        raise PocketError("Processed comparison requires derivatives of its exact baseline", code="source_mismatch",
+                          hint="Pass as baseline the render that practice_envelope made every variant from.")
     return [original, *processed]
 
 
+@per_call_verification
 def practice_compare_processed(store_root: str, request_id: str, baseline: ArtifactHandle,
                                variants: list[ArtifactHandle], question: str) -> dict:
     """Compare explicit join derivatives with their unchanged exact parent; no automatic verdict."""

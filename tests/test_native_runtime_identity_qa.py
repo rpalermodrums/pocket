@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent complete-comparison checks of the narrow seven-ID predicate."""
 import copy
 import xml.etree.ElementTree as ET

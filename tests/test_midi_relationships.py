@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent symbolic voice and role expectations; no listening/native fixtures."""
 from __future__ import annotations
 

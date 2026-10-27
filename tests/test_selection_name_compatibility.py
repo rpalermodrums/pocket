@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Weave/Whisker aliases operate on the same saved plans and live revisions."""
 from __future__ import annotations
 

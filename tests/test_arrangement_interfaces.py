@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual public interfaces and replay in an independent store for long sections."""
 from __future__ import annotations
 

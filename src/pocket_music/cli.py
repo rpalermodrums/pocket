@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """A small JSON CLI over the same public functions used by the MCP server."""
 
 from __future__ import annotations
@@ -11,12 +12,21 @@ from pathlib import Path
 
 from . import __version__
 from .assets import identify_audio
+from .error_contracts import FORMATS as _ERROR_FORMATS
 from .errors import PocketError
 
 # (module, public function, provider destination argument or None).
 # With a destination, --output creates that artifact; otherwise it saves the
 # response JSON. The parsed record printed to stdout is the library result.
 _SPEC_OPERATIONS = {
+    "shuttle": {
+        "build-bridge": ("shuttle", "shuttle_build_bridge", "output_dir"),
+        "prepare": ("shuttle", "shuttle_prepare", "output_dir"),
+        "observe": ("shuttle", "shuttle_observe", None),
+        "options": ("shuttle", "shuttle_options", None),
+        "act": ("shuttle", "shuttle_act", None),
+        "request-status": ("shuttle", "shuttle_request_status", None),
+    },
     "pipette": {
         "promote": ("pipette", "promote_trial", "output_dir"),
         "validate": ("pipette", "validate_promotion", None),
@@ -94,8 +104,8 @@ def parser() -> argparse.ArgumentParser:
         "The musical toolkit for agents: Peek, Thread, Stitch, Weave, Whisker, Baste and Pipette."
     ))
     root.add_argument("--version", action="version", version=__version__)
-    root.add_argument("--error-format", choices=("legacy", "v2"), default="legacy",
-                      help="Opt-in versioned machine errors; successful receipts are unchanged")
+    root.add_argument("--error-format", choices=_ERROR_FORMATS, default="legacy",
+                      help="Opt-in versioned machine errors (v3 adds corrective hints); successful receipts are unchanged")
     commands = root.add_subparsers(dest="command", required=True)
     baste = commands.add_parser("baste", help="Read the current Live session through the Baste device")
     baste.add_argument("--timeout-seconds", type=float, default=35)
@@ -163,11 +173,12 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--spec", required=True, help="JSON arguments for this operation")
     for group, operations in _SPEC_OPERATIONS.items():
         help_text = {
+            "shuttle": "Improvise from a local Serato crate through the qualified native bridge",
             "pipette": "Promote a kept Stitch candidate into a new collected saved project",
-            "bag": "Create or navigate a sealed record catalogue",
+            "bag": "Create or navigate a sealed record catalog",
             "weave": "Explore routes through a set and refine them with feedback",
             "whisker": "Feel out the next record in a shared live session",
-            "spotify": "Import a catalogue or execute a reviewed fresh-playlist plan",
+            "spotify": "Import a catalog or execute a reviewed fresh-playlist plan",
             "acquire": "Discover candidates or acquire an explicitly selected recording",
             "embeddings": "Inspect an optional model cache or use prepared local receipts",
         }[group]
@@ -189,6 +200,14 @@ def parser() -> argparse.ArgumentParser:
     workspace.add_argument("--workspace-dir", required=True)
     workspace.add_argument("--bag-handle", help="JSON file containing a bag handle or create result")
     workspace.add_argument("--port", type=int, default=0, help="Loopback port; 0 chooses a free port")
+    review = commands.add_parser("practice-review",
+                                 help="Serve a local listening and report page for one comparison; Ctrl-C stops it")
+    review.add_argument("--store-root", required=True, help="Existing Pocket artifact store")
+    review.add_argument("--comparison-file", required=True,
+                        help="JSON file with a comparison handle or a receipt containing artifacts.comparison")
+    review.add_argument("--session-dir", required=True, help="Directory for this review's small handle index")
+    review.add_argument("--reports-file", help="Optional JSON list of existing feedback handles or receipts to show")
+    review.add_argument("--port", type=int, default=0, help="Loopback port; 0 chooses a free port")
     return root
 
 
@@ -220,6 +239,11 @@ def _dispatch(args: argparse.Namespace):
         stored = _read_object(args.bag_handle) if args.bag_handle else None
         handle = stored.get("handle", stored) if stored else None
         start_workspace(args.workspace_dir, bag_handle=handle, port=args.port)
+        return None
+    if args.command == "practice-review":
+        from .practice_review import start_practice_review
+        start_practice_review(args.store_root, args.comparison_file, args.session_dir,
+                              reports_file=args.reports_file, port=args.port)
         return None
     if args.command == "identify":
         return identify_audio(args.path)
@@ -268,7 +292,7 @@ def _dispatch(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        artifact_output = (args.command in {"stitch", "thread-export", "workspace", "baste-device"} or
+        artifact_output = (args.command in {"stitch", "thread-export", "workspace", "practice-review", "baste-device"} or
                            (args.command in _SPEC_OPERATIONS and
                             _SPEC_OPERATIONS[args.command][args.action][2] is not None))
         response_path = None if artifact_output else getattr(args, "output", None)
@@ -285,7 +309,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (PocketError, OSError, ValueError, TypeError) as exc:
         from .error_contracts import error_envelope
-        error = error_envelope(exc) if args.error_format == "v2" else {"error": type(exc).__name__, "message": str(exc)}
+        error = ({"error": type(exc).__name__, "message": str(exc)} if args.error_format == "legacy"
+                 else error_envelope(exc, version=args.error_format))
         sys.stderr.write(json.dumps(error) + "\n")
         return 2
 

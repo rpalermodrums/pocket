@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Public learned-audio interfaces; mocked model evidence is never accuracy evidence."""
 from __future__ import annotations
 

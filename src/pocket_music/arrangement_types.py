@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Declared multi-section development, without inferred arrangement semantics."""
 from __future__ import annotations
 

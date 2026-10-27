@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Pocket: evidence-linked musical tools with lazy, offline-capable providers."""
 import sys
 from importlib import import_module
 from types import ModuleType
 
-__version__ = "0.4.0"
+__version__ = "0.5.0.dev0"
 
 # Importing Pocket does not load a model, contact a service, or start a workspace.
 _PUBLIC = {
@@ -29,6 +30,7 @@ _PUBLIC = {
     "model_preflight": "music_embeddings", "LocalClapAdapter": "music_embeddings",
     "build_embedding_index": "music_embeddings", "load_embedding_index": "music_embeddings",
     "rank_embedding_query": "music_embeddings", "start_workspace": "workspace",
+    "start_practice_review": "practice_review",
 }
 from .capabilities import PUBLIC_CAPABILITIES
 

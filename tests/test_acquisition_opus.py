@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict packet-framed Opus decode; generated media only, no network."""
 import asyncio
 import json

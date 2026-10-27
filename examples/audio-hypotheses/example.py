@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """A synthetic local-source example using only public analysis/correction/job tools."""
 import hashlib
 import json

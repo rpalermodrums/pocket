@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Stitch: bounded listening trials with exact lineage and a supervised native-trial adapter.
 
 This module does not render an Ableton set, infer a downbeat, or declare that a

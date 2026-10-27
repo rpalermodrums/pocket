@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated notes exercise retrieval identity, overlap and conflicting claims."""
 
 from pathlib import Path

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent literal/structural material expectations, not native acceptance."""
 from __future__ import annotations
 

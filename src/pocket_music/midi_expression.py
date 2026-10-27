@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Declared offline expression allocation and ordered MIDI1 event realization.
 
 No function here opens a port, configures a receiver, controls transport, or

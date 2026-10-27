@@ -1,5 +1,14 @@
 # Whisker
 
+> **In brief.** A mouse feels its way with its whiskers. Whisker helps you feel
+> out the next record during a set. It offers a few candidates in distinct
+> lanes (hold the energy, lift it, or take a left turn), each with its reasons
+> and what it doesn't know. You and your agent share one session, and it
+> refuses to let either of you overwrite a newer choice by accident.
+>
+> **You need** a [record bag](record-bag.md). Whisker never routes audio,
+> controls decks or picks a cue for you.
+
 Whisker returns a small set of next-record proposals and preserves a shared human/agent session. It routes no audio, controls no decks, and does not automatically choose a cue or certify a transition.
 
 CLI `pocket whisker` retains the `prepare`, `snapshot`, `options` and `update` actions. MCP exposes `whisker_prepare`, `whisker_snapshot`, `whisker` (session options) and `whisker_update`. The Python function names below stay unchanged.
@@ -21,6 +30,15 @@ Ranking uses only attributed `profile` fields and eligible cached local embeddin
 Every option has `track_id`, title/artists, a bounded heuristic `score`, a `lane` (hold/lift/left_turn), reasons, unknowns, `tempo_options`, `proposed_transition` and evidence components. Scores are neither probabilities nor listener verdicts. Missing evidence lowers the amount of support rather than becoming a perfect match. Where viable candidates exist, the shortlist includes distinct lanes; it never invents a lane or duplicates a record. Sort/tie-breaking is deterministic. An explicit target energy always wins. Without one, live `hold` targets the current annotated energy and `lift` targets current +0.15 (capped at 1). Setting baselines apply to opening/explore/left-turn choices or when current energy is unknown; unknown current energy is never invented. A direction or target changes the ranking; it does not remove human override.
 
 Tempo options include bounded same-pulse or half/double-pulse clock hypotheses. A clock ratio does not verify musical pulse or bar one. A natural-tempo reset remains available when the declared stretch limit cannot accommodate the supplied clocks. Treatment suggestions are qualitative; no source beat or control envelope is automatically written.
+
+Transition proposals keep clock, vocal and percussion concerns together. Dense
+vocal annotations never hide the need for a natural-tempo reset, and a short
+exchange is not a reason to cut off a spoken or sung phrase. Suggestions ask
+you to let an outgoing phrase finish before withdrawing it and to plan both bass
+and high-percussion ownership; matching bass alone can still leave clashing hats.
+These are review prompts, including when annotations are incomplete. They do not
+locate a local vocal ending, choose a fade duration, certify beat one or approve
+the handoff. Review an exact rendered or cue-monitored passage before keeping it.
 
 ## Shared session state
 

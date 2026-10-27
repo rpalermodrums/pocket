@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit coordinate declarations for immutable region corrections."""
 from typing import Literal
 

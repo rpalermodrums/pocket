@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit correspondence between selected full output occurrences."""
 from typing_extensions import TypedDict
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent original-coordinate correction equivalence and hard-boundary QA."""
 import copy
 import hashlib

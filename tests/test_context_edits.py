@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent literal edit oracles: source slips, placement shifts and exact locks."""
 import copy
 

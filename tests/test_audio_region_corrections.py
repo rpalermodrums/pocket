@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic coordinate-wrapper proofs; no native/model execution or listening."""
 import builtins
 import copy

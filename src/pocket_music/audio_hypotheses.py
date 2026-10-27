@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Immutable local attack/pulse evidence with explicit attributed alternatives.
 
 This is bounded synchronous analysis, not transcription, listening or a job

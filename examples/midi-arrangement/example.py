@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Develop three supplied sections across a sparse, declared 77-minute span."""
 import json
 import tempfile

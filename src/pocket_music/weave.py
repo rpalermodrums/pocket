@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Weave: reproducible exploratory set routes, not playback or musical approval."""
 from __future__ import annotations
 

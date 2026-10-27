@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Versioned transport records for standalone musical material capabilities."""
 from __future__ import annotations
 

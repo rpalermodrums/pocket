@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent PCM readback, bounded streaming, source races and capture semantics."""
 import copy
 import hashlib

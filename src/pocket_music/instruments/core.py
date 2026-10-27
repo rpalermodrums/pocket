@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """File-only instrument discovery and explicit, non-executable sound plans.
 
 No function in this module connects to a DAW, loads a plugin, or changes presets.

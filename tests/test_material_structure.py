@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """File-only phrase graph acceptance, with source and composition checks."""
 import copy
 import json

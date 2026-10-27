@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Opt-in synthetic local pulse evidence; no download or accuracy/listening claim."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Public generated music-mechanics regressions; no recorded source fixtures."""
 
 import json

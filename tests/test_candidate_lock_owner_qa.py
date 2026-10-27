@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent process ownership QA; terminal seam tests no native behavior."""
 import json
 import os

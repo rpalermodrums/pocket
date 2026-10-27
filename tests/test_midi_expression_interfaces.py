@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent actual CLI and stdio parity for explicit expression planning."""
 from __future__ import annotations
 

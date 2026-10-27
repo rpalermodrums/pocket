@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional Mido interchange with exact originals, ordered events and explicit loss gates."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict portable audio-evidence and caller-authored correction inputs."""
 from __future__ import annotations
 

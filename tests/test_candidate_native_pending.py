@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """File lifecycle tests with a fake terminal validator, never native acceptance."""
 import copy
 import json

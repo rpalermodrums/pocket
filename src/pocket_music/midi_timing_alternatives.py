@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Artifact-only authored timing choices composed through existing public editors.
 
 Readback replays public edits in an owned temporary store, without original journals,

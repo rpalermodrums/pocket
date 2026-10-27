@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic independent expectations for canonical material and bounded queries."""
 import copy
 import json

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict domain checks shared by instrument and curve providers."""
 from __future__ import annotations
 

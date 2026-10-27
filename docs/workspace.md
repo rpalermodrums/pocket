@@ -1,5 +1,10 @@
 # Pocket workspace
 
+> **In brief.** A small page in your browser for working with Weave and Whisker
+> without writing JSON. Browse a record bag, ask for three routes, note which
+> pairings work, and keep a shared "what's next" session. It runs only on your
+> own machine.
+
 A small, local browser interface for Weave and Whisker. Browse a record bag, make three proposed routes, save route or directed-pair feedback, and keep a shared next-record session. Nothing here plays audio, operates decks, authenticates Spotify, downloads recordings or establishes a musical verdict.
 
 Run `pocket workspace --workspace-dir /path/to/new-workspace`. The command prints a JSON object containing the local URL, then serves until Ctrl-C. `--port 0` chooses an available port. An optional `--bag-handle /path/to/handle.json` initializes a verified existing bag; importing another bag later preserves the old artifacts. The Python entry point is:

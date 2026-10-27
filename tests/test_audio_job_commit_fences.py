@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Final commit fences after the last optional-model cooperative callback."""
 import copy
 

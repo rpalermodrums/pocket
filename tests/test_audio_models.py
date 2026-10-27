@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Owner contracts; real optional model runs are retained separately outside fixtures."""
 import hashlib
 import json

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Stage only reviewed public inputs; build and verify a portable Pages artifact."""
 from __future__ import annotations
 
@@ -64,10 +65,18 @@ def rewrite_link(url, source, target, mapping, root, tracked, revision):
     return f'https://github.com/rpalermodrums/pocket/blob/{revision}/{resolved}' + ('#' + parsed.fragment if parsed.fragment else '')
 
 
+def verbatim_page(text, title):
+    # Plain-text sources such as LICENSE are shown exactly as written, never parsed as Markdown.
+    fence = '`' * max(3, 1 + max(map(len, re.findall('`+', text)), default=0))
+    body = text.rstrip('\n')
+    return f'# {title}\n\n{fence}text\n{body}\n{fence}\n'
+
+
 def stage_sources(root, destination, manifest, revision):
     tracked = tracked_files(root)
     rows = manifest['pages'] + manifest['assets']
     mapping = {}
+    titles = {}
     targets = set()
     for row in rows:
         source, target = row['source'], safe_target(row['target'])
@@ -75,6 +84,7 @@ def stage_sources(root, destination, manifest, revision):
             raise ValueError('Duplicate publication source or target')
         safe_source(root, source, tracked)
         mapping[source] = target
+        titles[source] = row.get('title', PurePosixPath(source).name)
         targets.add(target)
     evidence = []
     for source, target in mapping.items():
@@ -85,6 +95,8 @@ def stage_sources(root, destination, manifest, revision):
             content = re.sub(r'(?<!!)(\[[^\]\n]+\]\()([^\s)]+)(\))',
                 lambda m: m[1] + rewrite_link(m[2], source, target, mapping, root, tracked, revision) + m[3], content)
             data = content.encode()
+        elif target.endswith('.md'):
+            data = verbatim_page(original.decode(), titles[source]).encode()
         if re.search(rb'/Users/[^\s"<>]+|/home/(?!runner/)[^\s"<>]+', data):
             raise ValueError(f'Personal filesystem path in public source: {source}')
         output = destination / target
@@ -111,10 +123,15 @@ def generate_reference(destination, root, revision):
         (export/name).write_text(json.dumps(value, indent=2)+'\n')
     names = {r['name'] for r in data['registered_providers']}
     text = ['# Provider reference', '',
-        f'Generated from package **{data["package_version"]}** at source revision [`{revision[:12]}`](https://github.com/rpalermodrums/pocket/tree/{revision}).', '',
-        'These are installed Python, CLI and MCP input contracts. The general HTTP/OpenAPI facade is not implemented; the local selection workspace has separate browser routes. Output receipts remain dynamic dictionaries. Capability discovery supplies current profiles and prerequisites.', '',
+        'Every provider Pocket installs, with its Python signature, command-line form and MCP input schema. '
+        f'This page is generated from package **{data["package_version"]}** at source revision '
+        f'[`{revision[:12]}`](https://github.com/rpalermodrums/pocket/tree/{revision}), so it always matches the code.', '',
+        'Only inputs are described: receipts are open JSON dictionaries whose fields depend on the call. '
+        'Call `capabilities_list` to see current profiles and prerequisites on your own installation. '
+        'The local workspace and practice review pages have their own browser routes; there is no general HTTP API. '
+        'New to the vocabulary? Start with [key ideas](../docs/concepts.md).', '',
         '[Download complete contracts](installed-contracts.json) · [Download all MCP tools](mcp-tools.json)', '',
-        f'{len(names)} composable providers; {len(data["mcp_tools"])} total MCP registrations, including branded and compatibility names.', '',
+        f'{len(names)} providers, and {len(data["mcp_tools"])} MCP registrations in total, including tool-family and compatibility names.', '',
         '<label for="provider-filter">Find a provider</label><input id="provider-filter" type="search" placeholder="Try context, MIDI, feedback…"><p id="provider-count" role="status"></p>', '']
     from html import escape
     for row in data['registered_providers']:
@@ -125,7 +142,7 @@ def generate_reference(destination, root, revision):
           '<p>MCP input schema</p><pre><code>'+escape(json.dumps(row['mcp']['input_schema'],indent=2))+'</code></pre>',
           '</div></details>', '']
     legacy = sorted(t['name'] for t in data['mcp_tools'] if t['name'] not in names)
-    text += ['## Other MCP registrations', '', 'Branded and compatibility interfaces are not extra independent primitives. Their exact input schemas are in the complete MCP download.', '', ', '.join('`'+n+'`' for n in legacy), '']
+    text += ['## Other MCP registrations', '', 'Tool-family names (such as `peek` and `thread`) and compatibility aliases route to the providers above; they are not separate operations. Their exact input schemas are in the complete MCP download.', '', ', '.join('`'+n+'`' for n in legacy), '']
     (export/'index.md').write_text('\n'.join(text))
     return {'package_version':data['package_version'],'providers':len(names),'mcp_tools':len(data['mcp_tools'])}
 
@@ -177,10 +194,16 @@ def build(output):
         source=safe_source(ROOT,relative,tracked)
         shutil.copyfile(source,theme/source.name)
     import yaml
-    config={'site_name':'Pocket','site_description':'Composable music tools. Python, CLI and MCP interfaces with explicit inputs and inspectable results.',
+    # "Improve this page" links point at the tracked Markdown each page came from.
+    sources={row['target']:row['source'] for row in evidence if row['source'].endswith('.md')}
+    config={'site_name':'Pocket','site_description':'Composable tools for music, for people and their AI agents. '
+            'Python, command-line and MCP interfaces with explicit inputs and inspectable results.',
         'site_url':'https://rpalermodrums.github.io/pocket/','docs_dir':str(stage),'site_dir':str(output/'pocket'),
-        'theme':{'name':None,'custom_dir':str(theme)},'plugins':['search'],'markdown_extensions':['fenced_code','tables','toc','attr_list'],
-        'nav':manifest['nav'],'extra':{'revision':revision,'dirty':dirty,**info},'strict':True,
+        'theme':{'name':None,'custom_dir':str(theme),'static_templates':['404.html']},'plugins':['search'],
+        'markdown_extensions':['fenced_code','tables',{'toc':{'permalink':'#','permalink_title':'Link to this section'}},
+                               'attr_list','md_in_html'],
+        'nav':manifest['nav'],'extra':{'revision':revision,'dirty':dirty,'tagline':'The musical toolkit for agents',
+                                       'sources':sources,**info},'strict':True,
         'validation':{'nav':{'omitted_files':'ignore'},'links':{'not_found':'warn','anchors':'warn','unrecognized_links':'warn'}}}
     config_file=output/'mkdocs.yml';config_file.write_text(yaml.safe_dump(config,sort_keys=False))
     subprocess.run([sys.executable,'-m','mkdocs','build','--strict','--config-file',str(config_file)],check=True)

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent sample oracle and retained evidence for explicit join processing."""
 import copy
 import io

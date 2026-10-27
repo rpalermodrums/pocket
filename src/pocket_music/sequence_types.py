@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict inputs for explicit file-only whole-clip sequence construction."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict inputs for the file-only attributed phrase and motif ledger."""
 from __future__ import annotations
 

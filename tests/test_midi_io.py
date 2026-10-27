@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated SMF bytes and independent wire expectations; no private music fixtures."""
 import hashlib
 import struct

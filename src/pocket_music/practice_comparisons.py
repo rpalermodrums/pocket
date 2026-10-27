@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Cross-revision comparisons with explicit edit ancestry and full occurrence pairs."""
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from .artifact_store import (
     ArtifactHandle,
     _verify_handles,
     canonical_bytes,
+    per_call_verification,
     put_record,
     read_record,
     run_request,
@@ -83,7 +85,9 @@ def _validate(inputs, store_root):
             if current == root:
                 break
             if current not in edits:
-                raise PocketError("Variant lacks verified edit lineage to the exact baseline context", code="evidence_mismatch")
+                raise PocketError("Variant lacks verified edit lineage to the exact baseline context", code="evidence_mismatch",
+                                  hint="List in edit_receipts the edit handle (artifacts.edit from context_edit) for "
+                                       "every revision between the baseline's context and each variant's context.")
             used.add(current)
             current = canonical_bytes(edits[current]["parent"])
         if current != root:
@@ -104,6 +108,7 @@ def _validate(inputs, store_root):
     return renders
 
 
+@per_call_verification
 def practice_compare_revisions(store_root: str, request_id: str, baseline: ArtifactHandle,
                                variants: list[ArtifactHandle], edit_receipts: list[ArtifactHandle],
                                correspondence: list[RevisionCorrespondence], question: str,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Store-relative identity for an owned local analysis job."""
 from typing import Literal
 

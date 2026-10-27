@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict save metadata predicates observed in one exact Live 12.4.5 build.
 
 This does not certify a DAW, or ignore arbitrary differences. It compares every

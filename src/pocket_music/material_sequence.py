@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Construct explicit ordinary-note clip occurrences without inferring clocks.
 
 This is a file transformation, not a native arrangement writer or scheduler.

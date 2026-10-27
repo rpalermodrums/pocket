@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Owned worker behavior, real subprocess completion and publication cancellation."""
 from __future__ import annotations
 

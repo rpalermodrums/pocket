@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual public transports for authored timing composition and proof readback."""
 # Imported pytest fixture names intentionally appear as test parameters.
 # ruff: noqa: F811

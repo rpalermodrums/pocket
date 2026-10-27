@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Declared offline lifecycle checks; no receiver, native or performance qualification."""
 from __future__ import annotations
 

@@ -1,14 +1,21 @@
-# Name compatibility
+# Name changes
 
-The additive [musical context and practice API](musical-context.md) uses the
-existing public-provider registry for Python, CLI and MCP. Its
-`pocket.musical-context/v1` is separate from native `pocket.context/v1` and the
-selection browser's `pocket.workspace/v1`. Existing interfaces and artifacts keep
-their meanings. Shared rational types and native audition evidence were extracted
-without changing those serialized contracts. New context/practice receipts name
-`musical-context-v1` in provenance; old receipt provenance stays unchanged.
+> **In brief.** Five tools were renamed as the tool family took shape. Track Map
+> is now **Peek**, Set Map is now **Thread**, Transition Lab is now **Stitch**,
+> Set Workshop is now **Weave** and On Deck is now **Whisker**. The old commands,
+> MCP tools and module names still work, and saved files keep their original
+> formats. Use the new names for anything new.
 
-**Peek**, **Thread** and **Stitch** are the current names for Track Map, Set Map and Transition Lab. **Weave** and **Whisker** are the current names for Set Workshop and On Deck. These are naming changes, not analysis, editing or saved-format migrations. **Baste** and **Pipette** are new 0.4 tools, with no legacy aliases.
+These were changes of name only. No analysis, editing behavior or saved format
+changed with them. **Baste** and **Pipette** arrived later, in 0.4, as new tools
+with no older aliases.
+
+The [musical context and practice](musical-context.md) providers were added to
+the same registry without disturbing any of this. Their
+`pocket.musical-context/v1` record is separate from the native adapter's
+`pocket.context/v1` and the selection workspace's `pocket.workspace/v1`. New
+context and practice receipts name `musical-context-v1` in their provenance, and
+older receipts keep theirs.
 
 ## Current interfaces
 
@@ -26,7 +33,7 @@ Use the current names for new calls. The CLI still accepts these exact older ali
 | `pocket weave` | `pocket workshop` |
 | `pocket whisker` | `pocket on-deck` |
 
-The original branded MCP surface documented here comprised **39 primary tools and 20 compatibility aliases: 59 names total**. Later registered providers, including MIDI, audio analysis and musical context, extend that inventory; inspect `capabilities_list` and MCP discovery for the installed surface. Twenty primary names changed across the original five branded tools. The other 15 original names, including `identify_audio`, record-bag operations and the Spotify, acquisition and embedding adapters, are unchanged. Baste/Pipette added four names:
+Across the five renamed tools, twenty MCP tool names changed, and each old name remains as an alias (listed below). Other early names, including `identify_audio`, the record-bag operations and the Spotify, acquisition and embedding adapters, never changed. Later providers, including MIDI, audio analysis and musical context, added many more tools; check `capabilities_list` and MCP discovery for the installed set. Baste and Pipette added four names:
 
 | MCP | CLI | Python provider |
 |---|---|---|

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent actual transports over synthetic native evidence, never Live control."""
 import asyncio
 import copy

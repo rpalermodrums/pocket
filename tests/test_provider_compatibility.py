@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Provider naming changes preserve legacy imports and shared module state."""
 import importlib
 import inspect

@@ -1,5 +1,15 @@
 # Pipette: keep a saved trial as a new project
 
+> **In brief.** Like a lab pipette, Pipette moves exactly one measured thing and
+> nothing else. When you've decided to keep a [Stitch](stitch.md) trial,
+> Pipette carries it into a brand-new, self-contained Live project. It re-checks
+> everything first and records where the project came from. Your original set
+> and the trial are left untouched.
+>
+> **You need** a sealed native Stitch trial and the render you chose to keep.
+> Someone has to decide to keep it, and Pipette records who did. An agent's
+> technical keep stays labeled as one.
+
 Pipette promotes an explicitly kept Stitch native candidate into a new collected
 Ableton project, preserving its parent and trial. It requires a selected render
 attachment with usable expected signal. It cannot promote an unsaved Baste

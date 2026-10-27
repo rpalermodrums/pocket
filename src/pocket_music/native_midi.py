@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent native MIDI observation and a separate guarded ordinary-note writer.
 
 The read device remains read-only. The writer has an exact package/host profile,

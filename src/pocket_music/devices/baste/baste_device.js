@@ -7,11 +7,32 @@ var deviceReady = false;
 var replies = {};
 function bang() { deviceReady = true; }
 function probe() { if (deviceReady) { outlet(0, "ready"); } }
+// Live keeps a listener armed on each collection along a LiveAPI object's path
+// until that path is cleared. freepeer and garbage collection leave it armed,
+// and every armed listener slows structural edits in the open set. The reader
+// hands back each object it built once its result is complete. Clearing the
+// path is the only write Baste makes to a Live object: it points the object at
+// nothing and leaves the set unchanged. Baste never changes an object's mode,
+// so there is nothing else to reset.
+function releaseLiveObject(api) {
+    api.path = "";
+    // Live can ignore a path write without an error, so read both back. The
+    // path can come back quoted. Max documents "id 0" as naming no object, and
+    // Number("id 5") is NaN, so only the exact no-object forms pass.
+    var path = String(api.path).replace(/^"(.*)"$/, "$1"), id = String(api.id);
+    if (path !== "") { throw new Error("path still reads \"" + path + "\" after clearing it"); }
+    if (id !== "0" && id !== "id 0") { throw new Error("id still reads \"" + id + "\" after clearing its path"); }
+}
 function observe(requestId) {
     var began = new Date().toISOString();
     var result = deviceReady ? BasteReader.readSession(function (path, id) {
         return new LiveAPI(null, id ? "id " + id : path);
-    }, function () { return Date.now(); }) : {disposition: "device_not_loaded", observation: null};
+    }, function () { return Date.now(); }, releaseLiveObject) : {disposition: "device_not_loaded", observation: null};
+    if (result.release_error) {
+        // Release comes after the read, so the read's outcome stands. The reply
+        // carries the counts; tell the operator in the Max window as well.
+        post("Baste: " + result.release_error + ". Reload the device if Live edits slow down.\n");
+    }
     result.schema = "pocket.live-observation/v1";
     result.request_id = String(requestId);
     result.read_started_at = began;

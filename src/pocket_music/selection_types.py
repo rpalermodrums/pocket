@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Shared selection vocabulary; annotation is not measured musical truth."""
 
 from __future__ import annotations

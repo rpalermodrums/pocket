@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual CLI/stdio parity for independent F3/F5 fixtures and compositions."""
 from __future__ import annotations
 

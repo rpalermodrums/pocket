@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bound v3 render plans, audio evidence, attribution and collected promotion.
 
 These providers neither render nor listen. A decoded WAV establishes signal

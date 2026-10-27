@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real CLI and stdio exchanges, with generated evidence and a simulated device."""
 import asyncio
 import importlib.util

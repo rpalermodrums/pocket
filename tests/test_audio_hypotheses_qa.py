@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent PCM decoding and portable audio-evidence adversarial checks."""
 import copy
 import hashlib

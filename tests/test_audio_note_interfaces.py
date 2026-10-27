@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Actual transports over synthetic retained proofs; real ONNX gates are separate."""
 # Imported fixture names intentionally recur as pytest parameters.
 # ruff: noqa: F811

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated fixtures exercise timing, abstention, and metrical ambiguity."""
 
 import hashlib

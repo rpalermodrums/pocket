@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit authored evidence matching; no inferred pulse-to-note association."""
 from typing import Literal
 

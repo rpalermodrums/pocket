@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Public generated catalogue/media tests, with no private library fixtures."""
 from __future__ import annotations
 

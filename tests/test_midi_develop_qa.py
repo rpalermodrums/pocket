@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent endpoint-development constraints and public-step replay."""
 from __future__ import annotations
 

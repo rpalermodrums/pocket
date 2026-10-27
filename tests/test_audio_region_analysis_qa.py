@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent region/local evidence composition and coordinate adversaries."""
 import builtins
 import copy

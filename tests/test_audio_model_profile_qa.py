@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent synthetic traversal equivalence; never imports an optional model."""
 import hashlib
 import os

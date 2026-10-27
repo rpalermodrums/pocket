@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Exact source identity; no song-title or filename-based identity shortcuts."""
 
 from __future__ import annotations

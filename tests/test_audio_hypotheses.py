@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Exact source evidence, public Peek composition, and correction boundaries."""
 import hashlib
 import importlib

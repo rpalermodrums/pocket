@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic validation tests, explicitly not native save/reopen acceptance."""
 import gzip
 import json

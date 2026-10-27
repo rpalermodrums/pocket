@@ -1,4 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Publication boundary checks: ignored data must never enter the public artifact."""
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -41,6 +43,19 @@ def test_only_allowlisted_bytes_staged(tmp_path):
     assert [p.name for p in output.iterdir()]==['index.md']
     assert evidence[0]['source']=='guide.md'
     assert 'never publish' not in (output/'index.md').read_text()
+
+
+def test_plain_text_sources_are_published_verbatim(tmp_path):
+    root=repository(tmp_path)
+    # License texts indent titles, start lists at 0 and use <angle brackets>, which Markdown would mangle.
+    text='                    TITLE\n\n  0. Definitions.\n    <name of author>\n```not a fence\n'
+    (root/'LICENSE').write_text(text)
+    subprocess.run(['git','add','LICENSE'],cwd=root,check=True)
+    output=root/'out';output.mkdir()
+    manifest={'pages':[{'source':'LICENSE','target':'license.md','title':'License'}],'assets':[]}
+    evidence=site.stage_sources(root,output,manifest,'a'*40)
+    assert (output/'license.md').read_text()=='# License\n\n````text\n'+text.rstrip('\n')+'\n````\n'
+    assert evidence[0]['sha256']==hashlib.sha256(text.encode()).hexdigest()
 
 
 def test_duplicate_and_escaping_targets_refused(tmp_path):

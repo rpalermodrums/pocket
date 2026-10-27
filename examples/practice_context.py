@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Generate an exact, synthetic practice comparison using only public providers.
 
 Run: python examples/practice_context.py /path/to/new/private-directory

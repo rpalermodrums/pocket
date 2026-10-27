@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict opt-in declarations for local learned pulse hypotheses."""
 from typing import Literal
 

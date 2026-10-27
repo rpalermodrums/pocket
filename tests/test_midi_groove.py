@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Supplied timing templates preserve residuals, clocks, locks and source evidence."""
 from __future__ import annotations
 

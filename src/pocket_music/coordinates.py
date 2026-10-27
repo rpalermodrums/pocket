@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bounded exact coordinate values, independent of material and host adapters."""
 from fractions import Fraction
 

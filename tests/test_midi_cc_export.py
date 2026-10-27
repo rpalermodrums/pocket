@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit CC derivatives, with an independent wire decoder and retained sources."""
 from __future__ import annotations
 

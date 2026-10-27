@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent F5 expectations authored before implementation; artifact-only evidence."""
 from __future__ import annotations
 

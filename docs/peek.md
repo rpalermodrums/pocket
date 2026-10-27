@@ -1,5 +1,14 @@
 # Peek
 
+> **In brief.** Peek looks inside a stretch of a recording and reports what it
+> can measure: where sounds start, which pulse rates fit, how the local tempo
+> drifts, which pitch classes ring out and which textures seem to repeat. It
+> never edits audio, and it never decides where beat one is. That's your call.
+>
+> **Reach for it when** you want evidence about a passage's timing or tonal
+> content before making a musical decision. **You need** a WAV or FLAC file
+> and the stretch you care about.
+
 Peek describes a bounded piece of an audio source. It returns exact file identity and source coordinates, detected attacks, pulse-rate alternatives, local tempo evidence, local pitch-class features, and possible repeated textures. It does not edit audio, produce a warp map, identify a song's key, or certify musical beat one.
 
 The distinction matters: two sources can both have a stable 120 BPM grid and still have an incorrect musical alignment. A strong accent can be a backbeat or a syncopation. Consistent results from one analysis method do not resolve that ambiguity.
@@ -107,4 +116,4 @@ python -m pytest tests/test_track_map.py tests/test_rhythm_continuity.py
 
 The generated fixtures cover original-source offsets and file identity, strict seconds/frame bounds, stable click tempo with and without a hint, unresolved half/double and bar interpretations, accelerating clicks, silence, broadband-noise tonal abstention, a known local pitch class, anti-phase stereo, nonfinite input, and source-coordinate preservation for repeated textures. Additional fixtures exercise persistent half-pulse-separated attack layers under shifted crops, a brief phase displacement against a steady periodic bed, stable multiband controls, and an irregular sparse passage. Exact frame addressing is tested at a sample rate whose frame boundaries are fractional seconds.
 
-Private development checks retain the known crop-sensitive percussion passage, a documented brief count event, crop-stable opening controls, natural timing and previously unused passages. The percussion's competing half-pulse layers and inward-crop sensitivity are exposed. The count-event passage can still select approximately 246 BPM despite a 123 BPM hint, but now reports a localized band-phase/count uncertainty instead of letting stable rate evidence stand alone. The tight event-only crop abstains for insufficient sustained flanks. These are diagnostic improvements, not solved musical downbeats or corrected pulse counts. Source-specific calls, timings, reference limits and reports remain outside this repository; no recordings or models are committed.
+The same checks were also run on real recordings, including a crop-sensitive percussion passage, a brief count event, steady openings, freely timed playing and passages the analyzer had never seen. On those recordings Peek exposes competing half-pulse layers and sensitivity to the crop. A passage can still select about 246 BPM despite a 123 BPM hint, but the report now shows a localized band-phase or count uncertainty rather than letting stable rate evidence stand alone. A tight crop around the event abstains. These are better diagnostics. They are not solved downbeats or corrected pulse counts. No recordings or models are committed to the repository.

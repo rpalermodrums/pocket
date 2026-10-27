@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Compare explicit 5/15 ms join envelopes on retained practice exercise outputs.
 
 Run exercise_practice_recording first. This copies its store into a new private

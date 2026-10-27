@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Authored correction contracts over mocked model artifacts; no learned accuracy claim."""
 import copy
 from unittest.mock import patch

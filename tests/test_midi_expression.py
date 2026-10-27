@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent expected event values for offline declared expression realization."""
 from __future__ import annotations
 

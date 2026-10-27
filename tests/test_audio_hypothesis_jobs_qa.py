@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent publication, immutable input and competing cancellation expectations."""
 from __future__ import annotations
 

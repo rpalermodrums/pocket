@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Real provider integration, enabled when the Whisker slice is installed."""
 from __future__ import annotations
 

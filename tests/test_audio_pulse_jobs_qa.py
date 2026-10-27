@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent owned learned-pulse job failure boundaries; mocked inference only."""
 import copy
 import json

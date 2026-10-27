@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent quarantine adversaries. Fake evidence is not native acceptance."""
 import copy
 import json

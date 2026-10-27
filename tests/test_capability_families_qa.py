@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent semantic discovery checks against actual file-only provider outputs."""
 import copy
 

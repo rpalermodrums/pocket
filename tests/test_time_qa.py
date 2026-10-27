@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent declared-clock QA; no native clock or audio listening claims."""
 import asyncio
 import builtins

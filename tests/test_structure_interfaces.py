@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Public phrase retrieval and composition, using independently authored material."""
 from __future__ import annotations
 

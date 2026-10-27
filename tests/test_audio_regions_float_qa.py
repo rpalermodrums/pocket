@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent wire/sample and real-interface checks for exact FLOAT32 passages."""
 import asyncio
 import hashlib

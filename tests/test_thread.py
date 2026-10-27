@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated, temporary fixtures: no user sets or recordings enter the repo."""
 from __future__ import annotations
 

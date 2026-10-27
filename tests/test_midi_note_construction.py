@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """File-only note construction checks using externally authored material and wire decoding."""
 from __future__ import annotations
 

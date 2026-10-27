@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generated-media integration tests; no production paths or recordings."""
 from __future__ import annotations
 

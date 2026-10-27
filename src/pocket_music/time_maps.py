@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Exact step-tempo conversion with explicit clocks, partial bars and local cycles.
 
 This file-only profile never infers a DAW clock, a source warp, a groove, or a

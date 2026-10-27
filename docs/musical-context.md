@@ -1,39 +1,42 @@
-# Musical context and standalone practice
+# Musical context and practice
 
-Pocket is a composable toolkit for musical work across recordings, instruments,
-notation, practice, performance and hosts. The post-v1 goal includes a responsive
-“living band in a box”: a practice partner that can listen, follow musical form,
-respond and adapt with a musician. Jazz is an important proving ground; a DAW,
-genre, fixed meter or electronic production workflow is not a core requirement.
+> **In brief.** Tell Pocket which passages of a recording you're working with,
+> how they sit on a timeline and where your cues are. Pocket can then render
+> exact passages and repeats, compare alternatives with a baseline and keep
+> attributed notes about what someone heard. None of this needs a DAW.
+>
+> **Reach for it when** you want to try a passage two ways, loop a section for
+> practice, or pin down exactly where a cue falls the second time around.
 
-This implementation supplies a small foundation for that goal. It binds retained
-recordings, symbolic material, declared clocks, internal musical anchors and
-individual occurrences in an immutable context. A standalone practice profile
-can render exact passages and repetitions, compare alternatives, and retain
-attributed feedback. It does not implement live accompaniment or musical inference.
+This is the foundation for Pocket's longer-term aim of a practice partner that
+listens, follows the form and responds (see [status and direction](status.md)).
+Today it binds retained recordings, symbolic material, declared clocks,
+internal musical anchors and individual occurrences into an immutable
+**context**. It does not accompany a player or infer musical meaning. If the
+vocabulary is new, [key ideas](concepts.md) explains it, and
+[your first experiment](getting-started.md) runs the whole path in a few
+minutes.
 
-## The boundary that matters
+## How the pieces fit
 
-```mermaid
-flowchart LR
-  Agent[Musician / agent] --> API[Python · CLI · MCP]
-  API --> Context[Immutable musical context]
-  Capture[Exact retained audio regions] --> Context
-  Material[Existing symbolic material] --> Context
-  Time[Exact step-tempo maps] --> Context
-  Context --> Resolve[Anchor + occurrence → explicit coordinate]
-  Context --> Render[Original-rate practice render]
-  Render --> Evidence[Shared decoded-signal evidence]
-  Evidence --> Compare[Baseline + alternatives + question]
-  Compare --> Feedback[Attributed interval feedback]
-  Native[Qualified native audition adapter] --> Evidence
-```
+1. **Capture** an exact passage of a recording with `audio_region_capture`.
+   Pocket keeps the passage and its position in the original file.
+2. **Declare a timeline** with a tempo map using `musical_time`.
+3. **Create a context** with `context_create`. It ties the passages, timelines,
+   occurrences and anchors together.
+4. **Resolve** an anchor or position onto another clock with `context_resolve`.
+5. **Render** chosen occurrences, in order, with `practice_render`.
+6. **Compare** a baseline with alternatives around one question using
+   `practice_compare`.
+7. **Listen and report.** `practice_feedback`, or the
+   [practice review page](practice-review.md), records a person's attributed
+   report about an exact interval.
 
-The context owns identity and authored relationships. The existing time provider
-owns step-tempo integration and meter display. The practice renderer owns its
-limited audio realization. Shared evidence code owns signal measurement and
-feedback validation. Native candidate preparation, Live XML, export reports and
-native promotion stay in their adapter.
+Each part has one job. The context owns identity and authored relationships.
+The time provider owns tempo integration and meter display. The practice
+renderer owns its limited audio realization. Shared evidence code owns signal
+measurement and feedback validation. Ableton-specific candidate preparation,
+Live XML, export reports and native promotion stay in their own adapter.
 
 ## Records and coordinates
 
@@ -48,6 +51,8 @@ native promotion stay in their adapter.
 | `pocket.practice-render/v1` | Context revision, selected occurrences, original-source/output mappings, exact output audio handle, processing profile and measured signal. |
 | `pocket.practice-comparison/v1` | Explicit baseline, alternatives, question, duration policy and signal readiness. No inferred winner. |
 | `pocket.practice-feedback/v1` | Exact comparison/render, audio hash, frame interval, actor, actor kind, note and optional decision. |
+| `pocket.practice-feedback/v2` | A v1-style report on a declared preview: exact comparison/render, the preview and its audio hash, the reviewed preview interval and the mapped render interval. |
+| `pocket.practice-preview/v1` | Declared PCM16 browser copy of one exact render: parent and audio identities, one-to-one frame mapping, conversion, quantization error and signal evidence. |
 
 Every position is scoped by the **context artifact handle plus clock ID**. Local
 IDs alone are not durable cross-context references. An immutable child context
@@ -82,10 +87,12 @@ remains an interpretation.
 The providers are lazy root exports from `pocket_music`. MCP uses the same
 underscore names. CLI uses hyphens and accepts the same argument object through
 `--spec path.json`. The existing `PUBLIC_CAPABILITIES` registry registers all three
-surfaces; there is no additional HTTP implementation.
+surfaces; there is no HTTP API for these providers. The loopback
+[practice review page](practice-review.md) is a separate local browser interface
+that calls them.
 
-An already-running Pocket MCP process needs a restart to load the new provider
-registrations. Existing editable installations pick up the Python/CLI changes.
+After you update Pocket, restart any running MCP server so it registers new
+providers. An editable installation picks up Python and CLI changes immediately.
 
 | Provider | Required inputs beyond `store_root` | Result |
 |---|---|---|
@@ -94,13 +101,14 @@ registrations. Existing editable installations pick up the Python/CLI changes.
 | `context_resolve` | `context`, `target_clock_id`, `target_space`, exactly one `position` or `anchor_id`; optional `occurrence_id` | Exact output coordinate and the occurrence used. |
 | `practice_render` | `request_id`, `context`, ordered `occurrence_ids` | New audio and render handles with source mappings. |
 | `practice_compare` | `request_id`, `baseline`, `variants`, `question`; optional `allow_duration_mismatch` | Verified comparison handle. |
-| `practice_feedback` | `request_id`, `comparison`, `render`, `interval_frames`, `actor`, `actor_kind`, `note`; optional `decision` | Attributed feedback handle. |
+| `practice_feedback` | `request_id`, `comparison`, `render`, `interval_frames`, `actor`, `actor_kind`, `note`; optional `decision`, `preview` | Attributed feedback handle (v2 when a preview was reviewed). |
 | `interpretation_create`, `interpretation_query`, `context_bind_interpretation` | Exact context/source clock, tagged claim, attribution; selected evidence when applicable | Immutable interpretation and v2 context binding. |
 | `context_edit`, `context_edit_query` | Explicit operations, locks, attribution or exact edit handle | Child context and revalidated preservation proof. |
 | `practice_compare_revisions` | Baseline/variants, edit receipts, full occurrence correspondence, question | Explicit cross-revision comparison. |
 | `practice_feedback_query` | Explicit feedback handles; optional exact render, interval and report filters | Bounded original reports without consensus. |
 | `practice_envelope`, `practice_compare_processed` | Exact baseline, declared joins and attribution; or derivatives and question | Explicit processing and baseline comparison. |
-| `practice_query` | `artifact`; optional `section`, `offset`, `limit` | Revalidated render/comparison/feedback summary, or paged render mappings. |
+| `practice_preview` | `request_id`, exact `render` (raw or join envelope), `profile: "browser-pcm16-original-rate/v1"` | Declared PCM16 browser preview and its audio handle. |
+| `practice_query` | `artifact`; optional `section`, `offset`, `limit` | Revalidated render/comparison/feedback/preview summary, or paged render mappings. |
 
 `MusicalContextDefinition` and nested transport types live in `context_types.py`.
 All definition fields are explicit: `context_id`, `title`, `attribution`, `sources`,
@@ -116,17 +124,17 @@ request is inspected before a new attempt; the provider never steals its lock.
 New calls retain `pocket.operation-receipt/v1` and its existing `ok`, `failed`,
 `unsupported`, etc. vocabulary. Their provenance explicitly names
 `musical-context-v1`. Existing receipts retain their old provenance and fields.
-Invalid calls raise `PocketError`; the current CLI returns structured errors with
-exit code 2 and MCP returns tool errors. The proposed future facade's status and
-error vocabulary has not been substituted for these working contracts.
+Invalid calls raise `PocketError`. The CLI returns structured errors with exit
+code 2, and MCP returns tool errors. See [contracts and errors](contracts.md)
+for the opt-in machine-readable format.
 
 ## Run the complete example
 
-Choose a new directory outside the repository:
+Choose a new directory. The ignored `private/` folder in the checkout works well:
 
 ```sh
-python examples/practice_context.py /tmp/pocket-practice-demo
-pocket context-resolve --spec /tmp/pocket-practice-demo/resolve-spec.json
+python examples/practice_context.py private/practice-demo
+pocket context-resolve --spec private/practice-demo/resolve-spec.json
 ```
 
 The demo creates only synthetic audio, captures exact frames, declares a clock
@@ -179,21 +187,27 @@ uses `actor_kind="agent"`. Creating feedback never changes a render's stored
   Moving the complete artifact store preserves references; retained practice
   reads do not need the original external recording. Recapturing/replaying the
   original capture request still validates that external original.
+- Within one practice provider call (and `context_edit_query`), an artifact that
+  appears several times in the evidence graph is read and hash-verified once, and
+  a repeated validation of the same context, render, envelope, preview or edit
+  reuses that call's result. Graph bounds are still enforced on every walk.
+  Nothing is kept between calls: the next call reads and verifies everything
+  again, so a changed file is detected. Up to 256 MiB of verified bytes may be
+  held in memory during a call.
 
-DOUBLE WAV is an evidence format and is not supported by every browser player.
-A browser export needs an explicit supported format and independent fidelity
-checks. Local experiments used separate FLOAT32 review copies; those exports
-are not a new public processing profile.
+DOUBLE WAV is an evidence format, and not every browser can play it. Use
+`practice_preview` for a declared browser copy (see
+[declared browser previews](#declared-browser-previews)).
 
 This profile does not mix overlapping layers, transpose, stretch, generate a
 count-in, infer meter, or accompany a player in real time. Existing symbolic tools
 remain composable through material references. Those additions need their own
 capability profiles and evidence rather than broader claims attached to this one.
 
-The [local-recording recipe](../examples/exercise_practice_recording.py) exercises
-analysis abstention, competing pulse estimates and overloaded FLOAT32 audio.
-Working plans and private acceptance reports live in the ignored local
-[development material](README.md#local-development-material).
+The [local-recording recipe](../examples/exercise_practice_recording.py) runs the
+same path on a recording you supply. It exercises analysis abstention, competing
+pulse estimates and overloaded FLOAT32 audio. Keep the recording and its results
+under the ignored `private/` folder.
 
 ## Evidence-bound interpretations
 
@@ -267,12 +281,78 @@ both and still binds a report to the exact render hash and interval. Signal flag
 unchanged baseline bytes and conflicting interpretations stay visible. Neither
 creating a comparison nor reading feedback supplies a listening verdict.
 
+### Land an internal downbeat on a handover
+
+A passage often begins before its own bar one: a pickup, a breath, a fill. Three
+positions then stay separate records, even when two of them share a number:
+
+| Position | Recorded as | Context edit that changes it |
+|---|---|---|
+| Tempo-change point | A step (`at_qn`, `bpm`) in the timeline's `pocket.time-map/v1` | None: a time map is not an edit target |
+| Clip boundary | The start of an occurrence's `timeline_span_qn` | `occurrence_shift_timeline` |
+| Source downbeat | A `bar_one` anchor at an absolute source frame | `anchor_rebind` with a new attributed interpretation |
+
+Outside these edits, `context_create` with a v1 `parent` can restate the whole
+definition under the same `context_id`, including the time map, with no edit
+receipt or preservation proof.
+
+`occurrence_slip_source` changes which source frames fill an unchanged timeline
+slot. Slipping a passage by exactly its pickup length therefore moves its bar one
+onto its clip boundary. The boundary, the tempo step and the anchor's claim stay
+where they were. The [linked-downbeat example](../examples/linked_downbeat.py)
+applies this to the [internal downbeat in a repeated passage](#an-internal-downbeat-in-a-repeated-passage)
+on a generated click track. The destination must not already exist:
+
+```sh
+python examples/linked_downbeat.py private/linked-downbeat
+```
+
+Passage A (120 BPM) starts on its bar one and plays twice. Passage B (96 BPM) has a
+one-beat pickup and also plays twice. The timeline steps to 96 BPM at quarter note
+16, which is also where B1 starts. B's `bar_one` anchor is source frame 90000, one
+beat after B's first frame.
+
+- **H1** slips B1 and B2 together by 10000 frames (one B beat). Locks refuse any
+  change to A's source windows or placement, to B's placement, or to an anchor's
+  kind or position. The recomputed edit proof lists only the two
+  `source_span_frames` changes, `[80000, 170000)` to `[90000, 180000)`. B's bar one
+  now resolves to quarter notes 16 and 25 (the two B clip boundaries) rather than
+  17 and 26, and no occurrence maps the pickup any more. A's output samples are
+  unchanged.
+- Each B keeps its nine-beat length, so dropping the pickup adds the next source
+  beat at its end. In this click track that beat is B's following bar one. H1
+  therefore plays downbeats at quarter notes 24 and 25, a one-beat bar before the
+  repeat, and B2 ends on a lone downbeat at 33. The baseline instead has five beats
+  between the downbeats at 21 and 26. A strictly two-bar repeat would change the
+  occurrence lengths, which no context edit does.
+- A linked edit names every repeat. Nothing infers that B2 repeats B1: slipping
+  only B1 leaves B2's bar one at quarter note 26.
+- **H2** instead shifts B's placement one quarter note earlier. The context accepts
+  this as intent, and the edit reports that the exact PCM profile cannot realize it.
+  B1 now straddles the tempo step and overlaps A2. Rendering all four occurrences is
+  refused because this renderer never mixes overlapping occurrences. Rendering B1
+  and B2 alone is refused because B1 would need time stretch.
+- The revision comparison pairs every occurrence with itself at identical output
+  frames, so the [practice review page](practice-review.md) keeps the playhead when
+  switching between the baseline and H1. The example writes `comparison.json` and
+  prints the `pocket practice-review` command for it.
+
+The example records no report and touches no DAW. It establishes mappings, locks
+and exact samples for synthetic clicks. It does not establish whether landing on
+bar one is musically better for any real passage: that needs a musician's chosen
+passage, where they hear bar one, and their own saved report.
+
 ## Retrieve scoped reports
 
 `practice_feedback_query` takes 1–128 explicit feedback handles. Optional filters
 include an exact `render` handle, `actor`, `actor_kind`, `decision` and
 `interval_frames`; an interval requires the render handle. An audio hash alone
 cannot distinguish identical PCM belonging to different context revisions.
+
+Version 1 and version 2 reports can be mixed in one query. A v2 row adds
+`report_schema` and `reviewed_audio` (the exact preview, its audio hash and the
+preview interval); v1 rows keep their original fields, because the playback bytes
+behind a v1 report were never recorded. Filters use render frames for both.
 
 Queries validate all supplied reports before filtering. Pages retain input order,
 original intervals, text and contradictory decisions. An overlap match does not
@@ -316,7 +396,7 @@ visible even when an envelope reduces an output peak. No winner is selected.
 For a retained output of the recording recipe, run:
 
 ```sh
-python examples/exercise_join_envelope.py private/audio/practice-run private/audio/join-experiment
+python examples/exercise_join_envelope.py private/practice-run private/join-experiment
 ```
 
 This creates a new store, 5/15 ms variants, numerical checks and `listen.html`.
@@ -324,3 +404,73 @@ Its FLOAT32 browser previews record their rounding error separately from the
 DOUBLE evidence. These are technical repetition joins, not selected phrase loops
 or listening-approved defaults. See [contract export and errors](contracts.md) for
 machine schemas generated from the installed providers.
+
+## Declared browser previews
+
+`practice_preview(store_root, request_id, render, profile)` makes a separately
+identified `pocket.practice-preview/v1` copy of an exact practice render or
+join-envelope render for a browser player. The only profile is
+`browser-pcm16-original-rate/v1`:
+
+- Decoded parent samples are multiplied by 32768 and rounded to the nearest
+  integer, ties to even. No dither, gain, normalization, clamping, resampling,
+  channel conversion, fades or timing change is applied.
+- Every rounded value must lie in `[-32768, 32767]`. Otherwise the request is
+  refused with `unsupported_profile`, naming the first frame and channel. An
+  overloaded or near-full-scale render is never clamped to make it playable.
+- Output is a canonical 44-byte-header RIFF/WAVE PCM16 file at the parent's own
+  rate and channel count. Rates are limited to 8000, 11025, 16000, 22050, 24000,
+  32000, 44100, 48000, 88200 and 96000 Hz; other rates are refused, not resampled.
+- Frames map one-to-one to the parent (`frame_mapping.kind: "identity"`), so the
+  parent's occurrence mappings also address preview frames. A PCM16-sourced render
+  previews without any rounding; `coverage.parent_samples_exact` reports this.
+
+The record keeps the exact parent handle and audio identity, the conversion
+declaration, quantization counts and maximum error in LSB, the parent's signal
+evidence and the preview's own measured signal. Parent signal warnings stay in
+the receipt. `practice_query` rebuilds the expected bytes from the fully
+revalidated parent, so a rehashed or edited preview record is refused.
+`section="mappings"` on a preview returns the parent's occurrence mappings.
+
+A preview is a derivative for playback, not a musical edit. It cannot be a
+preview parent, an envelope parent or a comparison member. Identical replays
+return the verified receipt; changed inputs under the same request ID conflict.
+
+Verified preview bytes establish the encoded input a player receives, not the
+sound leaving a device: browsers and operating systems may resample or process
+output. In Chromium, PCM16 is decoded as `k × (1/32768)` below zero and
+`k × (1/32767)` above, using float32 reciprocals. Browser floats therefore differ
+slightly from Pocket's `k/32768` on positive samples, although every integer is
+recovered exactly. The optional `tests/test_practice_preview_browser.py`
+qualification checks this for every declared rate. Other browsers have not been
+qualified. Creating or querying a preview records no listening.
+
+### Reports about a preview
+
+Pass `preview` to `practice_feedback` when the person or agent reviewed a declared
+preview rather than the retained render. The preview must derive from the exact
+`render` named in the call, and that render must belong to the comparison; a
+preview of another variant is refused with `source_mismatch`, so a stale
+selection cannot be reported against the wrong audio. `interval_frames` then
+address the preview. The new `pocket.practice-feedback/v2` record keeps:
+
+- the comparison, render and render audio hash, as in v1;
+- `interval_frames`: the mapped render interval (identical under the one-to-one
+  preview mapping);
+- `reviewed_audio`: `kind: "declared_preview"`, the preview handle, its audio
+  hash, profile, the preview interval and `frame_mapping: "identity"`.
+
+Calls without `preview` still create v1 records with unchanged request identity,
+fields and receipt. `practice_query` on a v2 report reports the preview profile,
+the parent render's profile as `parent_profile` and `reviewed_audio`. Reading a
+v2 report revalidates the comparison, the preview and its parent; a rehashed
+record with a changed preview, interval, attribution or evidence kind is refused.
+
+The [practice review page](practice-review.md) uses exactly this route for a
+person's report: it prepares the declared preview, shows the frames that will be
+saved and requires explicit confirmation before calling `practice_feedback`.
+
+`actor_kind="agent"` remains an agent report even when it names a preview. The
+provider records what the caller states about an interval; it never infers that
+anyone listened from playback, and saving a report never changes a render,
+preview or comparison.

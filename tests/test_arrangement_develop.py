@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Owner checks for explicit whole-clip arrangement choices and exact locks."""
 import copy
 import importlib

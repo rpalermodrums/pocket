@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Explicit inward frame intervals; never silently expand a requested crop."""
 from __future__ import annotations
 

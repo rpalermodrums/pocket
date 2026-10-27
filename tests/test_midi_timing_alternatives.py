@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic authored timing evidence; no listening or model execution."""
 import copy
 import shutil

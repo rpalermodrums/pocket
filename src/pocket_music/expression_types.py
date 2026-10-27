@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Strict offline member-channel expression planning inputs; no native authority."""
 from __future__ import annotations
 

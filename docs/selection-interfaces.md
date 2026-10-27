@@ -1,9 +1,16 @@
 # Selection interfaces
 
+> **In brief.** Pocket's record-selection tools work together. A
+> [record bag](record-bag.md) holds your crate. [Weave](weave.md) proposes
+> routes through it, [Whisker](whisker.md) proposes what comes next during a
+> set, and the [workspace](workspace.md) puts both in a browser page. This guide
+> shows the matching command-line and MCP calls for each step. The tools propose;
+> you decide.
+
 Weave and Whisker share the same sealed record bags across Python, the
 command line, the local [workspace](workspace.md) and MCP. They propose routes
 and next records; they neither mix audio nor certify a handoff. Unknown properties
-remain unknown. A catalogue URI is distinct from exact local recording identity.
+remain unknown. A catalog URI is distinct from exact local recording identity.
 
 ## Human workspace
 
@@ -14,7 +21,7 @@ pocket workspace --workspace-dir /path/to/private-session --bag-handle /path/to/
 The handle file can contain a bare bag handle or the result of creating a bag.
 The server binds to loopback, prints its local URL and stays open until Ctrl-C.
 Port 0 chooses a free port; `--port 8765` requests a fixed one. This blocking server
-is not an MCP tool. Keep workspace/catalogue artifacts outside public repositories.
+is not an MCP tool. Keep workspace/catalog artifacts outside public repositories.
 
 ## JSON command line
 
@@ -96,7 +103,7 @@ performance duration remains separate from full-record duration. See
 
 ## MCP and public Python
 
-The branded route tools are MCP `weave`, `weave_feedback` and `weave_replan`. Shared-session tools are `whisker_prepare`, `whisker_snapshot`, `whisker` (options) and `whisker_update`. Their Python function names in the command table remain unchanged. The [compatibility guide](compatibility.md) documents the 35-primary/20-alias count and each renamed mapping.
+The Weave route tools are MCP `weave`, `weave_feedback` and `weave_replan`. Shared-session tools are `whisker_prepare`, `whisker_snapshot`, `whisker` (options) and `whisker_update`. Their Python function names in the command table remain unchanged. The [name changes](compatibility.md) page maps every renamed tool to its current name.
 
 `pocket-mcp` exposes canonical tools alongside compatibility aliases. The 21 selection provider tools return one compact JSON
 text record without a duplicated structured copy. Inputs expose nested bag/plan
@@ -104,7 +111,7 @@ handles, attributed profiles, brief constraints, integer revision/frame fields,
 choice enums and cached embedding receipt fields. Standard option limits apply:
 bag pages default to 20, Whisker to 6, Weave to 3 distinct routes. Explicit
 larger requests still obey provider bounds; limited route diversity is reported.
-Full catalogues and embedding indexes are not automatically echoed by discovery.
+Full catalogs and embedding indexes are not automatically echoed by discovery.
 
 Python imports stay lazy:
 
@@ -115,7 +122,7 @@ from pocket_music import create_record_bag, plan_set_routes, prepare_session, se
 These resolve to the actual provider functions; importing Pocket neither loads
 model weights nor starts a server. Existing module imports and the three original
 tools remain supported. `inspect_set` is still the full Python library function;
-the MCP tool `thread` returns the summary-first interface. See [name compatibility](compatibility.md) for the retained old tool aliases.
+the MCP tool `thread` returns the summary-first interface. See [name changes](compatibility.md) for the old tool aliases that still work.
 
 Optional unknown numeric profile values may be null; omitting an unknown field
 is always the most portable choice. In particular, omit unavailable/explicit flags

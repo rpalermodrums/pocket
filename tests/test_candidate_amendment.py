@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Synthetic amendment contracts; none of these reports are native evidence."""
 import copy
 import gzip

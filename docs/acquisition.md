@@ -1,5 +1,14 @@
 # Optional recording acquisition
 
+> **In brief.** An optional, strict way to fetch one recording you're
+> authorized to use from a URL you choose. Pocket looks at the candidates,
+> downloads exactly the format you pinned, keeps the original file, and checks
+> the decoded audio before calling it ready. It never picks a search result for
+> you or claims that a download is the edition you wanted.
+>
+> **You need** yt-dlp and FFmpeg, installed and chosen by you. Pocket doesn't
+> install them.
+
 `pocket_music.acquisition` discovers source candidates and acquires one explicitly chosen HTTP(S) recording URL. It does not download Spotify streams, select the first search result, infer an edition from a title, install tools, read browser cookies or normalize audio. Original recordings and private receipts belong outside Git.
 
 For authorized recording acquisition, the default is **yt-dlp with the best available audio** (`bestaudio/best`). This is already the provider's selection policy. Keep the downloaded original codec; create any WAV or MP3 listening exports separately. Selecting the best encoding does not establish that a candidate is the requested performance, mix or edition.

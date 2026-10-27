@@ -1,5 +1,15 @@
 # Stitch
 
+> **In brief.** Stitch turns a question about a transition, such as "does the
+> handoff land better one beat later?", into a small, exact comparison. You give
+> it rendered audio and a passage. It cuts matching excerpts with no hidden
+> fades or level changes, seals them into a trial, and lets you pin listening
+> notes to the exact version and moment you heard. It can also prepare a single,
+> controlled change as a separate Live project. It never decides which version
+> is better.
+>
+> **You need** rendered audio files, or a saved Live set for the native path.
+
 Stitch turns a specific musical question into a small comparison with traceable audio. Start with completed renders, choose the passage, and attach a listening note to the exact version and time span reviewed. It does not decide which version sounds better.
 
 The CLI and MCP call the same Python providers in `pocket_music.stitch`:

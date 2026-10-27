@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Independent hand-calculated periodic timing and public interface checks."""
 from __future__ import annotations
 

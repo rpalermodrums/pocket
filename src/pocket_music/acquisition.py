@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Optional bounded yt-dlp acquisition, with immutable originals and explicit derivatives."""
 
 from __future__ import annotations
