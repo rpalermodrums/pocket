@@ -27,6 +27,16 @@ _SPEC_OPERATIONS = {
         "act": ("shuttle", "shuttle_act", None),
         "request-status": ("shuttle", "shuttle_request_status", None),
     },
+    "listen": {
+        "build-helper": ("listen", "listen_build_helper", None),
+        "devices": ("listen", "listen_devices", None),
+        "prepare": ("listen", "listen_prepare", "output_dir"),
+        "start": ("listen", "listen_start", None),
+        "observe": ("listen", "listen_observe", None),
+        "events": ("listen", "listen_events", None),
+        "stop": ("listen", "listen_stop", None),
+        "request-status": ("listen", "listen_request_status", None),
+    },
     "pipette": {
         "promote": ("pipette", "promote_trial", "output_dir"),
         "validate": ("pipette", "validate_promotion", None),
@@ -174,6 +184,8 @@ def parser() -> argparse.ArgumentParser:
     for group, operations in _SPEC_OPERATIONS.items():
         help_text = {
             "shuttle": "Improvise from a local Serato crate through the qualified native bridge",
+            "listen": ("Watch declared live audio routes: levels, clocks, gaps and capture health; "
+                       "changes no device, route or deck"),
             "pipette": "Promote a kept Stitch candidate into a new collected saved project",
             "bag": "Create or navigate a sealed record catalog",
             "weave": "Explore routes through a set and refine them with feedback",

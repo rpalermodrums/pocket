@@ -206,15 +206,19 @@ The standalone practice, review and MIDI tools are named for what they do. See
 | Anchor | A named, authored point in a recording, such as a cue |
 | Artifact | One immutable record or file in a store, named by its hash |
 | Attribution | Who made a claim, whether they are a person or an agent, and how sure they were |
+| Audio route | A declared set of input channels with a role: master, cue or unlabeled. It isn't a Weave route |
 | Bar one | The downbeat that begins a bar. It is distinct from the pulse and the phrase start |
 | Capture | Copying an exact passage of a recording into a store, together with its original position |
 | Comparison | A baseline, its variants and the question you want answered |
 | Context | Pocket's record of which recordings, clocks, occurrences and anchors belong together |
 | Coverage | The part of a receipt that says what was and was not attempted |
+| Cursor | Your place in a stream of events: a runtime epoch and the sequence your reads have covered, which can be past the last event you received when filters skipped some. Pass a page's `next_after` as the next cursor |
 | DAW | Digital audio workstation, such as Ableton Live |
+| Epoch | One run of a Listen runtime, or one run of an audio stream's frame count. A restart, or a counter reset or backward jump, starts a new one, and positions from an old one don't carry over. The device's sample counter places missing frames exactly, as gaps on the same count, so an epoch can contain gaps |
 | Frame | One sample position, across all channels, in an audio file |
 | Handle | A small JSON pointer to one artifact: its location, hash and schema |
 | Join envelope | A declared linear fade at the joint between two rendered passages |
+| Lease | A Listen session's one-runtime-at-a-time lock. A running runtime holds it until its process exits, and a new start is refused while it's held |
 | MCP | Model Context Protocol, the standard Pocket uses to offer its tools to AI agents |
 | Material | Pocket's own versioned format for MIDI notes and clips |
 | No addition | The always-available choice to leave the music as it is |

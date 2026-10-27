@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import platform
 import shutil
 import sys
 
@@ -18,6 +19,14 @@ PUBLIC_CAPABILITIES = (
     ('shuttle_options', 'shuttle', 'performance', 'options', True, 'Propose next records using the crate, history and observed current deck.'),
     ('shuttle_act', 'shuttle', 'performance', 'act', False, 'One revision-checked bounded move with native observation, replay and FLX4 takeover.'),
     ('shuttle_request_status', 'shuttle', 'performance', 'request_status', True, 'Inspect a retained native request without redispatch.'),
+    ('listen_build_helper', 'listen', 'listen', 'build_helper', False, 'Build the optional macOS CoreAudio input helper; opens no device and starts no capture.'),
+    ('listen_devices', 'listen', 'listen', 'devices', False, 'List input devices by stable UID with shared display names flagged; opens no stream.'),
+    ('listen_prepare', 'listen', 'listen', 'prepare', False, 'Seal one input by UID, declared audio routes and bounded settings; no capture or device change.'),
+    ('listen_start', 'listen', 'listen', 'start', False, 'Start one owned local capture runtime; copies input only and never changes devices or decks.'),
+    ('listen_observe', 'listen', 'listen', 'observe', True, 'Read fresh capture, clock, stream, route and delivery health with an event cursor.'),
+    ('listen_events', 'listen', 'listen', 'events', True, 'Bounded events after a cursor with explicit missing ranges and expiry; health is never filtered.'),
+    ('listen_stop', 'listen', 'listen', 'stop', False, 'Stop the named runtime and seal its terminal record; music and other apps are untouched.'),
+    ('listen_request_status', 'listen', 'listen', 'request_status', True, 'Inspect a retained Listen start or stop request without repeating it.'),
     ('request_status', 'artifact_store', 'artifact', 'status', True, 'Inspect request journals and retained artifact integrity without redispatching.'),
     ('material_import', 'material', 'material', 'import', False, 'Retain source bytes and project supported MIDI material.'),
     ('material_query', 'material', 'material', 'query', True, 'Bounded summaries, exact selections and semantic differences.'),
@@ -113,6 +122,11 @@ _UNAVAILABLE = (
     ('candidate_apply', 'candidate', 'apply', 'Qualified individually callable native primitives'),
     ('audio_transcribe', 'audio', 'transcribe', 'General transcription and musician-owned E8 acceptance; narrow optional note hypotheses are separately callable'),
     ('performance_launch', 'performance', 'launch', 'E9 scheduling, takeover, panic and 30-minute soak'),
+    ('listen_calibrate', 'listen', 'calibrate', 'Listen calibration follow-up: a routing test (armed master-only and cue-only passages sealed to device instance and topology epochs) that would establish which channels carry cue (until one is measured, cue stays unavailable, and headphone confirmation would be a separate attributed observation), or a clock test (same-clock delay, uncertainty and drift against a declared reference); until one is measured, records say drift not_estimated and device_latency not_measured'),
+    ('listen_capture_window', 'listen', 'capture_window', 'Listen windows follow-up: seal an exact retained interval within one stream epoch or report window_unavailable'),
+    ('listen_analyze', 'listen', 'analyze', 'Listen windows follow-up: hand a sealed window to existing audio_hypotheses and Peek providers outside capture'),
+    ('listen_record_start', 'listen', 'record_start', 'Listen recorder follow-up: explicit new destination, duration and byte budgets, separate lifecycle, no hidden cutoff'),
+    ('listen_record_stop', 'listen', 'record_stop', 'Listen recorder follow-up: finalize and seal only the named recorder with verified file evidence and exact gaps'),
 )
 
 # These are semantic artifact families, distinct from the common handle envelope.
@@ -124,6 +138,16 @@ _HANDLE_FAMILIES = {
     'shuttle_options': ([], []),
     'shuttle_act': ([], []),
     'shuttle_request_status': ([], []),
+    'listen_build_helper': ([], []),
+    'listen_devices': ([], []),
+    'listen_prepare': ([], ['pocket.listen-session/v1']),
+    # A start whose runtime was refused, stopped or failed returns that runtime's sealed terminal, and the
+    # reads return the previous runtime's (previous_runtime, stop_terminal) when nothing is running.
+    'listen_start': ([], ['pocket.listen-terminal/v1']),
+    'listen_observe': ([], ['pocket.listen-terminal/v1']),
+    'listen_events': ([], ['pocket.listen-terminal/v1']),
+    'listen_stop': ([], ['pocket.listen-terminal/v1']),
+    'listen_request_status': ([], ['pocket.listen-terminal/v1']),
     'request_status': ([], []),
     'material_import': ([], ['pocket.material/v1']),
     'material_query': (['pocket.material/v1'], []),
@@ -226,6 +250,14 @@ _HANDLE_FAMILIES = {
 }
 
 
+def _macos_major():
+    # Reads the system version plist; executes nothing.
+    try:
+        return int(platform.mac_ver()[0].split('.')[0] or 0)
+    except ValueError:
+        return 0
+
+
 def capabilities_list(domain: str | None = None, operation: str | None = None,
                       host_profile: dict | None = None, limit: int = 12,
                       cursor: str | None = None) -> dict:
@@ -289,6 +321,57 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                 status = 'requires_native_setup'
             if name == 'shuttle_act':
                 side_effects += ['native_serato_controls', 'session_revision', 'track_gain_metadata']
+        if module == 'listen':
+            profile = 'listen-runtime/v1'
+            # Only capture needs microphone access: listen_devices reports its state and prepare runs without it.
+            permission = {
+                'listen_devices': ('It runs without microphone access and reports the authorization state '
+                                   'macOS gives, with the step that fits it'),
+                'listen_prepare': 'Also an input UID; microphone access is checked when listen_start runs',
+                'listen_start': ('Also microphone access already granted to the app running Pocket. Listen '
+                                 'never requests access, and an app that never asked has no switch in System '
+                                 'Settings; permission onboarding is a follow-up'),
+            }.get(name, ('It reads or stops a runtime listen_start began and checks no microphone access '
+                         'itself'))
+            prerequisites = ['Synthetic adapter: POSIX, no device or setup; labeled synthetic and never live evidence',
+                             ('coreaudio-hal-input/v1: macOS 15+ and the build_id of a helper build '
+                              "listen_build_helper compiled into Listen's own folder for this user "
+                              '(~/.pocket/listen, or POCKET_LISTEN_DIR in the environment of the process that '
+                              "runs Pocket), recorded under that folder's private key and unchanged; a "
+                              'changed build, or one copied or moved without its record and that key, is '
+                              f'refused, and macOS 15 is checked when the build is made. {permission}')]
+            if name == 'listen_request_status':
+                prerequisites = ['File reads only, on any system; it never contacts a runtime or a device']
+            if name == 'listen_build_helper':
+                profile = 'coreaudio-hal-input/v1'
+                prerequisites = [('macOS 15+ with the Swift compiler (swiftc); compiles into a new folder in '
+                                  '~/.pocket/listen (or POCKET_LISTEN_DIR) and returns its build_id; building '
+                                  'opens no audio device and starts no capture')]
+                from .listen_native import swift_compiler
+                if sys.platform != 'darwin' or _macos_major() < 15:
+                    status = 'unsupported'
+                elif not swift_compiler():
+                    status = 'requires_optional_setup'
+            elif name in ('listen_devices', 'listen_start', 'listen_observe', 'listen_events', 'listen_stop'):
+                status = 'unsupported' if os.name != 'posix' else 'requires_native_setup'
+            elif name == 'listen_prepare' and os.name != 'posix':
+                status = 'unsupported'      # a session's lease and directories are POSIX-only
+            if name == 'listen_build_helper':
+                # Its first use creates the private registry folder and key that later builds share.
+                side_effects += ['local_build_registry_entry']
+            if name == 'listen_devices':
+                # The CoreAudio adapter runs a fresh copy of the verified helper in /private/tmp and
+                # removes it; the synthetic one runs nothing.
+                side_effects = ['conditional_owned_short_lived_probe_process',
+                                'conditional_temporary_helper_copy']
+            if name == 'listen_start':
+                side_effects += ['owned_local_background_process', 'local_unix_socket', 'local_runtime_journal',
+                                 'audio_input_copy_only',
+                                 # CoreAudio: the daemon runs a fresh copy of the helper in /private/tmp,
+                                 # removed when the runtime stops.
+                                 'conditional_owned_helper_process', 'conditional_temporary_helper_copy']
+            if name == 'listen_stop':
+                side_effects += ['owned_runtime_stop', 'local_runtime_journal']
         if name == 'midi_timing_query':
             side_effects = ['temporary_local_proof_replay; caller_store_unchanged']
         if name in ('audio_region_hypotheses', 'audio_region_submit'):
@@ -353,7 +436,17 @@ def capabilities_list(domain: str | None = None, operation: str | None = None,
                      'status': status, 'prerequisites': prerequisites,
                      'conditional_dependencies': (['Optional midi extra for SMF sources'] if name == 'material_import' else
                          ['learned_pulse requires explicit qualified local BeatThis; learned_notes requires explicit qualified known-weight ONNX CPU runtime; Peek needs no model']
-                         if name in ('audio_region_hypotheses', 'audio_region_submit') else []),
+                         if name in ('audio_region_hypotheses', 'audio_region_submit') else
+                         [('coreaudio adapter: macOS and the build_id of a helper build listen_build_helper '
+                           "compiled into Listen's own folder for this user (~/.pocket/listen or "
+                           'POCKET_LISTEN_DIR), recorded under its private key and unchanged; '
+                           + {'listen_devices': 'it reports microphone access rather than needing it',
+                              'listen_prepare': 'microphone access is checked when listen_start runs',
+                              'listen_start': 'microphone access already granted (Listen never requests it)'}.get(
+                               name, 'it checks no microphone access itself')
+                           + '; native capture not yet qualified')]
+                         if module == 'listen' and name not in ('listen_build_helper', 'listen_request_status')
+                         else []),
                      'native_verified': False})
     for name, area, op, gate in _UNAVAILABLE:
         rows.append({'capability_id': f'pocket.{name}/v1', 'public_tool': None,

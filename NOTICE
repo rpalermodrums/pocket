@@ -43,7 +43,8 @@ records, qualifications or native acceptance. Those are:
 - src/pocket_music/audio_note_projection_v2.py (see above)
 - src/pocket_music/audio_model_runner.py
 - src/pocket_music/audio_note_runner.py
-- every file in src/pocket_music/devices/
+- every file in src/pocket_music/devices/ except
+  src/pocket_music/devices/listen/capture.swift, which carries one
 
 Apart from the Basic Pitch derivatives, they are licensed under AGPL-3.0-only
 like the rest of the core.

@@ -1,6 +1,6 @@
 ---
 name: pocket
-description: Use Pocket's music tools through MCP, the pocket CLI or Python. Use when a task involves recordings, practice passages, cues and timelines, MIDI material, saved or open Ableton Live sets, transitions between records, planning sets of records, or listening feedback. Covers capturing and comparing exact audio, resolving cues in repeated passages, inspecting timing and tonal evidence, editing and exporting MIDI, reading Live sets, and planning what plays next, while keeping measurements, hypotheses, decisions and human listening separate.
+description: Use Pocket's music tools through MCP, the pocket CLI or Python. Use when a task involves recordings, practice passages, cues and timelines, MIDI material, saved or open Ableton Live sets, transitions between records, planning sets of records, listening feedback, or watching levels and capture health on a live audio input. Covers capturing and comparing exact audio, resolving cues in repeated passages, inspecting timing and tonal evidence, editing and exporting MIDI, reading Live sets, and planning what plays next, while keeping measurements, hypotheses, decisions and human listening separate.
 ---
 
 # Pocket
@@ -41,9 +41,10 @@ vocabulary used here.
   and phrase start are different things. In a repeated passage, name the
   occurrence.
 - **Ask before acting outside the machine.** Downloading recordings, loading
-  models, writing Spotify playlists and working inside Live each need the
-  person's explicit request for this task. Coordinate use of Live with other
-  work first.
+  models, writing Spotify playlists, working inside Live and starting a Listen
+  runtime on a real audio input each need the person's explicit request for
+  this task. Coordinate use of Live, and of an input another app is using,
+  with other work first.
 - **Keep private material private.** Keep recordings, credentials, listener
   notes and machine paths out of Git, and use the ignored `private/` folder.
 - **Read refusals before retrying.** With `POCKET_ERROR_FORMAT=v3`, a refusal
@@ -63,6 +64,7 @@ vocabulary used here.
 | Pipette | Promote one explicitly kept, saved Stitch trial into a new project | [Pipette](../../docs/pipette.md) |
 | Weave | Propose several routes through a record bag for a brief | [Weave](../../docs/weave.md) |
 | Whisker | Propose next records in a shared, revision-checked session | [Whisker](../../docs/whisker.md) |
+| Listen | Watch levels, clocks and capture health on declared audio routes, without changing anything (experimental) | [Listen](../../docs/listen.md) |
 
 The [selection interfaces](../../docs/selection-interfaces.md) guide lists
 matching CLI and MCP calls, and the [workspace](../../docs/workspace.md) gives a
